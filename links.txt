@@ -1,0 +1,6 @@
+Youtube:
+Django & React Web App Tutorial - Authentication, Databases, Deployment & More...
+https://www.youtube.com/watch?v=c-QsfbznSXI
+
+GitHub repo:
+https://github.com/techwithtim/Django-React-Full-Stack-App/tree/main
