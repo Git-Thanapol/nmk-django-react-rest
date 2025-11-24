@@ -1,0 +1,238 @@
+{% extends 'base.html' %} {% block content %}
+
+<!-- ===================== EXPENSES PAGE ===================== -->
+<div
+  id="expensesScope"
+  class="card rounded-xl p-3 main-card calc-scope"
+  data-vat-name="vatModeExp"
+>
+  <!-- หัวเรื่อง -->
+  <div class="d-flex align-items-center justify-content-between mb-2">
+    <h5 class="mb-0">Invoices Form</h5>
+  </div>
+
+  <!-- ประเภทรายการ (วางตำแหน่งเหมือน Purchase) -->
+  <div class="row g-3 align-items-end">
+    <div class="col-auto">รายการ (I/C/H/T/X):</div>
+    <div class="col-auto">
+      <div class="btn-group" role="group" aria-label="expensetype">
+        <input
+          type="radio"
+          class="btn-check"
+          name="expType"
+          id="exp1"
+          checked
+        />
+        <label class="btn btn-ghost btn-sm" for="exp1">ลูกหนี้</label>
+
+        <input type="radio" class="btn-check" name="expType" id="exp2" />
+        <label class="btn btn-ghost btn-sm" for="exp2">เงินสด</label>
+
+        <input type="radio" class="btn-check" name="expType" id="exp3" />
+        <label class="btn btn-ghost btn-sm" for="exp3">เช็ค</label>
+
+        <input type="radio" class="btn-check" name="expType" id="exp4" />
+        <label class="btn btn-ghost btn-sm" for="exp4">บัตรเครดิต</label>
+
+        <input type="radio" class="btn-check" name="expType" id="exp5" />
+        <label class="btn btn-ghost btn-sm" for="exp5">อื่นๆ</label>
+      </div>
+    </div>
+  </div>
+
+  <!-- ฟอร์มข้อมูล -->
+  <div class="row g-3 mt-1">
+    <div class="col-md-3">
+      <label class="form-label muted">วันที่</label>
+      <input type="date" class="form-control" value="2025-10-23" />
+    </div>
+    <div class="col-md-3">
+      <label class="form-label muted">เลขที่ใบกำกับ</label>
+      <input type="text" class="form-control" />
+    </div>
+    <div class="col-md-3">
+      <label class="form-label muted">รหัสลูกค้า/ผู้จ่าย</label>
+      <input type="text" class="form-control" />
+    </div>
+    <div class="col-md-3">
+      <label class="form-label muted">บัญชีแยกประเภท</label>
+      <input type="text" class="form-control" />
+    </div>
+
+    <div class="col-md-6">
+      <label class="form-label muted">ชื่อลูกค้า/ผู้จ่าย</label>
+      <input type="text" class="form-control" />
+    </div>
+    <div class="col-md-6">
+      <label class="form-label muted">ที่อยู่</label>
+      <input type="text" class="form-control" />
+    </div>
+
+    <div class="col-md-6">
+      <label class="form-label muted">หมายเหตุ</label>
+      <input type="text" class="form-control" />
+    </div>
+    <div class="col-md-3">
+      <label class="form-label muted">พนักงานขาย</label>
+      <select class="form-select">
+        <option>--</option>
+      </select>
+    </div>
+    <div class="col-md-3">
+      <label class="form-label muted">วันที่ครบกำหนด</label>
+      <input type="date" class="form-control" placeholder="dd/mm/yyyy" />
+    </div>
+  </div>
+
+  <!-- ตารางรายการ -->
+  <div class="table-responsive mt-3">
+    <table
+      class="table table-darkish table-bordered align-middle mb-0"
+      id="itemsTableExp"
+    >
+      <thead>
+        <tr>
+          <th class="text-center" style="width: 56px">No.</th>
+          <th style="width: 140px">รหัสสินค้า</th>
+          <th>รายละเอียด</th>
+          <th class="text-center" style="width: 120px">จำนวน</th>
+          <th class="text-center" style="width: 120px">หน่วย</th>
+          <th class="text-end" style="width: 140px">ราคาหน่วยละ</th>
+          <th class="text-end" style="width: 120px">ส่วนลด</th>
+          <th class="text-end" style="width: 160px">จำนวนเงิน</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="text-center">1</td>
+          <td><input class="form-control form-control-sm" /></td>
+          <td><input class="form-control form-control-sm" /></td>
+          <td>
+            <input
+              class="form-control form-control-sm input-number qty"
+              type="number"
+              step="0.001"
+              value="1.000"
+            />
+          </td>
+          <td>
+            <select class="form-select form-select-sm">
+              <option selected>ชิ้น</option>
+              <option>กล่อง</option>
+              <option>หน่วย</option>
+            </select>
+          </td>
+          <td>
+            <input
+              class="form-control form-control-sm input-number price"
+              type="number"
+              step="0.01"
+              value="0.00"
+            />
+          </td>
+          <td>
+            <input
+              class="form-control form-control-sm input-number discount"
+              type="number"
+              step="0.01"
+              value="0.00"
+            />
+          </td>
+          <td class="text-end fw-semibold line-total">0.00</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- รวมยอด/ภาษี -->
+  <div class="row mt-3 g-3">
+    <div class="col-lg-6"></div>
+    <div class="col-lg-6">
+      <div class="p-3 rounded-xl border" style="border-color: var(--stroke)">
+        <div class="d-flex justify-content-between mb-2">
+          <div class="muted">รวมเป็นเงิน</div>
+          <div class="fw-semibold subtotal">0.00</div>
+        </div>
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <div class="muted me-3">ส่วนลดพิเศษ</div>
+          <input
+            class="form-control form-control-sm input-number special-discount"
+            style="max-width: 160px"
+            type="number"
+            step="0.01"
+            value="0.00"
+          />
+        </div>
+        <hr class="my-2" />
+        <div
+          class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2"
+        >
+          <div class="d-flex align-items-center gap-2">
+            <div class="form-check form-check-inline">
+              <input
+                class="form-check-input"
+                type="radio"
+                name="vatModeExp"
+                id="vatIncludedExp"
+                value="included"
+                checked
+              />
+              <label class="form-check-label" for="vatIncludedExp"
+                >รวมภาษี</label
+              >
+            </div>
+            <div class="form-check form-check-inline">
+              <input
+                class="form-check-input"
+                type="radio"
+                name="vatModeExp"
+                id="vatExcludedExp"
+                value="excluded"
+              />
+              <label class="form-check-label" for="vatExcludedExp"
+                >แยกภาษี</label
+              >
+            </div>
+            <div class="input-group input-group-sm" style="width: 180px">
+              <span
+                class="input-group-text bg-transparent text-secondary border-secondary"
+                >ภาษี</span
+              >
+              <input
+                type="number"
+                class="form-control input-number vat-rate"
+                value="7"
+                step="0.01"
+              />
+              <span
+                class="input-group-text bg-transparent text-secondary border-secondary"
+                >%</span
+              >
+            </div>
+          </div>
+          <div class="text-nowrap">
+            ภาษีมูลค่าเพิ่ม: <span class="fw-semibold vat-amount">0.00</span>
+          </div>
+        </div>
+        <div class="d-flex justify-content-between fs-5">
+          <div class="fw-semibold">ยอดเงินสุทธิ</div>
+          <div class="fw-bold grand-total">0.00</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ปุ่มล่าง -->
+  <div class="sticky-actions d-flex gap-2 p-3 mt-3 rounded-bottom">
+    <button class="btn btn-brand"><i class="bi bi-check2 me-2"></i>ตกลง</button>
+    <button class="btn btn-outline-danger">
+      <i class="bi bi-x-circle me-2"></i>ยกเลิก
+    </button>
+    <button class="btn btn-outline-secondary">
+      <i class="bi bi-box-arrow-left me-2"></i>ออก
+    </button>
+  </div>
+</div>
+<!-- ===================== END EXPENSES PAGE ===================== -->
+
+{% endblock %}

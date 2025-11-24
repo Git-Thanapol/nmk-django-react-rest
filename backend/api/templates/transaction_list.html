@@ -1,0 +1,185 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Transactions{% endblock %}
+{% block page_title %}Income & Expenses{% endblock %}
+
+{% block content %}
+<div class="container-fluid p-0">
+
+  <div class="card rounded-xl mb-4 shadow-sm {% if is_editing %}border-warning{% endif %}">
+    
+    <div class="card-header bg-transparent border-secondary py-3">
+      <h5 class="mb-0 text-white">
+        {% if is_editing %}
+            <i class="bi bi-pencil-square me-2 text-warning"></i>Edit Transaction: <span class="text-warning">{{ editing_transaction.transaction_number }}</span>
+        {% else %}
+            <i class="bi bi-wallet2 me-2"></i>Record Transaction
+        {% endif %}
+      </h5>
+    </div>
+
+    <div class="card-body">
+      <form method="POST">
+        {% csrf_token %}
+        <div class="row g-3">
+          
+          <div class="col-md-3">
+            <label class="form-label text-secondary small">Transaction No.</label>
+            {{ form.transaction_number }}
+          </div>
+          <div class="col-md-3">
+            <label class="form-label text-secondary small">Date</label>
+            {{ form.transaction_date }}
+          </div>
+          <div class="col-md-3">
+            <label class="form-label text-secondary small">Type</label>
+            {{ form.type }}
+          </div>
+          <div class="col-md-3">
+            <label class="form-label text-secondary small">Category</label>
+            {{ form.category }}
+          </div>
+
+          <div class="col-md-4">
+            <label class="form-label text-secondary small">Amount</label>
+            <div class="input-group">
+                <span class="input-group-text bg-dark border-secondary text-secondary">฿</span>
+                {{ form.amount }}
+            </div>
+          </div>
+          <div class="col-md-8">
+            <label class="form-label text-secondary small">Reference (Optional)</label>
+            {{ form.reference }}
+          </div>
+
+          <div class="col-12">
+            <label class="form-label text-secondary small">Description</label>
+            {{ form.description }}
+          </div>
+
+          <div class="col-12 d-flex align-items-center justify-content-end gap-2 mt-3">
+            {% if is_editing %}
+                <a href="{% url 'transaction_list' %}" class="btn btn-ghost px-4">Cancel</a>
+                <button type="submit" class="btn btn-warning px-4 text-dark fw-bold">
+                    <i class="bi bi-check-lg me-2"></i>Update
+                </button>
+            {% else %}
+                <button type="submit" class="btn btn-brand px-4">
+                    <i class="bi bi-plus-lg me-2"></i>Add Transaction
+                </button>
+            {% endif %}
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="card rounded-xl shadow-sm">
+    
+    <div class="card-header bg-transparent border-secondary py-3">
+        <form method="GET" class="row g-2 align-items-center">
+            
+            <div class="col-md-4 d-flex gap-2">
+                <input type="date" name="start_date" class="form-control form-control-sm bg-dark text-light border-secondary" 
+                       value="{{ request.GET.start_date }}" title="Start Date">
+                <span class="text-secondary align-self-center">-</span>
+                <input type="date" name="end_date" class="form-control form-control-sm bg-dark text-light border-secondary" 
+                       value="{{ request.GET.end_date }}" title="End Date">
+            </div>
+
+            <div class="col-md-2">
+                <select name="type" class="form-select form-select-sm bg-dark text-light border-secondary" onchange="this.form.submit()">
+                    <option value="">All Types</option>
+                    {% for code, name in type_choices %}
+                        <option value="{{ code }}" {% if request.GET.type == code %}selected{% endif %}>{{ name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <select name="category" class="form-select form-select-sm bg-dark text-light border-secondary" onchange="this.form.submit()">
+                    <option value="">All Categories</option>
+                    {% for code, name in category_choices %}
+                        <option value="{{ code }}" {% if request.GET.category == code %}selected{% endif %}>{{ name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="col-md-4">
+                <div class="input-group input-group-sm">
+                    <input type="text" name="q" class="form-control bg-dark text-light border-secondary" 
+                           placeholder="Search No, Ref, Desc..." 
+                           value="{{ search_query|default:'' }}">
+                    <button class="btn btn-outline-secondary" type="submit">
+                        <i class="bi bi-search"></i>
+                    </button>
+                    {% if request.GET.q or request.GET.type or request.GET.category or request.GET.start_date %}
+                        <a href="{% url 'transaction_list' %}" class="btn btn-outline-danger" title="Clear Filters">
+                            <i class="bi bi-x-lg"></i>
+                        </a>
+                    {% endif %}
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <div class="table-responsive">
+      <table class="table table-darkish table-hover align-middle mb-0">
+        <thead class="text-secondary small text-uppercase">
+          <tr>
+            <th class="ps-4">Date</th>
+            <th>Tx Number</th>
+            <th>Type</th>
+            <th>Category</th>
+            <th>Description</th>
+            <th class="text-end">Amount</th>
+            <th class="text-end pe-4">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for txn in transactions %}
+          <tr class="{% if editing_transaction.id == txn.id %}table-active border-warning{% endif %}">
+            <td class="ps-4 text-nowrap text-secondary">{{ txn.transaction_date|date:"d M Y" }}</td>
+            <td class="font-monospace">{{ txn.transaction_number }}</td>
+            <td>
+                {% if txn.type == 'INCOME' %}
+                    <span class="badge rounded-pill text-bg-success bg-opacity-10 text-success border border-success border-opacity-25">INCOME</span>
+                {% else %}
+                    <span class="badge rounded-pill text-bg-danger bg-opacity-10 text-danger border border-danger border-opacity-25">EXPENSE</span>
+                {% endif %}
+            </td>
+            <td>
+                <span class="badge bg-secondary bg-opacity-25 text-light border border-secondary border-opacity-50">
+                    {{ txn.get_category_display }}
+                </span>
+            </td>
+            <td style="max-width: 250px;">
+                <div class="text-truncate text-white">{{ txn.description|default:"-" }}</div>
+                {% if txn.reference %}
+                    <div class="small text-muted"><i class="bi bi-hash me-1"></i>{{ txn.reference }}</div>
+                {% endif %}
+            </td>
+            <td class="text-end fw-bold font-monospace {% if txn.type == 'INCOME' %}text-success{% else %}text-danger{% endif %}">
+                {% if txn.type == 'INCOME' %}+{% else %}-{% endif %} {{ txn.amount|floatformat:2 }}
+            </td>
+            <td class="text-end pe-4">
+              <a href="{% url 'transaction_edit' txn.id %}" class="btn btn-sm btn-ghost" title="Edit">
+                <i class="bi bi-pencil"></i>
+              </a>
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="7" class="text-center py-5 text-secondary">
+              <i class="bi bi-receipt fs-1 d-block mb-3"></i>
+              No transactions found matching your criteria.
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    
+  </div>
+</div>
+{% endblock %}

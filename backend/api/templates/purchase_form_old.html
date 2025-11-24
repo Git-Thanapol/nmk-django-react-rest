@@ -1,0 +1,233 @@
+{% extends 'base.html' %} {% block content %}
+
+<!-- SCOPE ของหน้า Purchase -->
+<div
+  id="purchaseScope"
+  class="card rounded-xl p-3 main-card calc-scope"
+  data-vat-name="vatModePurchase"
+>
+  <div class="d-flex align-items-center justify-content-between mb-2">
+    <h5 class="mb-0">Purchase Form</h5>
+  </div>
+
+  <!-- paytype -->
+  <div class="row g-3 align-items-end">
+    <div class="col-auto">รายการ (A/C/H/X):</div>
+    <div class="col-auto">
+      <div class="btn-group" role="group" aria-label="paytype">
+        <input type="radio" class="btn-check" name="paytype" id="pt1" />
+        <label class="btn btn-ghost btn-sm" for="pt1">เจ้าหนี้</label>
+        <input type="radio" class="btn-check" name="paytype" id="pt2" checked />
+        <label class="btn btn-ghost btn-sm" for="pt2">เงินสด</label>
+        <input type="radio" class="btn-check" name="paytype" id="pt3" />
+        <label class="btn btn-ghost btn-sm" for="pt3">เช็ค</label>
+        <input type="radio" class="btn-check" name="paytype" id="pt4" />
+        <label class="btn btn-ghost btn-sm" for="pt4">อื่นๆ</label>
+      </div>
+    </div>
+  </div>
+
+  <!-- ข้อมูลหลัก -->
+  <div class="row g-3 mt-1">
+    <div class="col-md-3">
+      <label class="form-label muted">วันที่</label>
+      <input type="date" class="form-control" value="2025-10-23" />
+    </div>
+    <div class="col-md-3">
+      <label class="form-label muted">เลขที่ใบกำกับ</label>
+      <input type="text" class="form-control" value="11111" />
+    </div>
+    <div class="col-md-3">
+      <label class="form-label muted">รหัสเจ้าหนี้</label>
+      <input type="text" class="form-control" value="SCP001" />
+    </div>
+    <div class="col-md-3">
+      <label class="form-label muted">บัญชีแยกประเภท</label>
+      <input type="text" class="form-control" value="5010" />
+    </div>
+    <div class="col-md-6">
+      <label class="form-label muted">ชื่อเจ้าหนี้/ร้านค้า</label>
+      <input
+        type="text"
+        class="form-control"
+        value="บริษัท ผลิตภัณฑ์กระดาษไทย จำกัด"
+      />
+    </div>
+    <div class="col-md-6">
+      <label class="form-label muted">ที่อยู่</label>
+      <input
+        type="text"
+        class="form-control"
+        value="1 ถนนปูนซีเมนต์ไทย แขวงบางซื่อ เขตบางซื่อ, กรุงเทพมหานคร 10800"
+      />
+    </div>
+  </div>
+
+  <!-- แถวใหม่: หมายเหตุ + เลขที่จัดลำดับภาษี -->
+  <div class="row g-3 mt-1">
+    <div class="col-md-6">
+      <label class="form-label muted">หมายเหตุ</label>
+      <input type="text" class="form-control" placeholder="" />
+    </div>
+    <div class="col-md-3">
+      <label class="form-label muted">เลขที่จัดลำดับภาษี</label>
+      <input type="text" class="form-control" placeholder="" />
+    </div>
+    <div class="col-md-3"><!-- เว้นเพื่อบาลานซ์ grid --></div>
+  </div>
+
+  <!-- ตาราง -->
+  <div class="table-responsive mt-3">
+    <table
+      class="table table-darkish table-bordered align-middle mb-0"
+      id="itemsTablePurchase"
+    >
+      <thead>
+        <tr>
+          <th class="text-center" style="width: 56px">No.</th>
+          <th style="width: 140px">รหัสสินค้า</th>
+          <th>รายละเอียด</th>
+          <th class="text-center" style="width: 120px">จำนวน</th>
+          <th class="text-center" style="width: 120px">หน่วย</th>
+          <th class="text-end" style="width: 140px">ราคาหน่วยละ</th>
+          <th class="text-end" style="width: 120px">ส่วนลด</th>
+          <th class="text-end" style="width: 160px">จำนวนเงิน</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="text-center">1</td>
+          <td><input class="form-control form-control-sm" value="ADS25C" /></td>
+          <td>
+            <input
+              class="form-control form-control-sm"
+              value="SAMSUNG ADAPTER 25W USB"
+            />
+          </td>
+          <td>
+            <input
+              class="form-control form-control-sm input-number qty"
+              type="number"
+              step="0.001"
+              value="1.000"
+            />
+          </td>
+          <td>
+            <select class="form-select form-select-sm">
+              <option selected>ชิ้น</option>
+              <option>กล่อง</option>
+              <option>หน่วย</option>
+            </select>
+          </td>
+          <td>
+            <input
+              class="form-control form-control-sm input-number price"
+              type="number"
+              step="0.01"
+              value="650.79"
+            />
+          </td>
+          <td>
+            <input
+              class="form-control form-control-sm input-number discount"
+              type="number"
+              step="0.01"
+              value="0"
+            />
+          </td>
+          <td class="text-end fw-semibold line-total">650.79</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- รวมเงิน -->
+  <div class="row mt-3 g-3">
+    <div class="col-lg-6"></div>
+    <div class="col-lg-6">
+      <div class="p-3 rounded-xl border" style="border-color: var(--stroke)">
+        <div class="d-flex justify-content-between mb-2">
+          <div class="muted">รวมเป็นเงิน</div>
+          <div class="fw-semibold subtotal">608.21</div>
+        </div>
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <div class="muted me-3">ส่วนลดพิเศษ</div>
+          <input
+            class="form-control form-control-sm input-number special-discount"
+            style="max-width: 160px"
+            type="number"
+            step="0.01"
+            value="0.00"
+          />
+        </div>
+        <hr class="my-2" />
+        <div
+          class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2"
+        >
+          <div class="d-flex align-items-center gap-2">
+            <div class="form-check form-check-inline">
+              <input
+                class="form-check-input"
+                type="radio"
+                name="vatModePurchase"
+                id="vatIncludedPurchase"
+                value="included"
+                checked
+              />
+              <label class="form-check-label" for="vatIncludedPurchase"
+                >รวมภาษี</label
+              >
+            </div>
+            <div class="form-check form-check-inline">
+              <input
+                class="form-check-input"
+                type="radio"
+                name="vatModePurchase"
+                id="vatExcludedPurchase"
+                value="excluded"
+              />
+              <label class="form-check-label" for="vatExcludedPurchase"
+                >ไม่รวมภาษี</label
+              >
+            </div>
+            <div class="input-group input-group-sm" style="width: 180px">
+              <span
+                class="input-group-text bg-transparent text-secondary border-secondary"
+                >ภาษี</span
+              >
+              <input
+                type="number"
+                class="form-control input-number vat-rate"
+                value="7"
+                step="0.01"
+              />
+              <span
+                class="input-group-text bg-transparent text-secondary border-secondary"
+                >%</span
+              >
+            </div>
+          </div>
+          <div class="text-nowrap">
+            ภาษีมูลค่าเพิ่ม: <span class="fw-semibold vat-amount">42.58</span>
+          </div>
+        </div>
+        <div class="d-flex justify-content-between fs-5">
+          <div class="fw-semibold">ยอดเงินสุทธิ</div>
+          <div class="fw-bold grand-total">650.79</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sticky-actions d-flex gap-2 p-3 mt-3 rounded-bottom">
+    <button class="btn btn-brand"><i class="bi bi-check2 me-2"></i>ตกลง</button>
+    <button class="btn btn-outline-danger">
+      <i class="bi bi-x-circle me-2"></i>ยกเลิก
+    </button>
+    <button class="btn btn-outline-secondary">
+      <i class="bi bi-box-arrow-left me-2"></i>ออก
+    </button>
+  </div>
+</div>
+
+{% endblock %}

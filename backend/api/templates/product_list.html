@@ -1,0 +1,198 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Products{% endblock %}
+{% block page_title %}Product Management{% endblock %}
+
+{% block content %}
+<div class="container-fluid p-0">
+
+  <div class="card rounded-xl mb-4 shadow-sm {% if is_editing %}border-warning{% endif %}">
+    
+    <div class="card-header bg-transparent border-secondary py-3">
+      <h5 class="mb-0 text-white">
+        {% if is_editing %}
+            <i class="bi bi-pencil-square me-2 text-warning"></i>Edit Product: <span class="text-warning">{{ editing_product.sku }}</span>
+        {% else %}
+            <i class="bi bi-box-seam me-2"></i>Add New Product
+        {% endif %}
+      </h5>
+    </div>
+
+    <div class="card-body">
+      <form method="POST">
+        {% csrf_token %}
+        
+        {% if form.errors %}
+            <div class="alert alert-danger py-2">
+                {{ form.errors }}
+            </div>
+        {% endif %}
+
+        <div class="row g-3">
+          <div class="col-md-3">
+            <label class="form-label text-secondary small">SKU Code</label>
+            {{ form.sku }}
+          </div>
+          <div class="col-md-5">
+            <label class="form-label text-secondary small">Product Name</label>
+            {{ form.name }}
+          </div>
+          <div class="col-md-4">
+            <label class="form-label text-secondary small">Category</label>
+            {{ form.category }}
+            <datalist id="category_list">
+                <option value="SMARTPHONE">
+                <option value="ACCESSORY">
+                <option value="TABLET">
+                <option value="SERVICE">
+                {% comment %} {% for cat in existing_categories %}
+                    <option value="{{ cat }}">
+                {% endfor %} {% endcomment %}
+            </datalist>
+          </div>
+
+          <div class="col-md-3">
+            <label class="form-label text-secondary small">Cost Price</label>
+            <div class="input-group">
+                <span class="input-group-text bg-dark border-secondary text-secondary">฿</span>
+                {{ form.cost_price }}
+            </div>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label text-secondary small">Selling Price</label>
+            <div class="input-group">
+                <span class="input-group-text bg-dark border-secondary text-secondary">฿</span>
+                {{ form.selling_price }}
+            </div>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label text-secondary small">Company (Optional)</label>
+            {{ form.company }}
+          </div>
+
+          <div class="col-12">
+            <label class="form-label text-secondary small">Description</label>
+            {{ form.description }}
+          </div>
+
+          <div class="col-12 d-flex align-items-center justify-content-between mt-4">
+            <div class="form-check form-switch">
+              {{ form.is_active }}
+              <label class="form-check-label text-white" for="{{ form.is_active.id_for_label }}">
+                Active Product
+              </label>
+            </div>
+            
+            <div class="d-flex gap-2">
+                {% if is_editing %}
+                    <a href="{% url 'product_list' %}" class="btn btn-ghost px-4">Cancel</a>
+                    <button type="submit" class="btn btn-warning px-4 text-dark fw-bold">
+                        <i class="bi bi-check-lg me-2"></i>Update Product
+                    </button>
+                {% else %}
+                    <button type="submit" class="btn btn-brand px-4">
+                        <i class="bi bi-save me-2"></i>Save Product
+                    </button>
+                {% endif %}
+            </div>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="card rounded-xl shadow-sm">
+    
+    <div class="card-header bg-transparent border-secondary py-3 d-flex flex-column flex-md-row align-items-center justify-content-between gap-3">
+      <h5 class="mb-0 text-white"><i class="bi bi-list-stars me-2"></i>Product Inventory</h5>
+      
+      <form method="GET" class="d-flex gap-2 w-100 w-md-auto">
+        <select name="status" class="form-select form-select-sm bg-dark text-light border-secondary" style="width: 120px;" onchange="this.form.submit()">
+            <option value="">Status</option>
+            <option value="active" {% if request.GET.status == 'active' %}selected{% endif %}>Active</option>
+            <option value="inactive" {% if request.GET.status == 'inactive' %}selected{% endif %}>Inactive</option>
+        </select>
+
+        <div class="input-group input-group-sm">
+          <input type="text" name="q" class="form-control bg-dark text-light border-secondary" 
+                 placeholder="Search SKU, Name, Cat..." 
+                 value="{{ search_query|default:'' }}">
+          <button class="btn btn-outline-secondary" type="submit">
+            <i class="bi bi-search"></i>
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <div class="table-responsive">
+      <table class="table table-darkish table-hover align-middle mb-0">
+        <thead class="text-secondary small text-uppercase">
+          <tr>
+            <th class="ps-4">Product Info</th>
+            <th>Category</th>
+            <th class="text-end">Cost</th>
+            <th class="text-end">Price</th>
+            <th class="text-center">Stock</th>
+            <th class="text-center">Status</th>
+            <th class="text-end pe-4">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for product in products %}
+          <tr class="{% if editing_product.id == product.id %}table-active border-warning{% endif %}">
+            <td class="ps-4">
+              <div class="d-flex align-items-center">
+                 <div class="bg-dark border border-secondary rounded p-2 me-3 text-center" style="width: 45px; height: 45px;">
+                    <i class="bi bi-box text-secondary"></i>
+                 </div>
+                 <div>
+                    <div class="fw-bold text-white">{{ product.name }}</div>
+                    <div class="small text-muted font-monospace">{{ product.sku }}</div>
+                 </div>
+              </div>
+            </td>
+            <td>
+                <span class="badge bg-secondary bg-opacity-25 text-light border border-secondary border-opacity-50">
+                    {{ product.category }}
+                </span>
+            </td>
+            <td class="text-end font-monospace text-muted">{{ product.cost_price|floatformat:2 }}</td>
+            <td class="text-end font-monospace text-success fw-bold">{{ product.selling_price|floatformat:2 }}</td>
+            
+            <td class="text-center">
+                {% if product.current_stock > 0 %}
+                    <span class="text-white">{{ product.current_stock }}</span>
+                {% else %}
+                    <span class="text-danger small">Out of Stock</span>
+                {% endif %}
+            </td>
+
+            <td class="text-center">
+              {% if product.is_active %}
+                <i class="bi bi-check-circle-fill text-success"></i>
+              {% else %}
+                <i class="bi bi-x-circle-fill text-secondary"></i>
+              {% endif %}
+            </td>
+            <td class="text-end pe-4">
+              <a href="{% url 'product_edit' product.id %}" class="btn btn-sm btn-ghost" title="Edit">
+                <i class="bi bi-pencil"></i>
+              </a>
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="7" class="text-center py-5 text-secondary">
+              <i class="bi bi-box fs-1 d-block mb-3"></i>
+              No products found. Add one above!
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    
+  </div>
+</div>
+{% endblock %}

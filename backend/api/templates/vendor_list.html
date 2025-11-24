@@ -1,0 +1,123 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Vendors{% endblock %}
+{% block page_title %}Vendor Management{% endblock %}
+
+{% block content %}
+<div class="container-fluid p-0">
+
+  <div class="card rounded-xl mb-4 shadow-sm {% if is_editing %}border-warning{% endif %}">
+    
+    <div class="card-header bg-transparent border-secondary py-3">
+      <h5 class="mb-0 text-white">
+        {% if is_editing %}
+            <i class="bi bi-pencil-square me-2 text-warning"></i>Edit Vendor: <span class="text-warning">{{ editing_vendor.name }}</span>
+        {% else %}
+            <i class="bi bi-shop me-2"></i>Register New Vendor
+        {% endif %}
+      </h5>
+    </div>
+
+    <div class="card-body">
+      <form method="POST">
+        {% csrf_token %}
+        <div class="row g-3">
+          
+          <div class="col-md-6">
+            <label class="form-label text-secondary small">Vendor Name</label>
+            {{ form.name }}
+          </div>
+          <div class="col-md-6">
+            <label class="form-label text-secondary small">Contact Person</label>
+            {{ form.contact_person }}
+          </div>
+
+          <div class="col-12">
+            <label class="form-label text-secondary small">Related Company</label>
+            {{ form.company_selection }}
+            <datalist id="company_list">
+                {% for company in all_companies %}
+                <option value="{{ company.name }}">
+                {% endfor %}
+            </datalist>
+          </div>
+
+          <div class="col-md-4">
+            <label class="form-label text-secondary small">Phone Number</label>
+            {{ form.phone }}
+          </div>
+          <div class="col-md-4">
+            <label class="form-label text-secondary small">Email</label>
+            {{ form.email }}
+          </div>
+          <div class="col-md-4">
+            <label class="form-label text-secondary small">Tax ID</label>
+            {{ form.tax_id }}
+          </div>
+
+          <div class="col-12">
+            <label class="form-label text-secondary small">Address</label>
+            {{ form.address }}
+          </div>
+
+          <div class="col-12 d-flex align-items-center justify-content-between mt-4">
+            <div class="form-check form-switch">
+              {{ form.is_active }}
+              <label class="form-check-label text-white" for="{{ form.is_active.id_for_label }}">
+                Active Status
+              </label>
+            </div>
+            
+            <div class="d-flex gap-2">
+                {% if is_editing %}
+                    <a href="{% url 'vendor_list' %}" class="btn btn-ghost px-4">
+                        Cancel
+                    </a>
+                    <button type="submit" class="btn btn-warning px-4 text-dark fw-bold">
+                        <i class="bi bi-check-lg me-2"></i>Update Vendor
+                    </button>
+                {% else %}
+                    <button type="submit" class="btn btn-brand px-4">
+                        <i class="bi bi-save me-2"></i>Save Vendor
+                    </button>
+                {% endif %}
+            </div>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="card rounded-xl shadow-sm">
+    <div class="card-header bg-transparent border-secondary py-3 d-flex flex-column flex-md-row align-items-center justify-content-between gap-3">
+      <h5 class="mb-0 text-white"><i class="bi bi-list-check me-2"></i>Vendor Directory</h5>
+      <form method="GET" class="d-flex gap-2 w-100 w-md-auto">
+        </form>
+    </div>
+
+    <div class="table-responsive">
+      <table class="table table-darkish table-hover align-middle mb-0">
+        <thead>
+           </thead>
+        <tbody>
+          {% for vendor in vendors %}
+          <tr class="{% if editing_vendor.id == vendor.id %}table-active border-warning{% endif %}">
+            <td class="ps-4">
+              <div class="fw-bold text-white">{{ vendor.name }}</div>
+              <div class="small text-secondary">{{ vendor.contact_person|default:"-" }}</div>
+            </td>
+            <td class="text-end pe-4">
+              <a href="{% url 'vendor_edit' vendor.id %}" class="btn btn-sm btn-ghost me-1" title="Edit">
+                <i class="bi bi-pencil"></i>
+              </a>
+            </td>
+          </tr>
+          {% empty %}
+            {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
