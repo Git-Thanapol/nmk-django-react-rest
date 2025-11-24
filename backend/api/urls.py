@@ -3,7 +3,8 @@ from . import views
 from django.contrib import admin
 
 urlpatterns = [
-    #path('admin/', admin.site.urls),
+
+    path('admin/', admin.site.urls, name='admin_home'),
     #path('api/user/register/', CreateUserView.as_view(), name='create_user'),
     path('notes/', views.NoteListCreateView.as_view(), name='note_list_create'),
     path('notes/<int:pk>/', views.NoteDeleteView.as_view(), name='note_delete'),

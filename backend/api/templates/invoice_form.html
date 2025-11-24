@@ -70,10 +70,11 @@
             <table class="table table-darkish table-bordered align-middle" id="itemsTable">
                 <thead>
                     <tr class="text-secondary small text-uppercase">
-                        <th style="width: 45%">Select Stock Batch (Product | PO | Stock)</th>
-                        <th style="width: 15%">Qty</th>
+                        <th style="width: 25%">Product</th>
+                        <th style="width: 30%">Batch / Serial (Optional)</th>
+                        <th style="width: 10%">Qty</th>
                         <th style="width: 15%">Unit Price</th>
-                        <th style="width: 20%" class="text-end">Total</th>
+                        <th style="width: 15%" class="text-end">Total</th>
                         <th style="width: 5%"></th>
                     </tr>
                 </thead>
@@ -82,30 +83,28 @@
                     <tr class="item-row">
                         {% for hidden in item_form.hidden_fields %}{{ hidden }}{% endfor %}
                         
-                        {% if item_form.errors %}
-                            <div class="position-absolute text-danger small mt-5">
-                                {{ item_form.errors.quantity }}
-                            </div>
-                        {% endif %}
+                        <td>{{ item_form.product }}</td>
 
                         <td>
-                            {{ item_form.purchase_item }}
-                            {% if item_form.instance.pk %}
-                                <div class="small text-muted mt-1">
-                                    Curr: {{ item_form.instance.product.name }} (Allocated: {{ item_form.instance.quantity }})
-                                </div>
-                            {% endif %}
+                            <select name="{{ item_form.purchase_item.html_name }}" class="form-select batch-select" id="{{ item_form.purchase_item.auto_id }}">
+                                <option value="">-- Auto-Assign (FIFO) --</option>
+                                {% for batch in item_form.fields.purchase_item.queryset %}
+                                    <option value="{{ batch.id }}" 
+                                            data-product-id="{{ batch.product.id }}"
+                                            data-price="{{ batch.product.selling_price }}"
+                                            {% if item_form.purchase_item.value|stringformat:"s" == batch.id|stringformat:"s" %}selected{% endif %}>
+                                        PO-{{ batch.purchase_order.po_number }} | Stock: {{ batch.remaining_quantity }}
+                                    </option>
+                                {% endfor %}
+                            </select>
                         </td>
+
                         <td>{{ item_form.quantity }}</td>
                         <td>{{ item_form.unit_price }}</td>
-                        <td class="text-end">
-                            <span class="row-total fw-bold font-monospace">0.00</span>
-                        </td>
+                        <td class="text-end"><span class="row-total fw-bold font-monospace">0.00</span></td>
                         <td class="text-center">
                             <div class="d-none">{{ item_form.DELETE }}</div> 
-                            <button type="button" class="btn btn-sm btn-outline-danger remove-row">
-                                <i class="bi bi-trash"></i>
-                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-danger remove-row"><i class="bi bi-trash"></i></button>
                         </td>
                     </tr>
                     {% endfor %}
@@ -197,19 +196,50 @@
 
 <table style="display:none;">
     <tr id="empty-row-template">
-        <td>{{ formset.empty_form.purchase_item }}</td>
+        {% for hidden in formset.empty_form.hidden_fields %}
+            {{ hidden }}
+        {% endfor %}
+
+        <td>
+            {{ formset.empty_form.product }}
+        </td>
+
+        <td>
+            <select name="{{ formset.empty_form.purchase_item.html_name }}" 
+                    class="form-select batch-select" 
+                    id="{{ formset.empty_form.purchase_item.auto_id }}">
+                <option value="">-- Auto-Assign (FIFO) --</option>
+                
+                {% for batch in formset.empty_form.fields.purchase_item.queryset %}
+                    <option value="{{ batch.id }}" 
+                            data-product-id="{{ batch.product.id }}"
+                            data-price="{{ batch.product.selling_price }}">
+                        PO-{{ batch.purchase_order.po_number }} | Stock: {{ batch.remaining_quantity }}
+                    </option>
+                {% endfor %}
+            </select>
+        </td>
+
         <td>{{ formset.empty_form.quantity }}</td>
+
         <td>{{ formset.empty_form.unit_price }}</td>
-        <td class="text-end"><span class="row-total fw-bold font-monospace">0.00</span></td>
+
+        <td class="text-end">
+            <span class="row-total fw-bold font-monospace">0.00</span>
+        </td>
+
         <td class="text-center">
             <div class="d-none">{{ formset.empty_form.DELETE }}</div>
-            <button type="button" class="btn btn-sm btn-outline-danger remove-row"><i class="bi bi-trash"></i></button>
+            <button type="button" class="btn btn-sm btn-outline-danger remove-row">
+                <i class="bi bi-trash"></i>
+            </button>
         </td>
     </tr>
 </table>
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    
     const tableBody = document.querySelector('#itemsTable tbody');
     const totalForms = document.getElementById('id_invoice_items-TOTAL_FORMS');
     const addRowBtn = document.getElementById('add-row');
@@ -219,31 +249,103 @@ document.addEventListener('DOMContentLoaded', function() {
     const taxPercentInput = document.getElementById('id_tax_percent');
     const shippingInput = document.getElementById('id_shipping_cost');
 
-    calculateAll();
+    // --- DEPENDENCY LOGIC ---
 
-    // Listeners
+    function filterBatches(row) {
+        const productSelect = row.querySelector('.product-select');
+        const batchSelect = row.querySelector('.batch-select');
+        
+        if (!productSelect || !batchSelect) return;
+
+        const selectedProductId = productSelect.value;
+
+        // Reset batch if it doesn't match the new product
+        const selectedOption = batchSelect.options[batchSelect.selectedIndex];
+        if (selectedOption && selectedOption.value !== "" && selectedOption.dataset.productId !== selectedProductId) {
+            batchSelect.value = "";
+        }
+
+        // Hide/Show options based on Product ID
+        Array.from(batchSelect.options).forEach(option => {
+            if (option.value === "") return; // Always keep the "Auto-Assign" option visible
+
+            if (option.dataset.productId === selectedProductId) {
+                option.style.display = 'block'; 
+                option.disabled = false;
+            } else {
+                option.style.display = 'none'; 
+                option.disabled = true; 
+            }
+        });
+    }
+
+    function updateProductFromBatch(row) {
+        const productSelect = row.querySelector('.product-select');
+        const batchSelect = row.querySelector('.batch-select');
+        const selectedOption = batchSelect.options[batchSelect.selectedIndex];
+        
+        if (selectedOption.value !== "") {
+            const associatedProductId = selectedOption.dataset.productId;
+            if (associatedProductId) {
+                productSelect.value = associatedProductId;
+                // Optional: Update Price
+                // const price = selectedOption.dataset.price;
+                // if(price) row.querySelector('.price').value = price;
+            }
+        }
+    }
+
+    // --- EVENT LISTENERS ---
+
+    // 1. Delegation for inputs (Calculations & Dependency)
+    tableBody.addEventListener('change', function(e) {
+        const row = e.target.closest('tr');
+        
+        // Dependency: Product Changed
+        if (e.target.classList.contains('product-select')) {
+            filterBatches(row);
+        }
+
+        // Dependency: Batch Changed
+        if (e.target.classList.contains('batch-select')) {
+            updateProductFromBatch(row);
+        }
+
+        // Calculations
+        calculateRow(row);
+        calculateAll();
+    });
+
     tableBody.addEventListener('input', function(e) {
         if (e.target.classList.contains('qty') || e.target.classList.contains('price')) {
-            calculateRow(e.target.closest('tr'));
+            const row = e.target.closest('tr');
+            calculateRow(row);
             calculateAll();
         }
     });
 
-    [taxCheck, taxPercentInput, shippingInput].forEach(el => {
-        el.addEventListener('input', calculateAll);
-        el.addEventListener('change', calculateAll);
-    });
-
+    // 2. Add New Row Logic
     addRowBtn.addEventListener('click', function() {
         const formIdx = totalForms.value;
         const emptyRow = document.getElementById('empty-row-template').cloneNode(true);
+        
+        // Regex to update indices
         emptyRow.innerHTML = emptyRow.innerHTML.replace(/__prefix__/g, formIdx);
         emptyRow.removeAttribute('id');
         emptyRow.classList.add('item-row');
+        
+        // Append to table
         tableBody.appendChild(emptyRow);
+        
+        // Update Total Forms count
         totalForms.value = parseInt(formIdx) + 1;
+
+        // CRITICAL: Initialize the new row's state
+        // This hides all batch options initially since no product is selected
+        filterBatches(emptyRow);
     });
 
+    // 3. Remove Row Logic
     tableBody.addEventListener('click', function(e) {
         if (e.target.closest('.remove-row')) {
             const row = e.target.closest('tr');
@@ -258,6 +360,14 @@ document.addEventListener('DOMContentLoaded', function() {
             calculateAll();
         }
     });
+
+    // 4. Totals Listeners
+    [taxCheck, taxPercentInput, shippingInput].forEach(el => {
+        el.addEventListener('input', calculateAll);
+        el.addEventListener('change', calculateAll);
+    });
+
+    // --- CALCULATION FUNCTIONS ---
 
     function calculateRow(row) {
         const qty = parseFloat(row.querySelector('.qty').value) || 0;
@@ -292,6 +402,14 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('displayTax').textContent = taxAmount.toFixed(2);
         document.getElementById('displayGrandTotal').textContent = grandTotal.toFixed(2);
     }
+
+    // --- INITIALIZATION ---
+    // Run filter on all existing rows (for Edit mode)
+    document.querySelectorAll('.item-row').forEach(row => {
+        filterBatches(row);
+        calculateRow(row);
+    });
+    calculateAll();
 });
 </script>
 {% endblock %}

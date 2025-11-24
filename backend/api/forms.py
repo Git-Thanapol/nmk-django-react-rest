@@ -190,16 +190,24 @@ class InvoiceItemCustomChoiceField(forms.ModelChoiceField):
         return f"{obj.product.name} | PO: {obj.purchase_order.po_number} | Stock: {obj.remaining_quantity} | Cost: {obj.unit_cost}"
 
 class InvoiceItemForm(forms.ModelForm):
-    # Replace standard select with our custom label field
-    purchase_item = InvoiceItemCustomChoiceField(
-        queryset=PurchaseItem.objects.none(), # Queryset set in __init__
-        widget=forms.Select(attrs={'class': 'form-select stock-select'}),
-        empty_label="Select Stock Batch..."
+    # 1. Product Field (User selects this first)
+    product = forms.ModelChoiceField(
+        queryset=Product.objects.filter(is_active=True),
+        widget=forms.Select(attrs={'class': 'form-select product-select'}),
+        required=True
+    )
+
+    # 2. Batch Field (Optional - filtered by JS)
+    purchase_item = forms.ModelChoiceField(
+        queryset=PurchaseItem.objects.filter(remaining_quantity__gt=0),
+        widget=forms.Select(attrs={'class': 'form-select batch-select'}),
+        required=False, # Allow blank (Backend will handle auto-assign)
+        empty_label="Auto-Assign (FIFO) or Select Batch"
     )
 
     class Meta:
         model = InvoiceItem
-        fields = ['purchase_item', 'quantity', 'unit_price']
+        fields = ['product', 'purchase_item', 'quantity', 'unit_price']
         widgets = {
             'quantity': forms.NumberInput(attrs={'class': 'form-control qty', 'min': '1'}),
             'unit_price': forms.NumberInput(attrs={'class': 'form-control price', 'step': '0.01'}),
@@ -208,17 +216,15 @@ class InvoiceItemForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         
-        # 1. Logic to filter dropdown: Show items with stock > 0
-        # If editing, we must ALSO include the currently selected item (even if stock is now 0)
-        stock_qs = PurchaseItem.objects.filter(remaining_quantity__gt=0).select_related('product', 'purchase_order')
-        
-        if self.instance.pk and self.instance.purchase_item:
-            # Add the current item back to the list so it doesn't disappear
-            current_item_qs = PurchaseItem.objects.filter(pk=self.instance.purchase_item.pk)
-            stock_qs = stock_qs | current_item_qs
-            
-        self.fields['purchase_item'].queryset = stock_qs.distinct().order_by('product__name')
+        # Optimization: Add data attributes to dropdown options for JS
+        # We need to tell the HTML which batch belongs to which product
+        if 'purchase_item' in self.fields:
+            # We iterate through the queryset to add custom attributes
+            # Note: This is a bit advanced, usually done in widget, 
+            # but for simplicity we will handle the mapping in the Template via a loop.
+            pass
 
+# The Formset remains the same
 InvoiceItemFormSet = inlineformset_factory(
     Invoice, 
     InvoiceItem, 

@@ -539,10 +539,11 @@ def invoice_view(request, pk=None):
                     invoice = form.save(commit=False)
                     if not is_editing:
                         invoice.created_by = request.user
-                        invoice.company = Company.objects.first()
+                        # Assign default company if not set
+                        invoice.company = Company.objects.first() 
                     invoice.save()
                     
-                    # 2. Process Items (Custom Logic for specific batches)
+                    # 2. Process Items
                     items = formset.save(commit=False)
                     
                     # A. Handle Deletions (Restore Stock)
@@ -554,34 +555,60 @@ def invoice_view(request, pk=None):
 
                     # B. Handle Updates/Inserts
                     for item in items:
-                        stock_batch = item.purchase_item
+                        selected_batch = item.purchase_item # Might be None (if user left blank)
+                        selected_product = item.product     # Always set (required by form)
                         
-                        # If editing, we need to revert the *original* quantity first to check math
-                        if item.pk:
-                            original_item = InvoiceItem.objects.get(pk=item.pk)
-                            # Restore original qty temporarily to calculate net change
-                            stock_batch.remaining_quantity += original_item.quantity
-                        
-                        # Check if enough stock exists in this specific batch
-                        if item.quantity > stock_batch.remaining_quantity:
-                            raise Exception(f"Not enough stock in batch {stock_batch}. Available: {stock_batch.remaining_quantity}")
-                        
-                        # Auto-assign product from the batch
-                        item.product = stock_batch.product
-                        
-                        # Deduct Stock
-                        stock_batch.remaining_quantity -= item.quantity
-                        stock_batch.save()
+                        # --- SCENARIO A: User left Batch BLANK (Auto-Assign FIFO) ---
+                        if not selected_batch:
+                            # Find oldest batch for this product with stock
+                            stock_batch = PurchaseItem.objects.filter(
+                                product=selected_product, 
+                                remaining_quantity__gt=0
+                            ).order_by('id').first()
+                            
+                            if not stock_batch:
+                                raise Exception(f"No stock available for Product: {selected_product.name}")
+                            
+                            # Check if that batch has enough for this requested amount
+                            if item.quantity > stock_batch.remaining_quantity:
+                                raise Exception(f"Auto-assign failed. Batch {stock_batch} only has {stock_batch.remaining_quantity} left, but you requested {item.quantity}.")
+                                
+                            item.purchase_item = stock_batch
+                            
+                        # --- SCENARIO B: User SELECTED a specific Batch ---
+                        else:
+                            # Integrity check: Does batch match product?
+                            if selected_batch.product != selected_product:
+                                raise Exception(f"Mismatch: Batch {selected_batch} does not belong to product {selected_product.name}")
+                            
+                            # If editing, we need to revert the *original* quantity first to check math
+                            # (Otherwise we might falsely flag "not enough stock")
+                            if item.pk:
+                                original_item = InvoiceItem.objects.get(pk=item.pk)
+                                # Only restore if the batch hasn't changed
+                                if original_item.purchase_item == selected_batch:
+                                    selected_batch.remaining_quantity += original_item.quantity
+
+                            if item.quantity > selected_batch.remaining_quantity:
+                                raise Exception(f"Not enough stock in selected batch {selected_batch}. Available: {selected_batch.remaining_quantity}")
+
+                            item.purchase_item = selected_batch
+
+                        # Deduct Stock & Save
+                        item.purchase_item.remaining_quantity -= item.quantity
+                        item.purchase_item.save()
                         
                         item.invoice = invoice
                         item.save()
                     
                     # 3. Final Totals
                     invoice.calculate_totals()
+                    
                     messages.success(request, "Invoice saved successfully.")
                     return redirect('invoice_list')
 
             except Exception as e:
+                # If anything fails, transaction rolls back automatically
                 messages.error(request, f"Error: {str(e)}")
         else:
             messages.error(request, "Please check the form for errors.")
@@ -591,9 +618,13 @@ def invoice_view(request, pk=None):
 
     # List View Logic
     invoices = Invoice.objects.all().order_by('-invoice_date')
+    
     if request.GET.get('q'):
         q = request.GET.get('q')
-        invoices = invoices.filter(Q(invoice_number__icontains=q) | Q(customer__name__icontains=q))
+        invoices = invoices.filter(
+            Q(invoice_number__icontains=q) | 
+            Q(customer__name__icontains=q)
+        )
 
     context = {
         'form': form,

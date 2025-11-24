@@ -87,7 +87,7 @@ class Customer(models.Model):
         return f"{self.name} ({self.company})"
 
 class Product(models.Model):
-    """Product/Item that can be purchased and sold"""
+    """Product/Item that can be purchased and sold (Your Master Data)"""
     PRODUCT_CATEGORIES = [
         ('SMARTPHONE', 'Smartphone'),
         ('ACCESSORY', 'Accessory'),
@@ -95,11 +95,11 @@ class Product(models.Model):
         ('OTHER', 'Other'),
     ]
     
-    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='products', null=True, blank=True)
+    # --- Your existing columns ---
+    company = models.ForeignKey('Company', on_delete=models.CASCADE, related_name='products', null=True, blank=True)
     sku = models.CharField(max_length=50)
-    name = models.CharField(max_length=200)
+    name = models.CharField(max_length=200) # The clean "Master Name"
     description = models.TextField(blank=True)
-    #category = models.CharField(max_length=20, choices=PRODUCT_CATEGORIES)
     category = models.CharField(max_length=100)
     cost_price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     selling_price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
@@ -112,19 +112,39 @@ class Product(models.Model):
     
     def __str__(self):
         return f"{self.sku} - {self.name} ({self.company})"
-    
+
     @property
     def current_stock(self):
         """Calculate current stock quantity"""
-        total_purchased = self.purchase_items.aggregate(
-            total=models.Sum('quantity')
-        )['total'] or 0
-        
-        total_sold = self.invoice_items.aggregate(
-            total=models.Sum('quantity')
-        )['total'] or 0
-        
+        total_purchased = self.purchase_items.aggregate(total=models.Sum('quantity'))['total'] or 0
+        total_sold = self.invoice_items.aggregate(total=models.Sum('quantity'))['total'] or 0
         return total_purchased - total_sold
+
+
+class ProductMapping(models.Model):
+    """
+    Maps external platform names to internal Products.
+    Example: "Airpods 4/07 (ANC)" -> Product ID 1 (AirPods 4)
+    """
+    PLATFORMS = [
+        ('SHOPEE', 'Shopee'),
+        ('LAZADA', 'Lazada'),
+        ('TIKTOK', 'TikTok'),
+        ('OTHER', 'Other'),
+    ]
+
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='mappings')
+    platform_name = models.CharField(max_length=500, db_index=True) # The messy name from Shopee/Lazada
+    platform = models.CharField(max_length=20, choices=PLATFORMS, default='OTHER')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'product_mappings'
+        # Ensure one platform name doesn't map to multiple internal products
+        unique_together = ['platform_name', 'platform'] 
+
+    def __str__(self):
+        return f"{self.platform}: {self.platform_name} -> {self.product.sku}"
 
 class PurchaseOrder(models.Model):
     """Purchase order from vendors"""
