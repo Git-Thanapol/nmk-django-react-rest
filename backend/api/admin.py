@@ -67,9 +67,9 @@ class PurchaseItemAdmin(admin.ModelAdmin):
 
 @admin.register(Invoice)
 class InvoiceAdmin(admin.ModelAdmin):
-    list_display = ['invoice_number', 'company', 'customer', 'invoice_date', 'selling_channel', 'status', 'total_amount','tax_sequence_number','platform_tracking_number','platform_order_id','saleperson']
+    list_display = ['invoice_number', 'company', 'customer', 'invoice_date', 'platform_name', 'status', 'grand_total','tax_sequence_number','platform_tracking_number','platform_order_id','saleperson']
     search_fields = ['tax_sequence_number','platform_tracking_number','platform_order_id','invoice_number', 'customer__name']
-    list_filter = ['company', 'selling_channel', 'status', 'invoice_date']
+    list_filter = ['company', 'platform_name', 'status', 'invoice_date']
     date_hierarchy = 'invoice_date'
 
 @admin.register(InvoiceItem)

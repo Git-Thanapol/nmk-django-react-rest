@@ -111,7 +111,11 @@
           >
             <i class="bi bi-gear me-2"></i>Administrator Settings
           </a>
-          <a class="nav-link" href="platforms.html">
+
+          <a 
+            class="nav-link {% if request.path == '/import/platforms/' %}active{% endif %}"
+            href="{% url 'platform_import' %}"
+          >
             <i class="bi bi-layers me-2"></i>Platforms
           </a>
 

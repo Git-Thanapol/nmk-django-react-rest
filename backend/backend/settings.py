@@ -147,6 +147,7 @@ STATIC_URL = 'static/'
 import os
 STATICFILES_DIRS = [
     os.path.join(BASE_DIR, 'static'),
+    os.path.join(BASE_DIR, 'api/static'),
 ]
 
 # Default primary key field type

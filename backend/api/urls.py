@@ -44,6 +44,9 @@ urlpatterns = [
     path('transactions/', views.transaction_view, name='transaction_list'),
     path('transactions/edit/<int:pk>/', views.transaction_view, name='transaction_edit'),
 
+    # Platform Import
+    path('import/platforms/', views.platform_import_view, name='platform_import'),
+
     # Help Page
     path('help/', views.help, name='help'),
 ]

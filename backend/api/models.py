@@ -242,44 +242,53 @@ class PurchaseItem(models.Model):
         """Get available quantity for selling"""
         return self.remaining_quantity
 
+
 class Invoice(models.Model):
-    """Sales invoice to customers"""
-    SELLING_CHANNELS = [
-        ('OFFLINE', 'Offline Store'),
-        ('TIKTOK', 'TikTok Shop'),
-        ('SHOPEE', 'Shopee'),
-        ('LAZADA', 'Lazada'),
-    ]
-    
+    """Sales Invoice with platform integration fields"""
     STATUS_CHOICES = [
-        ('DRAFT', 'Draft'),
-        ('PAID', 'Paid'),
-        ('SHIPPED', 'Shipped'),
-        ('DELIVERED', 'Delivered'),
-        ('CANCELLED', 'Cancelled'),
+        ('DRAFT', 'แบบร่าง'),
+        ('BILLED', 'ออกใบกำกับภาษีแล้ว'),
+        ('CANCELLED', 'ยกเลิก'),
     ]
     
-    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='invoices', null=True, blank=True)
-    invoice_number = models.CharField(max_length=50)
-    customer = models.ForeignKey(Customer, on_delete=models.PROTECT, related_name='invoices')
-    invoice_date = models.DateField(default=timezone.now)
-    selling_channel = models.ForeignKey(SellingChannel, on_delete=models.PROTECT, default=1) # Default to 'OFFLINE'
-    platform_order_id = models.CharField(max_length=100, blank=True)  # For online platforms
-    platform_tracking_number = models.CharField(max_length=100, blank=True)  # For online platforms
+    # Identifiers
+    invoice_number = models.CharField(max_length=50) # Unique per company
+    company = models.ForeignKey('Company', on_delete=models.CASCADE, related_name='invoices', null=True, blank=True)    
+    
+    # Customer - Nullable for high volume platform imports
+    customer = models.ForeignKey('Customer', on_delete=models.PROTECT, related_name='invoices', null=True, blank=True)
+    
+    invoice_date = models.DateField(default=timezone.now)      
     tax_sequence_number = models.CharField(max_length=100, blank=True, null=True)
     saleperson = models.CharField(max_length=100, blank=True)
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='DRAFT')
-    subtotal = models.DecimalField(max_digits=12, decimal_places=2, default=0)
-    discount_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
-    tax_percent = models.DecimalField(max_digits=5, decimal_places=2, default=7)  # Default 7% VAT
+    status = models.CharField(max_length=100, default='DRAFT') 
+
+    # Financials
     tax_include = models.BooleanField(default=True)
-    tax_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    tax_percent = models.DecimalField(max_digits=5, decimal_places=2, default=7)  
+    tax_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)    
+
+    subtotal = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    discount_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)    
     shipping_cost = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    total_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    
+    # Renamed from total_amount
+    grand_total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+
     notes = models.TextField(blank=True, null=True)
     created_by = models.ForeignKey('auth.User', on_delete=models.PROTECT)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    # Platform Fields
+    platform_name = models.CharField(max_length=100, blank=True) 
+    platform_order_id = models.CharField(max_length=100, blank=True) 
+    platform_order_status = models.CharField(max_length=100, blank=True) 
+    platform_tracking_number = models.CharField(max_length=100, blank=True) 
+    recipient_name = models.CharField(max_length=200, blank=True)
+    recipient_phone = models.CharField(max_length=20, blank=True)
+    recipient_address = models.TextField(blank=True)
+    warehouse_name = models.CharField(max_length=100, blank=True) 
     
     class Meta:
         db_table = 'invoices'
@@ -290,17 +299,30 @@ class Invoice(models.Model):
         return f"INV-{self.invoice_number} ({self.company})"
     
     def calculate_totals(self):
-        """Calculate invoice totals from items"""
+        """
+        Standard calculation logic for MANUAL inputs.
+        Import logic bypasses this.
+        """
         from .models import InvoiceItem
         items = InvoiceItem.objects.filter(invoice=self)
         self.subtotal = sum(item.total_price for item in items)
-        # 7% VAT for Thailand
+
         if self.tax_include:
+            # Reverse Calc: Tax = Subtotal - (Subtotal / 1.07)
             self.tax_amount = self.subtotal - (self.subtotal / (1 + self.tax_percent / 100))
         else:
+            # Forward Calc
             self.tax_amount = self.subtotal * (self.tax_percent / 100)
 
-        self.total_amount = self.subtotal + self.tax_amount + self.shipping_cost
+        # Logic for manual input: Grand Total = Subtotal + Tax (if excluded) + Shipping
+        # If included, Subtotal already has tax, so we just add shipping? 
+        # Usually for manual entry:
+        if self.tax_include:
+             # Subtotal acts as the base with tax, we just add shipping
+            self.grand_total = self.subtotal + self.shipping_cost - self.discount_amount
+        else:
+            self.grand_total = self.subtotal + self.tax_amount + self.shipping_cost - self.discount_amount
+            
         self.save()
     
     def get_item_count(self):
@@ -322,8 +344,11 @@ class Invoice(models.Model):
 class InvoiceItem(models.Model):
     """Individual items in an invoice with purchase item tracking"""
     invoice = models.ForeignKey(Invoice, on_delete=models.CASCADE, related_name='invoice_items')
-    product = models.ForeignKey(Product, on_delete=models.PROTECT)
-    purchase_item = models.ForeignKey(PurchaseItem, on_delete=models.PROTECT, related_name='invoice_items')
+    product = models.ForeignKey(Product, on_delete=models.PROTECT, null=True, blank=True)
+    purchase_item = models.ForeignKey(PurchaseItem, on_delete=models.PROTECT, related_name='invoice_items', null=True, blank=True)
+
+    sku = models.CharField(max_length=100, blank=True)  # Store platform SKU/name for reference
+    item_name = models.TextField(blank=True)    
     quantity = models.PositiveIntegerField(validators=[MinValueValidator(1)])
     unit_price = models.DecimalField(max_digits=10, decimal_places=2)
     total_price = models.DecimalField(max_digits=12, decimal_places=2, editable=False)
@@ -344,38 +369,44 @@ class InvoiceItem(models.Model):
             )
     
     def save(self, *args, **kwargs):
-        # Calculate total price
+        # 1. Ensure total_price is set (vital for manual saves)
         self.total_price = self.quantity * self.unit_price
         
-        # Validate before saving
+        # 2. Validate
         self.clean()
         
-        super().save(*args, **kwargs)
-        
-        # Update purchase item remaining quantity
-        if self.purchase_item:
+        # 3. STOCK LOGIC WARNING: 
+        # Ideally, move stock deduction to a Signal or Service. 
+        # Kept here as requested, but added a check to prevent crash if purchase_item is None.
+        if self.pk is None and self.purchase_item:
+            # Only deduct on CREATE (pk is None), not on every update.
+            # This prevents double-deduction on simple edits, though it prevents 
+            # adjusting stock if you change quantity later.
             self.purchase_item.remaining_quantity -= self.quantity
             self.purchase_item.save()
+
+        super().save(*args, **kwargs)
         
-        # Update invoice totals
+        # 4. Trigger Parent Update
         self.invoice.calculate_totals()
-    
+
+    # --- SAFE PROPERTIES ---
     @property
     def unit_cost(self):
-        """Get cost from the linked purchase item"""
-        return self.purchase_item.unit_cost
-    
+        if self.purchase_item:
+            return self.purchase_item.unit_cost
+        return 0 # Or Decimal(0)
+
     @property
     def total_cost(self):
         return self.quantity * self.unit_cost
-    
+
     @property
     def profit(self):
         return self.total_price - self.total_cost
-    
+
     @property
     def profit_margin_percentage(self):
-        """Calculate profit margin percentage"""
         if self.total_price > 0:
             return (self.profit / self.total_price) * 100
         return 0

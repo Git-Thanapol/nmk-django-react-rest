@@ -1,6 +1,7 @@
 from django import forms
 from django.forms import inlineformset_factory
 from .models import Customer, Vendor, Product, Transaction,PurchaseOrder, PurchaseItem, Product, Invoice, InvoiceItem
+from django.core.validators import FileExtensionValidator
 
 class CustomerForm(forms.ModelForm):
     class Meta:
@@ -163,13 +164,13 @@ PurchaseItemFormSet = inlineformset_factory(
 class InvoiceForm(forms.ModelForm):
     class Meta:
         model = Invoice
-        fields = ['invoice_number', 'customer', 'invoice_date', 'selling_channel', 
+        fields = ['invoice_number', 'customer', 'invoice_date', 'platform_name', 
                   'status', 'tax_include', 'tax_percent', 'shipping_cost', 'notes']
         widgets = {
             'invoice_number': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'INV-2024-XXXX'}),
             'customer': forms.Select(attrs={'class': 'form-select'}),
             'invoice_date': forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}),
-            'selling_channel': forms.Select(attrs={'class': 'form-select'}),
+            'platform_name': forms.Select(attrs={'class': 'form-select'}),
             'status': forms.Select(attrs={'class': 'form-select'}),
             'tax_include': forms.CheckboxInput(attrs={'class': 'form-check-input', 'id': 'id_tax_include'}),
             'tax_percent': forms.NumberInput(attrs={'class': 'form-control', 'id': 'id_tax_percent', 'step': '0.01'}),
@@ -232,3 +233,14 @@ InvoiceItemFormSet = inlineformset_factory(
     extra=1, 
     can_delete=True
 )
+
+
+class ImportFileForm(forms.Form):
+    import_file = forms.FileField(
+        label="Select Data File",
+        help_text="Supported formats: .csv, .xlsx, .xls",
+        validators=[FileExtensionValidator(allowed_extensions=['csv', 'xlsx', 'xls'])],
+        widget=forms.FileInput(attrs={'class': 'form-control', 'accept': '.csv, .xlsx, .xls'})
+    )
+    # Hidden field to track which platform is being imported
+    platform = forms.CharField(widget=forms.HiddenInput(), initial='tiktok')

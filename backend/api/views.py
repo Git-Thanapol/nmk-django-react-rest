@@ -4,14 +4,14 @@ from rest_framework import generics
 from .serializers import UserSerializer, NoteSerializer
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from .models import Note, Customer, Company, Vendor, Product, Transaction, PurchaseOrder, PurchaseItem,Invoice, InvoiceItem
-from .forms import CustomerForm, VendorForm, ProductForm, TransactionForm, PurchaseOrderForm, PurchaseItemFormSet,InvoiceForm, InvoiceItemFormSet
+from .forms import CustomerForm, VendorForm, ProductForm, TransactionForm, PurchaseOrderForm, PurchaseItemFormSet,InvoiceForm, InvoiceItemFormSet, ImportFileForm
 from django.db import transaction
 from django.db.models import Q
 from django import forms
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
-
+from .utils_import import process_tiktok_orders, import_tiktok_invoices
 
 class NoteListCreateView(generics.ListCreateAPIView):
     queryset = Note.objects.all()
@@ -634,3 +634,66 @@ def invoice_view(request, pk=None):
         'editing_invoice': invoice_instance
     }
     return render(request, 'invoice_form.html', context)
+
+
+#@login_required
+def platform_import_view(request):
+    # Context for the template
+    context = {
+        'page_title': 'Platform Data Import',
+        'form': ImportFileForm()
+    }
+
+    if request.method == 'POST':
+        form = ImportFileForm(request.POST, request.FILES)
+        
+        if form.is_valid():
+            uploaded_file = request.FILES['import_file']
+            platform = form.cleaned_data['platform']
+            
+            # --- TIKTOK IMPORT LOGIC ---
+            if platform == 'tiktok':
+                try:
+                    # 1. Save file temporarily to disk so Pandas can read it
+                    # (Pandas can read directly from memory, but saving is safer for large files/debugging)
+                    import os
+                    from django.core.files.storage import FileSystemStorage
+                    
+                    fs = FileSystemStorage()
+                    filename = fs.save(f"temp_{uploaded_file.name}", uploaded_file)
+                    file_path = fs.path(filename)
+                    
+                    # 2. Process Data (The function we wrote earlier)
+                    # This returns TWO dataframes
+                    header_df, items_df = process_tiktok_orders(file_path)
+                    
+                    # 3. Import to Database (The function we wrote earlier)
+                    # Hardcoding Company ID 1 for now, or get from request.user.company if you have that logic
+                    company_id = 1 
+                    result = import_tiktok_invoices(header_df, items_df, company_id, request.user.id)
+                    
+                    # 4. Clean up temp file
+                    os.remove(file_path)
+
+                    # 5. User Feedback
+                    if result['status'] == 'completed':
+                        msg = f"Import Successful! Imported {result['imported']} orders. Failed: {result['failed']}."
+                        if result['failed'] > 0:
+                            msg += f" First error: {result['error_log'][0]}"
+                        messages.success(request, msg)
+                    else:
+                        messages.error(request, f"Import Error: {result['message']}")
+
+                except Exception as e:
+                    messages.error(request, f"Critical Error during processing: {str(e)}")
+            
+            # --- OTHER PLATFORMS (Mockup) ---
+            else:
+                messages.warning(request, f"Import for {platform} is coming soon!")
+                
+            return redirect('platform_import') # Redirect back to clear form
+            
+        else:
+            messages.error(request, "Invalid file format. Please check your selection.")
+
+    return render(request, 'platforms.html', context)
