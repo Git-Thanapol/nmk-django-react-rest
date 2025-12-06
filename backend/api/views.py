@@ -3,15 +3,18 @@ from django.contrib.auth.models import User
 from rest_framework import generics
 from .serializers import UserSerializer, NoteSerializer
 from rest_framework.permissions import IsAuthenticated, AllowAny
-from .models import Note, Customer, Company, Vendor, Product, Transaction, PurchaseOrder, PurchaseItem,Invoice, InvoiceItem
+from .models import Note, Customer, Company, Vendor, Product, Transaction, PurchaseOrder, PurchaseItem,Invoice, InvoiceItem,ProductAlias
 from .forms import CustomerForm, VendorForm, ProductForm, TransactionForm, PurchaseOrderForm, PurchaseItemFormSet,InvoiceForm, InvoiceItemFormSet, ImportFileForm
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Q,Count
 from django import forms
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
-from .utils_import import process_tiktok_orders, import_tiktok_invoices
+from .utils_import_core import universal_invoice_import
+from .utils_processors import process_tiktok_orders, process_shopee_orders
+import os
+from django.core.files.storage import FileSystemStorage
 
 class NoteListCreateView(generics.ListCreateAPIView):
     queryset = Note.objects.all()
@@ -520,7 +523,127 @@ def purchase_order_view(request, pk=None):
 
 
 #@login_required
+# def invoice_view(request, pk=None):
+#     if pk:
+#         invoice_instance = get_object_or_404(Invoice, pk=pk)
+#         is_editing = True
+#     else:
+#         invoice_instance = None
+#         is_editing = False
+
+#     if request.method == 'POST':
+#         form = InvoiceForm(request.POST, instance=invoice_instance)
+#         formset = InvoiceItemFormSet(request.POST, instance=invoice_instance)
+        
+#         if form.is_valid() and formset.is_valid():
+#             try:
+#                 with transaction.atomic():
+#                     # 1. Save Header
+#                     invoice = form.save(commit=False)
+#                     if not is_editing:
+#                         invoice.created_by = request.user
+#                         # Assign default company if not set
+#                         invoice.company = Company.objects.first() 
+#                     invoice.save()
+                    
+#                     # 2. Process Items
+#                     items = formset.save(commit=False)
+                    
+#                     # A. Handle Deletions (Restore Stock)
+#                     for obj in formset.deleted_objects:
+#                         if obj.purchase_item:
+#                             obj.purchase_item.remaining_quantity += obj.quantity
+#                             obj.purchase_item.save()
+#                         obj.delete()
+
+#                     # B. Handle Updates/Inserts
+#                     for item in items:
+#                         selected_batch = item.purchase_item # Might be None (if user left blank)
+#                         selected_product = item.product     # Always set (required by form)
+                        
+#                         # --- SCENARIO A: User left Batch BLANK (Auto-Assign FIFO) ---
+#                         if not selected_batch:
+#                             # Find oldest batch for this product with stock
+#                             stock_batch = PurchaseItem.objects.filter(
+#                                 product=selected_product, 
+#                                 remaining_quantity__gt=0
+#                             ).order_by('id').first()
+                            
+#                             if not stock_batch:
+#                                 raise Exception(f"No stock available for Product: {selected_product.name}")
+                            
+#                             # Check if that batch has enough for this requested amount
+#                             if item.quantity > stock_batch.remaining_quantity:
+#                                 raise Exception(f"Auto-assign failed. Batch {stock_batch} only has {stock_batch.remaining_quantity} left, but you requested {item.quantity}.")
+                                
+#                             item.purchase_item = stock_batch
+                            
+#                         # --- SCENARIO B: User SELECTED a specific Batch ---
+#                         else:
+#                             # Integrity check: Does batch match product?
+#                             if selected_batch.product != selected_product:
+#                                 raise Exception(f"Mismatch: Batch {selected_batch} does not belong to product {selected_product.name}")
+                            
+#                             # If editing, we need to revert the *original* quantity first to check math
+#                             # (Otherwise we might falsely flag "not enough stock")
+#                             if item.pk:
+#                                 original_item = InvoiceItem.objects.get(pk=item.pk)
+#                                 # Only restore if the batch hasn't changed
+#                                 if original_item.purchase_item == selected_batch:
+#                                     selected_batch.remaining_quantity += original_item.quantity
+
+#                             if item.quantity > selected_batch.remaining_quantity:
+#                                 raise Exception(f"Not enough stock in selected batch {selected_batch}. Available: {selected_batch.remaining_quantity}")
+
+#                             item.purchase_item = selected_batch
+
+#                         # Deduct Stock & Save
+#                         item.purchase_item.remaining_quantity -= item.quantity
+#                         item.purchase_item.save()
+                        
+#                         item.invoice = invoice
+#                         item.save()
+                    
+#                     # 3. Final Totals
+#                     invoice.calculate_totals()
+                    
+#                     messages.success(request, "Invoice saved successfully.")
+#                     return redirect('invoice_list')
+
+#             except Exception as e:
+#                 # If anything fails, transaction rolls back automatically
+#                 messages.error(request, f"Error: {str(e)}")
+#         else:
+#             messages.error(request, "Please check the form for errors.")
+#     else:
+#         form = InvoiceForm(instance=invoice_instance)
+#         formset = InvoiceItemFormSet(instance=invoice_instance)
+
+#     # List View Logic
+#     invoices = Invoice.objects.all().order_by('-invoice_date')
+    
+#     if request.GET.get('q'):
+#         q = request.GET.get('q')
+#         invoices = invoices.filter(
+#             Q(invoice_number__icontains=q) | 
+#             Q(customer__name__icontains=q)
+#         )
+
+#     context = {
+#         'form': form,
+#         'formset': formset,
+#         'invoices': invoices,
+#         'is_editing': is_editing,
+#         'editing_invoice': invoice_instance
+#     }
+#     return render(request, 'invoice_form.html', context)
+
 def invoice_view(request, pk=None):
+    """
+    Combined List + Create + Edit View.
+    Handles complex Stock Logic (FIFO, Manual Batch, Restore on Edit).
+    """
+    # 1. Determine Mode (Create vs Edit)
     if pk:
         invoice_instance = get_object_or_404(Invoice, pk=pk)
         is_editing = True
@@ -528,6 +651,7 @@ def invoice_view(request, pk=None):
         invoice_instance = None
         is_editing = False
 
+    # 2. Handle Form Submission
     if request.method == 'POST':
         form = InvoiceForm(request.POST, instance=invoice_instance)
         formset = InvoiceItemFormSet(request.POST, instance=invoice_instance)
@@ -535,30 +659,31 @@ def invoice_view(request, pk=None):
         if form.is_valid() and formset.is_valid():
             try:
                 with transaction.atomic():
-                    # 1. Save Header
+                    # --- A. Save Header ---
                     invoice = form.save(commit=False)
                     if not is_editing:
                         invoice.created_by = request.user
                         # Assign default company if not set
-                        invoice.company = Company.objects.first() 
+                        if not invoice.company:
+                            invoice.company = Company.objects.first() 
                     invoice.save()
                     
-                    # 2. Process Items
+                    # --- B. Process Items (The "Service" Layer Logic) ---
                     items = formset.save(commit=False)
                     
-                    # A. Handle Deletions (Restore Stock)
+                    # B1. Handle Deletions (Restore Stock)
                     for obj in formset.deleted_objects:
                         if obj.purchase_item:
                             obj.purchase_item.remaining_quantity += obj.quantity
                             obj.purchase_item.save()
                         obj.delete()
 
-                    # B. Handle Updates/Inserts
+                    # B2. Handle Updates/Inserts
                     for item in items:
                         selected_batch = item.purchase_item # Might be None (if user left blank)
                         selected_product = item.product     # Always set (required by form)
                         
-                        # --- SCENARIO A: User left Batch BLANK (Auto-Assign FIFO) ---
+                        # --- SCENARIO 1: User left Batch BLANK (Auto-Assign FIFO) ---
                         if not selected_batch:
                             # Find oldest batch for this product with stock
                             stock_batch = PurchaseItem.objects.filter(
@@ -569,23 +694,22 @@ def invoice_view(request, pk=None):
                             if not stock_batch:
                                 raise Exception(f"No stock available for Product: {selected_product.name}")
                             
-                            # Check if that batch has enough for this requested amount
+                            # Check if that batch has enough
                             if item.quantity > stock_batch.remaining_quantity:
                                 raise Exception(f"Auto-assign failed. Batch {stock_batch} only has {stock_batch.remaining_quantity} left, but you requested {item.quantity}.")
                                 
                             item.purchase_item = stock_batch
                             
-                        # --- SCENARIO B: User SELECTED a specific Batch ---
+                        # --- SCENARIO 2: User SELECTED a specific Batch ---
                         else:
                             # Integrity check: Does batch match product?
                             if selected_batch.product != selected_product:
                                 raise Exception(f"Mismatch: Batch {selected_batch} does not belong to product {selected_product.name}")
                             
                             # If editing, we need to revert the *original* quantity first to check math
-                            # (Otherwise we might falsely flag "not enough stock")
                             if item.pk:
                                 original_item = InvoiceItem.objects.get(pk=item.pk)
-                                # Only restore if the batch hasn't changed
+                                # Only restore if the batch hasn't changed (or logic gets too complex)
                                 if original_item.purchase_item == selected_batch:
                                     selected_batch.remaining_quantity += original_item.quantity
 
@@ -594,51 +718,118 @@ def invoice_view(request, pk=None):
 
                             item.purchase_item = selected_batch
 
-                        # Deduct Stock & Save
+                        # --- C. Deduct Stock & Save ---
+                        # Note: Ensure InvoiceItem.save() in models.py DOES NOT deduct stock again.
                         item.purchase_item.remaining_quantity -= item.quantity
                         item.purchase_item.save()
                         
                         item.invoice = invoice
-                        item.save()
+                        item.save() # This triggers calculate_totals via Model, but that's fine.
                     
-                    # 3. Final Totals
+                    # --- D. Final Totals ---
                     invoice.calculate_totals()
                     
                     messages.success(request, "Invoice saved successfully.")
-                    return redirect('invoice_list')
+                    return redirect('invoice_list') # Redirect to clear POST data
 
             except Exception as e:
                 # If anything fails, transaction rolls back automatically
                 messages.error(request, f"Error: {str(e)}")
         else:
             messages.error(request, "Please check the form for errors.")
+    
+    # 3. Handle GET Request (Display Form)
     else:
         form = InvoiceForm(instance=invoice_instance)
         formset = InvoiceItemFormSet(instance=invoice_instance)
 
-    # List View Logic
-    invoices = Invoice.objects.all().order_by('-invoice_date')
+    # 4. Fetch Recent Data for the Table
+    # Optimized with select_related to prevent N+1 queries on Customer
+    invoices = Invoice.objects.select_related('customer').order_by('-invoice_date', '-created_at')
     
+    # Optional Server-Side Search (in addition to JS filter)
     if request.GET.get('q'):
         q = request.GET.get('q')
         invoices = invoices.filter(
             Q(invoice_number__icontains=q) | 
             Q(customer__name__icontains=q)
         )
+    
+    # Limit to last 1000 for performance
+    invoices = invoices[:1000]
+    # get second element (display labels) from STATUS_CHOICES
+    schoices = [label for _, label in Invoice.STATUS_CHOICES]
 
     context = {
         'form': form,
         'formset': formset,
         'invoices': invoices,
         'is_editing': is_editing,
-        'editing_invoice': invoice_instance
+        'editing_invoice': invoice_instance,
+        'status_choices': [1,2,3]
     }
     return render(request, 'invoice_form.html', context)
 
 
+# @login_required
+# def platform_import_view(request):
+#     """
+#     View for importing TikTok/Shopee data via CSV.
+#     """
+#     context = {
+#         'page_title': 'Platform Data Import',
+#         'form': ImportFileForm()
+#     }
+
+#     if request.method == 'POST':
+#         form = ImportFileForm(request.POST, request.FILES)
+        
+#         if form.is_valid():
+#             uploaded_file = request.FILES['import_file']
+#             platform = form.cleaned_data['platform']
+            
+#             if platform == 'tiktok':
+#                 try:
+#                     # Save temp file
+#                     fs = FileSystemStorage()
+#                     filename = fs.save(f"temp_{uploaded_file.name}", uploaded_file)
+#                     file_path = fs.path(filename)
+                    
+#                     # Process & Import
+#                     # 1. Parse CSV/Excel
+#                     header_df, items_df = process_tiktok_orders(file_path)
+                    
+#                     # 2. Save to DB
+#                     # TODO: Make company dynamic based on user profile
+#                     company_id = 1 
+#                     result = import_tiktok_invoices(header_df, items_df, company_id, request.user.id)
+                    
+#                     # Cleanup
+#                     os.remove(file_path)
+
+#                     if result['status'] == 'completed':
+#                         msg = f"Import Successful! Imported {result['imported']} orders. Failed: {result['failed']}."
+#                         if result['failed'] > 0:
+#                             msg += f" First error: {result['error_log'][0]}"
+#                         messages.success(request, msg)
+#                     else:
+#                         messages.error(request, f"Import Error: {result['message']}")
+
+#                 except Exception as e:
+#                     messages.error(request, f"Critical Error: {str(e)}")
+            
+#             else:
+#                 messages.warning(request, f"Import for {platform} is coming soon!")
+                
+#             return redirect('platform_import')
+            
+#         else:
+#             messages.error(request, "Invalid file format.")
+
+#     return render(request, 'platforms.html', context)
+
 #@login_required
 def platform_import_view(request):
-    # Context for the template
     context = {
         'page_title': 'Platform Data Import',
         'form': ImportFileForm()
@@ -651,31 +842,51 @@ def platform_import_view(request):
             uploaded_file = request.FILES['import_file']
             platform = form.cleaned_data['platform']
             
-            # --- TIKTOK IMPORT LOGIC ---
-            if platform == 'tiktok':
-                try:
-                    # 1. Save file temporarily to disk so Pandas can read it
-                    # (Pandas can read directly from memory, but saving is safer for large files/debugging)
-                    import os
-                    from django.core.files.storage import FileSystemStorage
-                    
-                    fs = FileSystemStorage()
-                    filename = fs.save(f"temp_{uploaded_file.name}", uploaded_file)
-                    file_path = fs.path(filename)
-                    
-                    # 2. Process Data (The function we wrote earlier)
-                    # This returns TWO dataframes
-                    header_df, items_df = process_tiktok_orders(file_path)
-                    
-                    # 3. Import to Database (The function we wrote earlier)
-                    # Hardcoding Company ID 1 for now, or get from request.user.company if you have that logic
-                    company_id = 1 
-                    result = import_tiktok_invoices(header_df, items_df, company_id, request.user.id)
-                    
-                    # 4. Clean up temp file
-                    os.remove(file_path)
+            # --- 1. SAVE FILE TEMPORARILY ---
+            # We must save to disk first because pandas needs a file path
+            try:
+                fs = FileSystemStorage()
+                # Clean filename to avoid OS issues
+                clean_name = f"temp_{platform}_{uploaded_file.name.replace(' ', '_')}"
+                filename = fs.save(clean_name, uploaded_file)
+                file_path = fs.path(filename)
+            except Exception as e:
+                messages.error(request, f"File upload failed: {str(e)}")
+                return redirect('platform_import')
 
-                    # 5. User Feedback
+            # --- 2. PROCESS & IMPORT ---
+            try:
+                header_df = None
+                items_df = None
+                company_id = 1 # TODO: Make dynamic e.g. request.user.company_id
+
+                # A. Select Processor based on Platform
+                if platform == 'tiktok':
+                    header_df, items_df = process_tiktok_orders(file_path)
+                    target_platform_name = 'TikTok Shop'
+                    
+                elif platform == 'shopee':
+                    header_df, items_df = process_shopee_orders(file_path)
+                    target_platform_name = 'Shopee'
+                
+                # elif platform == 'lazada':
+                #     header_df, items_df = process_lazada_orders(file_path)
+                #     target_platform_name = 'Lazada'
+
+                else:
+                    raise ValueError(f"Platform '{platform}' is not yet supported.")
+
+                # B. Run Universal Import
+                if header_df is not None and items_df is not None:
+                    result = universal_invoice_import(
+                        header_df, 
+                        items_df, 
+                        company_id, 
+                        request.user.id, 
+                        platform_name=target_platform_name
+                    )
+
+                    # C. Feedback
                     if result['status'] == 'completed':
                         msg = f"Import Successful! Imported {result['imported']} orders. Failed: {result['failed']}."
                         if result['failed'] > 0:
@@ -683,17 +894,66 @@ def platform_import_view(request):
                         messages.success(request, msg)
                     else:
                         messages.error(request, f"Import Error: {result['message']}")
+                else:
+                    messages.error(request, "Data Processing returned empty results.")
 
-                except Exception as e:
-                    messages.error(request, f"Critical Error during processing: {str(e)}")
+            except Exception as e:
+                # Catch processing errors (e.g. wrong columns in CSV)
+                messages.error(request, f"Processing Error: {str(e)}")
+
+            finally:
+                # --- 3. CLEANUP ---
+                # Always remove the temp file, even if import fails
+                if os.path.exists(file_path):
+                    os.remove(file_path)
             
-            # --- OTHER PLATFORMS (Mockup) ---
-            else:
-                messages.warning(request, f"Import for {platform} is coming soon!")
-                
-            return redirect('platform_import') # Redirect back to clear form
-            
+            return redirect('platform_import')
+
         else:
-            messages.error(request, "Invalid file format. Please check your selection.")
+            messages.error(request, "Invalid form submission. Please check your file type.")
 
     return render(request, 'platforms.html', context)
+
+
+#@login_required
+def product_mapping_view(request):
+    """
+    Dashboard to map Unknown External Keys to Internal Products.
+    """
+    # 1. Handle Mapping Submission
+    if request.method == 'POST':
+        external_key = request.POST.get('external_key')
+        internal_product_id = request.POST.get('product_id')
+        
+        if external_key and internal_product_id:
+            product = Product.objects.get(id=internal_product_id)
+            
+            # A. Create the Alias (Future proofing)
+            ProductAlias.objects.get_or_create(
+                external_key=external_key,
+                defaults={'product': product}
+            )
+            
+            # B. Retroactively Fix Existing InvoiceItems
+            # Find all items with this SKU string that have NO product yet
+            InvoiceItem.objects.filter(sku=external_key, product__isnull=True).update(product=product)
+            
+            messages.success(request, f"Mapped '{external_key}' to '{product.name}' successfully.")
+            return redirect('product_mapping')
+
+    # 2. Find Unmapped Items
+    # Group by 'sku' (which holds our External Key) and count occurences
+    unmapped_groups = InvoiceItem.objects.filter(product__isnull=True) \
+        .values('sku', 'item_name') \
+        .annotate(count=Count('id')) \
+        .order_by('-count')\
+        [:20]
+
+    # Get all active products for the dropdown
+    products = Product.objects.filter(is_active=True)
+
+    context = {
+        'unmapped_items': unmapped_groups,
+        'products': products
+    }
+    return render(request, 'product_mapping.html', context)

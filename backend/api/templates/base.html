@@ -119,6 +119,13 @@
             <i class="bi bi-layers me-2"></i>Platforms
           </a>
 
+          <a 
+            class="nav-link {% if request.path == '/product_mapping/' %}active{% endif %}"
+            href="{% url 'product_mapping' %}"
+          >
+            <i class="bi bi-layers me-2"></i>Product Mapping
+          </a>
+
           <hr />
 
           <a class="nav-link {% if request.path == '/help/' %}active{% endif %}"

@@ -1,0 +1,63 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2><i class="bi bi-link-45deg"></i> Product Mapping Required</h2>
+    <p class="text-muted">The following items from imported files do not match any internal product.</p>
+
+    <div class="card shadow-sm">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>External SKU / Key</th>
+                        <th>Example Item Name</th>
+                        <th>Pending Count</th>
+                        <th>Map to Internal Product</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in unmapped_items %}
+                    <tr>
+                        <form method="POST">
+                            {% csrf_token %}
+                            <td>
+                                <input type="hidden" name="external_key" value="{{ item.sku }}">
+                                <span class="fw-bold text-danger">{{ item.sku }}</span>
+                            </td>
+                            
+                            <td>{{ item.item_name }}</td>
+                            
+                            <td><span class="badge bg-secondary">{{ item.count }} orders</span></td>
+                            
+                            <td>
+                                <select name="product_id" class="form-select select2" required>
+                                    <option value="">-- Select Product --</option>
+                                    {% for p in products %}
+                                        <option value="{{ p.id }}">{{ p.name }} ({{ p.sku }})</option>
+                                    {% endfor %}
+                                </select>
+                            </td>
+                            
+                            <td>
+                                <button type="submit" class="btn btn-primary btn-sm">
+                                    <i class="bi bi-check-lg"></i> Save Map
+                                </button>
+                            </td>
+                        </form>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="5" class="text-center py-5 text-success">
+                            <i class="bi bi-check-circle-fill fs-1"></i>
+                            <br>All items are mapped!
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

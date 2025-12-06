@@ -120,32 +120,6 @@ class Product(models.Model):
         total_sold = self.invoice_items.aggregate(total=models.Sum('quantity'))['total'] or 0
         return total_purchased - total_sold
 
-
-class ProductMapping(models.Model):
-    """
-    Maps external platform names to internal Products.
-    Example: "Airpods 4/07 (ANC)" -> Product ID 1 (AirPods 4)
-    """
-    PLATFORMS = [
-        ('SHOPEE', 'Shopee'),
-        ('LAZADA', 'Lazada'),
-        ('TIKTOK', 'TikTok'),
-        ('OTHER', 'Other'),
-    ]
-
-    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='mappings')
-    platform_name = models.CharField(max_length=500, db_index=True) # The messy name from Shopee/Lazada
-    platform = models.CharField(max_length=20, choices=PLATFORMS, default='OTHER')
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        db_table = 'product_mappings'
-        # Ensure one platform name doesn't map to multiple internal products
-        unique_together = ['platform_name', 'platform'] 
-
-    def __str__(self):
-        return f"{self.platform}: {self.platform_name} -> {self.product.sku}"
-
 class PurchaseOrder(models.Model):
     """Purchase order from vendors"""
     STATUS_CHOICES = [
@@ -241,7 +215,6 @@ class PurchaseItem(models.Model):
     def available_quantity(self):
         """Get available quantity for selling"""
         return self.remaining_quantity
-
 
 class Invoice(models.Model):
     """Sales Invoice with platform integration fields"""
@@ -378,12 +351,14 @@ class InvoiceItem(models.Model):
         # 3. STOCK LOGIC WARNING: 
         # Ideally, move stock deduction to a Signal or Service. 
         # Kept here as requested, but added a check to prevent crash if purchase_item is None.
-        if self.pk is None and self.purchase_item:
-            # Only deduct on CREATE (pk is None), not on every update.
-            # This prevents double-deduction on simple edits, though it prevents 
-            # adjusting stock if you change quantity later.
-            self.purchase_item.remaining_quantity -= self.quantity
-            self.purchase_item.save()
+
+        ##Temporarily disabled to prevent stock issues during testing
+        # if self.pk is None and self.purchase_item:
+        #     # Only deduct on CREATE (pk is None), not on every update.
+        #     # This prevents double-deduction on simple edits, though it prevents 
+        #     # adjusting stock if you change quantity later.
+        #     self.purchase_item.remaining_quantity -= self.quantity
+        #     self.purchase_item.save()
 
         super().save(*args, **kwargs)
         
@@ -469,3 +444,57 @@ class CSVImportLog(models.Model):
     
     def __str__(self):
         return f"{self.selling_channel} import - {self.imported_at} ({self.company})"
+
+class ProductMapping(models.Model):
+    """
+    Maps external platform names to internal Products.
+    Example: "Airpods 4/07 (ANC)" -> Product ID 1 (AirPods 4)
+    """
+    PLATFORMS = [
+        ('SHOPEE', 'Shopee'),
+        ('LAZADA', 'Lazada'),
+        ('TIKTOK', 'TikTok'),
+        ('OTHER', 'Other'),
+    ]
+
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='mappings')
+    platform_name = models.CharField(max_length=500, db_index=True) # The messy name from Shopee/Lazada
+
+    platform = models.CharField(max_length=20, choices=PLATFORMS, default='OTHER')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'product_mappings'
+        # Ensure one platform name doesn't map to multiple internal products
+        unique_together = ['platform_name', 'platform'] 
+
+    def __str__(self):
+        return f"{self.platform}: {self.platform_name} -> {self.product.sku}"
+
+class ProductAlias(models.Model):
+    """
+    Maps external platform names/SKUs to internal Django Products.
+    """
+    # The string we receive from the CSV (e.g., "iPhone 15 Black" or "TT-SKU-001")
+
+    PLATFORMS = [
+        ('SHOPEE', 'Shopee'),
+        ('LAZADA', 'Lazada'),
+        ('TIKTOK', 'TikTok'),
+        ('OTHER', 'Other'),
+    ]
+
+    external_key = models.CharField(max_length=255, db_index=True) 
+    
+    # The actual product in your warehouse
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='aliases')
+    platform = models.CharField(max_length=20, choices=PLATFORMS, default='OTHER')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        # Prevent duplicate mappings for the same external string
+        unique_together = ['external_key'] 
+        verbose_name_plural = "Product Aliases"
+
+    def __str__(self):
+        return f"{self.external_key} -> {self.product.name}"

@@ -1,238 +1,415 @@
-{% extends 'base.html' %} {% block content %}
+{% extends 'base.html' %}
+{% load static %}
 
-<!-- ===================== EXPENSES PAGE ===================== -->
-<div
-  id="expensesScope"
-  class="card rounded-xl p-3 main-card calc-scope"
-  data-vat-name="vatModeExp"
->
-  <!-- หัวเรื่อง -->
-  <div class="d-flex align-items-center justify-content-between mb-2">
-    <h5 class="mb-0">Invoices Form</h5>
-  </div>
+{% block title %}Invoices{% endblock %}
+{% block page_title %}Sales & Invoicing{% endblock %}
 
-  <!-- ประเภทรายการ (วางตำแหน่งเหมือน Purchase) -->
-  <div class="row g-3 align-items-end">
-    <div class="col-auto">รายการ (I/C/H/T/X):</div>
-    <div class="col-auto">
-      <div class="btn-group" role="group" aria-label="expensetype">
-        <input
-          type="radio"
-          class="btn-check"
-          name="expType"
-          id="exp1"
-          checked
-        />
-        <label class="btn btn-ghost btn-sm" for="exp1">ลูกหนี้</label>
+{% block content %}
+<div class="container-fluid p-0">
 
-        <input type="radio" class="btn-check" name="expType" id="exp2" />
-        <label class="btn btn-ghost btn-sm" for="exp2">เงินสด</label>
-
-        <input type="radio" class="btn-check" name="expType" id="exp3" />
-        <label class="btn btn-ghost btn-sm" for="exp3">เช็ค</label>
-
-        <input type="radio" class="btn-check" name="expType" id="exp4" />
-        <label class="btn btn-ghost btn-sm" for="exp4">บัตรเครดิต</label>
-
-        <input type="radio" class="btn-check" name="expType" id="exp5" />
-        <label class="btn btn-ghost btn-sm" for="exp5">อื่นๆ</label>
-      </div>
-    </div>
-  </div>
-
-  <!-- ฟอร์มข้อมูล -->
-  <div class="row g-3 mt-1">
-    <div class="col-md-3">
-      <label class="form-label muted">วันที่</label>
-      <input type="date" class="form-control" value="2025-10-23" />
-    </div>
-    <div class="col-md-3">
-      <label class="form-label muted">เลขที่ใบกำกับ</label>
-      <input type="text" class="form-control" />
-    </div>
-    <div class="col-md-3">
-      <label class="form-label muted">รหัสลูกค้า/ผู้จ่าย</label>
-      <input type="text" class="form-control" />
-    </div>
-    <div class="col-md-3">
-      <label class="form-label muted">บัญชีแยกประเภท</label>
-      <input type="text" class="form-control" />
+  <div class="card rounded-xl mb-4 shadow-sm {% if is_editing %}border-warning{% endif %}">
+    <div class="card-header bg-transparent border-secondary py-3">
+      <h5 class="mb-0 text-white">
+        {% if is_editing %}
+            <i class="bi bi-pencil-square me-2 text-warning"></i>Edit Invoice: <span class="text-warning">{{ editing_invoice.invoice_number }}</span>
+        {% else %}
+            <i class="bi bi-receipt me-2"></i>Create New Invoice
+        {% endif %}
+      </h5>
     </div>
 
-    <div class="col-md-6">
-      <label class="form-label muted">ชื่อลูกค้า/ผู้จ่าย</label>
-      <input type="text" class="form-control" />
-    </div>
-    <div class="col-md-6">
-      <label class="form-label muted">ที่อยู่</label>
-      <input type="text" class="form-control" />
-    </div>
-
-    <div class="col-md-6">
-      <label class="form-label muted">หมายเหตุ</label>
-      <input type="text" class="form-control" />
-    </div>
-    <div class="col-md-3">
-      <label class="form-label muted">พนักงานขาย</label>
-      <select class="form-select">
-        <option>--</option>
-      </select>
-    </div>
-    <div class="col-md-3">
-      <label class="form-label muted">วันที่ครบกำหนด</label>
-      <input type="date" class="form-control" placeholder="dd/mm/yyyy" />
-    </div>
-  </div>
-
-  <!-- ตารางรายการ -->
-  <div class="table-responsive mt-3">
-    <table
-      class="table table-darkish table-bordered align-middle mb-0"
-      id="itemsTableExp"
-    >
-      <thead>
-        <tr>
-          <th class="text-center" style="width: 56px">No.</th>
-          <th style="width: 140px">รหัสสินค้า</th>
-          <th>รายละเอียด</th>
-          <th class="text-center" style="width: 120px">จำนวน</th>
-          <th class="text-center" style="width: 120px">หน่วย</th>
-          <th class="text-end" style="width: 140px">ราคาหน่วยละ</th>
-          <th class="text-end" style="width: 120px">ส่วนลด</th>
-          <th class="text-end" style="width: 160px">จำนวนเงิน</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td class="text-center">1</td>
-          <td><input class="form-control form-control-sm" /></td>
-          <td><input class="form-control form-control-sm" /></td>
-          <td>
-            <input
-              class="form-control form-control-sm input-number qty"
-              type="number"
-              step="0.001"
-              value="1.000"
-            />
-          </td>
-          <td>
-            <select class="form-select form-select-sm">
-              <option selected>ชิ้น</option>
-              <option>กล่อง</option>
-              <option>หน่วย</option>
-            </select>
-          </td>
-          <td>
-            <input
-              class="form-control form-control-sm input-number price"
-              type="number"
-              step="0.01"
-              value="0.00"
-            />
-          </td>
-          <td>
-            <input
-              class="form-control form-control-sm input-number discount"
-              type="number"
-              step="0.01"
-              value="0.00"
-            />
-          </td>
-          <td class="text-end fw-semibold line-total">0.00</td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
-
-  <!-- รวมยอด/ภาษี -->
-  <div class="row mt-3 g-3">
-    <div class="col-lg-6"></div>
-    <div class="col-lg-6">
-      <div class="p-3 rounded-xl border" style="border-color: var(--stroke)">
-        <div class="d-flex justify-content-between mb-2">
-          <div class="muted">รวมเป็นเงิน</div>
-          <div class="fw-semibold subtotal">0.00</div>
-        </div>
-        <div class="d-flex justify-content-between align-items-center mb-2">
-          <div class="muted me-3">ส่วนลดพิเศษ</div>
-          <input
-            class="form-control form-control-sm input-number special-discount"
-            style="max-width: 160px"
-            type="number"
-            step="0.01"
-            value="0.00"
-          />
-        </div>
-        <hr class="my-2" />
-        <div
-          class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2"
-        >
-          <div class="d-flex align-items-center gap-2">
-            <div class="form-check form-check-inline">
-              <input
-                class="form-check-input"
-                type="radio"
-                name="vatModeExp"
-                id="vatIncludedExp"
-                value="included"
-                checked
-              />
-              <label class="form-check-label" for="vatIncludedExp"
-                >รวมภาษี</label
-              >
+    <div class="card-body">
+      <form method="POST" id="invoiceForm">
+        {% csrf_token %}
+        
+        {% if messages %}
+            {% for message in messages %}
+                <div class="alert alert-{{ message.tags }} py-2 small">{{ message }}</div>
+            {% endfor %}
+        {% endif %}
+        
+        {% if form.errors or formset.total_error_count %}
+            <div class="alert alert-danger small">
+                {{ form.errors }}
+                {{ formset.non_form_errors }}
             </div>
-            <div class="form-check form-check-inline">
-              <input
-                class="form-check-input"
-                type="radio"
-                name="vatModeExp"
-                id="vatExcludedExp"
-                value="excluded"
-              />
-              <label class="form-check-label" for="vatExcludedExp"
-                >แยกภาษี</label
-              >
+        {% endif %}
+
+        <div class="row g-3 mb-4">
+            <div class="col-md-3">
+                <label class="form-label text-secondary small">Invoice No.</label>
+                {{ form.invoice_number }}
             </div>
-            <div class="input-group input-group-sm" style="width: 180px">
-              <span
-                class="input-group-text bg-transparent text-secondary border-secondary"
-                >ภาษี</span
-              >
-              <input
-                type="number"
-                class="form-control input-number vat-rate"
-                value="7"
-                step="0.01"
-              />
-              <span
-                class="input-group-text bg-transparent text-secondary border-secondary"
-                >%</span
-              >
+            <div class="col-md-3">
+                <label class="form-label text-secondary small">Customer</label>
+                {{ form.customer }}
             </div>
-          </div>
-          <div class="text-nowrap">
-            ภาษีมูลค่าเพิ่ม: <span class="fw-semibold vat-amount">0.00</span>
-          </div>
+            <div class="col-md-3">
+                <label class="form-label text-secondary small">Date</label>
+                {{ form.invoice_date }}
+            </div>
+            <div class="col-md-3">
+                <label class="form-label text-secondary small">Status</label>
+                {{ form.status }}
+            </div>
+            <div class="col-md-3">
+                <label class="form-label text-secondary small">Channel</label>
+                {{ form.selling_channel }}
+            </div>
+            <div class="col-md-9">
+                <label class="form-label text-secondary small">Notes</label>
+                {{ form.notes }}
+            </div>
         </div>
-        <div class="d-flex justify-content-between fs-5">
-          <div class="fw-semibold">ยอดเงินสุทธิ</div>
-          <div class="fw-bold grand-total">0.00</div>
+
+        <hr class="border-secondary">
+
+        <div class="table-responsive mb-4">
+            {{ formset.management_form }}
+            
+            <table class="table table-darkish table-bordered align-middle" id="itemsTable">
+                <thead>
+                    <tr class="text-secondary small text-uppercase">
+                        <th style="width: 25%">Product</th>
+                        <th style="width: 30%">Batch / Serial (Optional)</th>
+                        <th style="width: 10%">Qty</th>
+                        <th style="width: 15%">Unit Price</th>
+                        <th style="width: 15%" class="text-end">Total</th>
+                        <th style="width: 5%"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item_form in formset %}
+                    <tr class="item-row">
+                        {% for hidden in item_form.hidden_fields %}{{ hidden }}{% endfor %}
+                        
+                        <td>{{ item_form.product }}</td>
+
+                        <td>
+                            <select name="{{ item_form.purchase_item.html_name }}" class="form-select batch-select" id="{{ item_form.purchase_item.auto_id }}">
+                                <option value="">-- Auto-Assign (FIFO) --</option>
+                                {% for batch in item_form.fields.purchase_item.queryset %}
+                                    <option value="{{ batch.id }}" 
+                                            data-product-id="{{ batch.product.id }}"
+                                            data-price="{{ batch.product.selling_price }}"
+                                            {% if item_form.purchase_item.value|stringformat:"s" == batch.id|stringformat:"s" %}selected{% endif %}>
+                                        PO-{{ batch.purchase_order.po_number }} | Stock: {{ batch.remaining_quantity }}
+                                    </option>
+                                {% endfor %}
+                            </select>
+                        </td>
+
+                        <td>{{ item_form.quantity }}</td>
+                        <td>{{ item_form.unit_price }}</td>
+                        <td class="text-end"><span class="row-total fw-bold font-monospace">0.00</span></td>
+                        <td class="text-center">
+                            <div class="d-none">{{ item_form.DELETE }}</div> 
+                            <button type="button" class="btn btn-sm btn-outline-danger remove-row"><i class="bi bi-trash"></i></button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            
+            <button type="button" class="btn btn-sm btn-outline-primary" id="add-row">
+                <i class="bi bi-plus-lg me-1"></i> Add Item
+            </button>
         </div>
-      </div>
+
+        <div class="row justify-content-end">
+            <div class="col-md-5 col-lg-4">
+                <div class="card bg-dark border-secondary p-3">
+                    <div class="d-flex justify-content-between mb-2">
+                        <span class="text-secondary">Subtotal:</span>
+                        <span id="displaySubtotal" class="fw-bold">0.00</span>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span class="text-secondary">Shipping:</span>
+                        <div style="width: 100px;">{{ form.shipping_cost }}</div>
+                    </div>
+                    <div class="d-flex align-items-center justify-content-between mb-2">
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="text-secondary">VAT</span>
+                            <div class="form-check form-switch mb-0">{{ form.tax_include }}</div>
+                            <div style="width: 60px;">{{ form.tax_percent }}</div>
+                            <span class="text-secondary small">%</span>
+                        </div>
+                        <span id="displayTax" class="text-warning">0.00</span>
+                    </div>
+                    <div class="border-top border-secondary my-2"></div>
+                    <div class="d-flex justify-content-between align-items-center">
+                        <span class="h5 mb-0 text-white">Total:</span>
+                        <span id="displayGrandTotal" class="h4 mb-0 text-success font-monospace">0.00</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="d-flex justify-content-end gap-2 mt-4">
+            {% if is_editing %}
+                <a href="{% url 'invoice_list' %}" class="btn btn-ghost px-4">Cancel</a>
+                <button type="submit" class="btn btn-warning px-4 fw-bold">Update Invoice</button>
+            {% else %}
+                <button type="submit" class="btn btn-brand px-4">Save Invoice</button>
+            {% endif %}
+        </div>
+      </form>
     </div>
   </div>
 
-  <!-- ปุ่มล่าง -->
-  <div class="sticky-actions d-flex gap-2 p-3 mt-3 rounded-bottom">
-    <button class="btn btn-brand"><i class="bi bi-check2 me-2"></i>ตกลง</button>
-    <button class="btn btn-outline-danger">
-      <i class="bi bi-x-circle me-2"></i>ยกเลิก
-    </button>
-    <button class="btn btn-outline-secondary">
-      <i class="bi bi-box-arrow-left me-2"></i>ออก
-    </button>
+  <div class="card rounded-xl shadow-sm mt-5">
+    <div class="card-header bg-transparent border-secondary py-3">
+        <h5 class="mb-0 text-white">Recent Invoices</h5>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-darkish table-hover align-middle mb-0">
+            <thead>
+                <tr class="text-secondary small text-uppercase">
+                    <th class="ps-4">Date</th>
+                    <th>Inv Number</th>
+                    <th>Customer</th>
+                    <th>Status</th>
+                    <th class="text-end">Total</th>
+                    <th class="text-end pe-4">Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for inv in invoices %}
+                <tr>
+                    <td class="ps-4 text-secondary">{{ inv.invoice_date|date:"d/m/Y" }}</td>
+                    <td class="font-monospace text-white">{{ inv.invoice_number }}</td>
+                    <td>{{ inv.customer.name }}</td>
+                    <td><span class="badge bg-secondary bg-opacity-25 text-light border border-secondary border-opacity-50">{{ inv.status }}</span></td>
+                    <td class="text-end font-monospace">{{ inv.total_amount|floatformat:2 }}</td>
+                    <td class="text-end pe-4">
+                        <a href="{% url 'invoice_edit' inv.id %}" class="btn btn-sm btn-ghost"><i class="bi bi-pencil"></i></a>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="6" class="text-center py-4 text-muted">No invoices found.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
   </div>
 </div>
-<!-- ===================== END EXPENSES PAGE ===================== -->
 
+<table style="display:none;">
+    <tr id="empty-row-template">
+        {% for hidden in formset.empty_form.hidden_fields %}
+            {{ hidden }}
+        {% endfor %}
+
+        <td>
+            {{ formset.empty_form.product }}
+        </td>
+
+        <td>
+            <select name="{{ formset.empty_form.purchase_item.html_name }}" 
+                    class="form-select batch-select" 
+                    id="{{ formset.empty_form.purchase_item.auto_id }}">
+                <option value="">-- Auto-Assign (FIFO) --</option>
+                
+                {% for batch in formset.empty_form.fields.purchase_item.queryset %}
+                    <option value="{{ batch.id }}" 
+                            data-product-id="{{ batch.product.id }}"
+                            data-price="{{ batch.product.selling_price }}">
+                        PO-{{ batch.purchase_order.po_number }} | Stock: {{ batch.remaining_quantity }}
+                    </option>
+                {% endfor %}
+            </select>
+        </td>
+
+        <td>{{ formset.empty_form.quantity }}</td>
+
+        <td>{{ formset.empty_form.unit_price }}</td>
+
+        <td class="text-end">
+            <span class="row-total fw-bold font-monospace">0.00</span>
+        </td>
+
+        <td class="text-center">
+            <div class="d-none">{{ formset.empty_form.DELETE }}</div>
+            <button type="button" class="btn btn-sm btn-outline-danger remove-row">
+                <i class="bi bi-trash"></i>
+            </button>
+        </td>
+    </tr>
+</table>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    
+    const tableBody = document.querySelector('#itemsTable tbody');
+    const totalForms = document.getElementById('id_invoice_items-TOTAL_FORMS');
+    const addRowBtn = document.getElementById('add-row');
+    
+    // Totals Inputs
+    const taxCheck = document.getElementById('id_tax_include');
+    const taxPercentInput = document.getElementById('id_tax_percent');
+    const shippingInput = document.getElementById('id_shipping_cost');
+
+    // --- DEPENDENCY LOGIC ---
+
+    function filterBatches(row) {
+        const productSelect = row.querySelector('.product-select');
+        const batchSelect = row.querySelector('.batch-select');
+        
+        if (!productSelect || !batchSelect) return;
+
+        const selectedProductId = productSelect.value;
+
+        // Reset batch if it doesn't match the new product
+        const selectedOption = batchSelect.options[batchSelect.selectedIndex];
+        if (selectedOption && selectedOption.value !== "" && selectedOption.dataset.productId !== selectedProductId) {
+            batchSelect.value = "";
+        }
+
+        // Hide/Show options based on Product ID
+        Array.from(batchSelect.options).forEach(option => {
+            if (option.value === "") return; // Always keep the "Auto-Assign" option visible
+
+            if (option.dataset.productId === selectedProductId) {
+                option.style.display = 'block'; 
+                option.disabled = false;
+            } else {
+                option.style.display = 'none'; 
+                option.disabled = true; 
+            }
+        });
+    }
+
+    function updateProductFromBatch(row) {
+        const productSelect = row.querySelector('.product-select');
+        const batchSelect = row.querySelector('.batch-select');
+        const selectedOption = batchSelect.options[batchSelect.selectedIndex];
+        
+        if (selectedOption.value !== "") {
+            const associatedProductId = selectedOption.dataset.productId;
+            if (associatedProductId) {
+                productSelect.value = associatedProductId;
+                // Optional: Update Price
+                // const price = selectedOption.dataset.price;
+                // if(price) row.querySelector('.price').value = price;
+            }
+        }
+    }
+
+    // --- EVENT LISTENERS ---
+
+    // 1. Delegation for inputs (Calculations & Dependency)
+    tableBody.addEventListener('change', function(e) {
+        const row = e.target.closest('tr');
+        
+        // Dependency: Product Changed
+        if (e.target.classList.contains('product-select')) {
+            filterBatches(row);
+        }
+
+        // Dependency: Batch Changed
+        if (e.target.classList.contains('batch-select')) {
+            updateProductFromBatch(row);
+        }
+
+        // Calculations
+        calculateRow(row);
+        calculateAll();
+    });
+
+    tableBody.addEventListener('input', function(e) {
+        if (e.target.classList.contains('qty') || e.target.classList.contains('price')) {
+            const row = e.target.closest('tr');
+            calculateRow(row);
+            calculateAll();
+        }
+    });
+
+    // 2. Add New Row Logic
+    addRowBtn.addEventListener('click', function() {
+        const formIdx = totalForms.value;
+        const emptyRow = document.getElementById('empty-row-template').cloneNode(true);
+        
+        // Regex to update indices
+        emptyRow.innerHTML = emptyRow.innerHTML.replace(/__prefix__/g, formIdx);
+        emptyRow.removeAttribute('id');
+        emptyRow.classList.add('item-row');
+        
+        // Append to table
+        tableBody.appendChild(emptyRow);
+        
+        // Update Total Forms count
+        totalForms.value = parseInt(formIdx) + 1;
+
+        // CRITICAL: Initialize the new row's state
+        // This hides all batch options initially since no product is selected
+        filterBatches(emptyRow);
+    });
+
+    // 3. Remove Row Logic
+    tableBody.addEventListener('click', function(e) {
+        if (e.target.closest('.remove-row')) {
+            const row = e.target.closest('tr');
+            const deleteBox = row.querySelector('input[name$="-DELETE"]');
+            if (deleteBox) {
+                deleteBox.checked = true;
+                row.style.display = 'none'; 
+                row.classList.remove('item-row'); 
+            } else {
+                row.remove();
+            }
+            calculateAll();
+        }
+    });
+
+    // 4. Totals Listeners
+    [taxCheck, taxPercentInput, shippingInput].forEach(el => {
+        el.addEventListener('input', calculateAll);
+        el.addEventListener('change', calculateAll);
+    });
+
+    // --- CALCULATION FUNCTIONS ---
+
+    function calculateRow(row) {
+        const qty = parseFloat(row.querySelector('.qty').value) || 0;
+        const price = parseFloat(row.querySelector('.price').value) || 0;
+        const total = qty * price;
+        row.querySelector('.row-total').textContent = total.toFixed(2);
+        return total;
+    }
+
+    function calculateAll() {
+        let subtotal = 0;
+        document.querySelectorAll('tr.item-row').forEach(row => {
+            if (row.style.display !== 'none') subtotal += calculateRow(row);
+        });
+
+        const taxPercent = parseFloat(taxPercentInput.value) || 0;
+        const shipping = parseFloat(shippingInput.value) || 0;
+        const isTaxIncluded = taxCheck.checked;
+        
+        let taxAmount = 0;
+        let grandTotal = 0;
+
+        if (isTaxIncluded) {
+            taxAmount = subtotal - (subtotal / (1 + (taxPercent / 100)));
+            grandTotal = subtotal + shipping;
+        } else {
+            taxAmount = subtotal * (taxPercent / 100);
+            grandTotal = subtotal + taxAmount + shipping;
+        }
+
+        document.getElementById('displaySubtotal').textContent = subtotal.toFixed(2);
+        document.getElementById('displayTax').textContent = taxAmount.toFixed(2);
+        document.getElementById('displayGrandTotal').textContent = grandTotal.toFixed(2);
+    }
+
+    // --- INITIALIZATION ---
+    // Run filter on all existing rows (for Edit mode)
+    document.querySelectorAll('.item-row').forEach(row => {
+        filterBatches(row);
+        calculateRow(row);
+    });
+    calculateAll();
+});
+</script>
 {% endblock %}

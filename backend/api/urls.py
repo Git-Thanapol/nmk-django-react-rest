@@ -47,6 +47,9 @@ urlpatterns = [
     # Platform Import
     path('import/platforms/', views.platform_import_view, name='platform_import'),
 
+    path('product_mapping/', views.product_mapping_view, name='product_mapping'),
+    path('product_mapping/edit/<int:pk>/', views.product_mapping_view, name='product_mapping_edit'),
+
     # Help Page
     path('help/', views.help, name='help'),
 ]

@@ -7,191 +7,328 @@
 {% block content %}
 <div class="container-fluid p-0">
 
-  <div class="card rounded-xl mb-4 shadow-sm {% if is_editing %}border-warning{% endif %}">
-    <div class="card-header bg-transparent border-secondary py-3">
-      <h5 class="mb-0 text-white">
-        {% if is_editing %}
-            <i class="bi bi-pencil-square me-2 text-warning"></i>Edit Invoice: <span class="text-warning">{{ editing_invoice.invoice_number }}</span>
-        {% else %}
-            <i class="bi bi-receipt me-2"></i>Create New Invoice
-        {% endif %}
-      </h5>
+    {% if form.instance.pk and form.instance.platform_name and form.instance.platform_name != 'Offline' %}
+    <div class="card rounded-xl mb-4 shadow-sm border-0 bg-dark bg-gradient text-white">
+        <div class="card-header bg-transparent border-secondary py-3">
+            <h6 class="mb-0 text-info"><i class="bi bi-layers-fill me-2"></i>Platform Order Details</h6>
+        </div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-3">
+                    <small class="text-secondary d-block">Platform Name</small>
+                    <span class="fw-bold">{{ form.instance.platform_name }}</span>
+                </div>
+                <div class="col-md-3">
+                    <small class="text-secondary d-block">Order ID</small>
+                    <span class="font-monospace text-warning">{{ form.instance.platform_order_id }}</span>
+                </div>
+                <div class="col-md-3">
+                    <small class="text-secondary d-block">Platform Status</small>
+                    <span class="badge bg-secondary border border-secondary">{{ form.instance.platform_order_status|default:"-" }}</span>
+                </div>
+                <div class="col-md-3">
+                    <small class="text-secondary d-block">Tracking Number</small>
+                    <span class="font-monospace">{{ form.instance.platform_tracking_number|default:"-" }}</span>
+                </div>
+                
+                <div class="col-12"><hr class="border-secondary opacity-25 my-1"></div>
+
+                <div class="col-md-3">
+                    <small class="text-secondary d-block">Recipient Name</small>
+                    <span>{{ form.instance.recipient_name|default:"-" }}</span>
+                </div>
+                <div class="col-md-3">
+                    <small class="text-secondary d-block">Warehouse</small>
+                    <span>{{ form.instance.warehouse_name|default:"-" }}</span>
+                </div>
+                <div class="col-md-3">
+                    <small class="text-secondary d-block">Grand Total</small>
+                    <span class="text-success fw-bold font-monospace">{{ form.instance.grand_total|floatformat:2 }}</span>
+                </div>
+                 <div class="col-md-3">
+                    <small class="text-secondary d-block">Address</small>
+                    <span class="text-muted small">{{ form.instance.recipient_address|truncatechars:50 }}</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="card rounded-xl mb-4 shadow-sm {% if is_editing %}border-warning{% endif %}">
+        <div class="card-header bg-transparent border-secondary py-3">
+            <h5 class="mb-0 text-white">
+                {% if is_editing %}
+                    <i class="bi bi-pencil-square me-2 text-warning"></i>Edit Invoice: <span class="text-warning">{{ editing_invoice.invoice_number }}</span>
+                {% else %}
+                    <i class="bi bi-receipt me-2"></i>Create New Invoice
+                {% endif %}
+            </h5>
+        </div>
+
+        <div class="card-body">
+            <form method="POST" id="invoiceForm">
+                {% csrf_token %}
+                
+                {% if messages %}
+                    {% for message in messages %}
+                        <div class="alert alert-{{ message.tags }} py-2 small">{{ message }}</div>
+                    {% endfor %}
+                {% endif %}
+                
+                {% if form.errors or formset.total_error_count %}
+                    <div class="alert alert-danger small">
+                        {{ form.errors }}
+                        {{ formset.non_form_errors }}
+                    </div>
+                {% endif %}
+
+                <div class="row g-3 mb-4">
+                    <div class="col-md-3">
+                        <label class="form-label text-secondary small">Invoice No.</label>
+                        {{ form.invoice_number }}
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label text-secondary small">Customer</label>
+                        {{ form.customer }}
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label text-secondary small">Date</label>
+                        {{ form.invoice_date }}
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label text-secondary small">Tax Sequence No.</label>
+                        <input type="text" name="tax_sequence_number" class="form-control" value="{{ form.instance.tax_sequence_number|default:'' }}">
+                    </div>
+                    
+                    <div class="col-md-3">
+                        <label class="form-label text-secondary small">Salesperson</label>
+                        <input type="text" name="saleperson" class="form-control" value="{{ form.instance.saleperson|default:'' }}">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label text-secondary small">Status</label>
+                        {{ form.status_choices }}
+                    </div>
+                    {% if not is_editing %}
+                        <div class="col-md-3">
+                            <label class="form-label text-secondary small">Channel</label>
+                            {{ form.platform_name }}
+                        </div>
+                    {% endif %}
+                </div>
+
+                <hr class="border-secondary">
+
+                <div class="table-responsive mb-4">
+                    {{ formset.management_form }}
+                    
+                    <table class="table table-darkish table-bordered align-middle text-center" id="itemsTable">
+                        <thead class="bg-light bg-opacity-10">
+                            <tr class="text-secondary small text-uppercase">
+                                <th style="width: 20%">Product</th>
+                                <th style="width: 20%">Batch (Stock)</th>
+                                <th style="width: 10%">SKU (Platform)</th>
+                                <th style="width: 15%">Item Name (Platform)</th>
+                                <th style="width: 10%">Qty</th>
+                                <th style="width: 10%">Price</th>
+                                <th style="width: 10%" class="text-end">Total</th>
+                                <th style="width: 5%"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item_form in formset %}
+                            <tr class="item-row">
+                                {% for hidden in item_form.hidden_fields %}{{ hidden }}{% endfor %}
+                                
+                                <td>{{ item_form.product }}</td>
+                                <td>
+                                    <select name="{{ item_form.purchase_item.html_name }}" class="form-select form-select-sm batch-select" id="{{ item_form.purchase_item.auto_id }}">
+                                        <option value="">-- Auto-Assign --</option>
+                                        {% for batch in item_form.fields.purchase_item.queryset %}
+                                            <option value="{{ batch.id }}" 
+                                                    data-product-id="{{ batch.product.id }}"
+                                                    data-price="{{ batch.product.selling_price }}"
+                                                    {% if item_form.purchase_item.value|stringformat:"s" == batch.id|stringformat:"s" %}selected{% endif %}>
+                                                    PO-{{ batch.purchase_order.po_number }} | Stock: {{ batch.remaining_quantity }}
+                                            </option>
+                                        {% endfor %}
+                                    </select>
+                                </td>
+                                <td><input type="text" name="{{ item_form.sku.html_name }}" value="{{ item_form.sku.value|default:'' }}" class="form-control form-control-sm" placeholder="SKU"></td>
+                                <td><textarea name="{{ item_form.item_name.html_name }}" class="form-control form-control-sm" rows="1">{{ item_form.item_name.value|default:'' }}</textarea></td>
+                                <td>{{ item_form.quantity }}</td>
+                                <td>{{ item_form.unit_price }}</td>
+                                <td class="text-end px-3"><span class="row-total fw-bold font-monospace text-info">0.00</span></td>
+                                <td>
+                                    <div class="d-none">{{ item_form.DELETE }}</div> 
+                                    <button type="button" class="btn btn-sm btn-outline-danger remove-row border-0"><i class="bi bi-trash"></i></button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    <button type="button" class="btn btn-sm btn-outline-primary mt-2" id="add-row">
+                        <i class="bi bi-plus-lg me-1"></i> Add Item Line
+                    </button>
+                </div>
+
+                <div class="row mt-4">
+                    <div class="col-md-7">
+                        <label class="form-label text-secondary small">Notes</label>
+                        {{ form.notes }}
+                    </div>
+                    <div class="col-md-5">
+                        <div class="card bg-dark border-secondary p-3">
+                            <div class="d-flex justify-content-between mb-2">
+                                <span class="text-secondary">Subtotal</span>
+                                <span id="displaySubtotal" class="fw-bold">0.00</span>
+                            </div>
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <span class="text-secondary">Discount</span>
+                                <div style="width: 120px;">
+                                    <input type="number" name="discount_amount" id="id_discount_amount" 
+                                           class="form-control form-control-sm text-end" 
+                                           step="0.01" value="{{ form.instance.discount_amount|default:'0.00' }}">
+                                </div>
+                            </div>
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <span class="text-secondary">Shipping Cost</span>
+                                <div style="width: 120px;">{{ form.shipping_cost }}</div>
+                            </div>
+                            <div class="d-flex align-items-center justify-content-between mb-3">
+                                <div class="d-flex align-items-center gap-2">
+                                    <span class="text-secondary">VAT Included?</span>
+                                    <div class="form-check form-switch mb-0 ms-2">{{ form.tax_include }}</div>
+                                </div>
+                                <div class="d-flex align-items-center gap-2">
+                                    <div style="width: 70px;">{{ form.tax_percent }}</div>
+                                    <span class="text-secondary small">%</span>
+                                    <span id="displayTax" class="text-warning ms-2 font-monospace">0.00</span>
+                                </div>
+                            </div>
+                            <div class="border-top border-secondary my-2"></div>
+                            <div class="d-flex justify-content-between align-items-center mt-2">
+                                <span class="h5 mb-0 text-white">Grand Total</span>
+                                <span id="displayGrandTotal" class="h4 mb-0 text-success font-monospace">0.00</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="d-flex justify-content-end gap-2 mt-4">
+                    {% if is_editing %}
+                        <a href="{% url 'invoice_list' %}" class="btn btn-ghost px-4">Cancel</a>
+                        <button type="submit" class="btn btn-warning px-4 fw-bold">Update Invoice</button>
+                    {% else %}
+                        <button type="submit" class="btn btn-brand px-4">Save Invoice</button>
+                    {% endif %}
+                </div>
+            </form>
+        </div>
     </div>
 
-    <div class="card-body">
-      <form method="POST" id="invoiceForm">
-        {% csrf_token %}
-        
-        {% if messages %}
-            {% for message in messages %}
-                <div class="alert alert-{{ message.tags }} py-2 small">{{ message }}</div>
-            {% endfor %}
-        {% endif %}
-        
-        {% if form.errors or formset.total_error_count %}
-            <div class="alert alert-danger small">
-                {{ form.errors }}
-                {{ formset.non_form_errors }}
+    <div class="card rounded-xl shadow-sm mt-5 mb-5 border-0">
+        <div class="card-header bg-dark bg-gradient border-secondary py-3 d-flex justify-content-between align-items-center">
+            <div>
+                <h5 class="mb-0 text-white"><i class="bi bi-clock-history me-2"></i>Recent Orders (Last 1000)</h5>
             </div>
-        {% endif %}
-
-        <div class="row g-3 mb-4">
-            <div class="col-md-3">
-                <label class="form-label text-secondary small">Invoice No.</label>
-                {{ form.invoice_number }}
-            </div>
-            <div class="col-md-3">
-                <label class="form-label text-secondary small">Customer</label>
-                {{ form.customer }}
-            </div>
-            <div class="col-md-3">
-                <label class="form-label text-secondary small">Date</label>
-                {{ form.invoice_date }}
-            </div>
-            <div class="col-md-3">
-                <label class="form-label text-secondary small">Status</label>
-                {{ form.status }}
-            </div>
-            <div class="col-md-3">
-                <label class="form-label text-secondary small">Channel</label>
-                {{ form.selling_channel }}
-            </div>
-            <div class="col-md-9">
-                <label class="form-label text-secondary small">Notes</label>
-                {{ form.notes }}
+            <div class="input-group input-group-sm w-auto">
+                <span class="input-group-text bg-secondary border-secondary text-light"><i class="bi bi-search"></i></span>
+                <input type="text" id="globalSearch" class="form-control bg-dark border-secondary text-light" placeholder="Global Search...">
             </div>
         </div>
 
-        <hr class="border-secondary">
-
-        <div class="table-responsive mb-4">
-            {{ formset.management_form }}
-            
-            <table class="table table-darkish table-bordered align-middle" id="itemsTable">
+        <div class="table-responsive">
+            <table class="table table-darkish table-hover align-middle mb-0" id="recentInvoicesTable">
                 <thead>
-                    <tr class="text-secondary small text-uppercase">
-                        <th style="width: 25%">Product</th>
-                        <th style="width: 30%">Batch / Serial (Optional)</th>
-                        <th style="width: 10%">Qty</th>
-                        <th style="width: 15%">Unit Price</th>
-                        <th style="width: 15%" class="text-end">Total</th>
-                        <th style="width: 5%"></th>
+                    <tr class="text-secondary small text-uppercase bg-light bg-opacity-10">
+                        <th class="ps-4" style="width: 12%">Date</th>
+                        <th style="width: 10%">Internal Status</th>
+                        <th style="width: 15%">Platform Order ID</th>
+                        <th style="width: 15%">Platform Status</th>
+                        <th style="width: 15%">Tracking No.</th>
+                        <th class="text-end" style="width: 10%">Total</th>
+                        <th class="text-end pe-4" style="width: 10%">Action</th>
+                    </tr>
+                    <tr class="filter-row bg-dark">
+                        <th class="ps-4 p-2">
+                            <input type="text" class="form-control form-control-sm bg-dark border-secondary text-light col-filter" data-col="0" placeholder="Filter Date">
+                        </th>
+                        <th class="p-2">
+                            <select class="form-select form-select-sm bg-dark border-secondary text-light col-filter" data-col="1">
+                                <option value="">All</option>
+                                <option value="DRAFT">Draft</option>
+                                <option value="BILLED">Billed</option>
+                                <option value="CANCELLED">Cancelled</option>
+                            </select>
+                        </th>
+                        <th class="p-2">
+                            <input type="text" class="form-control form-control-sm bg-dark border-secondary text-light col-filter" data-col="2" placeholder="Filter ID">
+                        </th>
+                         <th class="p-2">
+                            <input type="text" class="form-control form-control-sm bg-dark border-secondary text-light col-filter" data-col="3" placeholder="Filter Status">
+                        </th>
+                        <th class="p-2">
+                            <input type="text" class="form-control form-control-sm bg-dark border-secondary text-light col-filter" data-col="4" placeholder="Filter Tracking">
+                        </th>
+                        <th class="p-2 text-end">
+                            <input type="text" class="form-control form-control-sm bg-dark border-secondary text-light col-filter text-end" data-col="5" placeholder="> Amount">
+                        </th>
+                        <th></th>
                     </tr>
                 </thead>
                 <tbody>
-                    {% for item_form in formset %}
-                    <tr class="item-row">
-                        {% for hidden in item_form.hidden_fields %}{{ hidden }}{% endfor %}
+                    {% for inv in invoices %}
+                    <tr>
+                        <td class="ps-4 text-secondary">{{ inv.invoice_date|date:"Y-m-d" }}</td>
                         
-                        <td>{{ item_form.product }}</td>
+                        <td>
+                            {% if inv.status == 'BILLED' %}
+                                <span class="badge bg-success bg-opacity-25 text-success border border-success border-opacity-25">BILLED</span>
+                            {% elif inv.status == 'DRAFT' %}
+                                <span class="badge bg-secondary bg-opacity-25 text-light border border-secondary border-opacity-50">DRAFT</span>
+                            {% else %}
+                                <span class="badge bg-danger bg-opacity-25 text-danger">CANCELLED</span>
+                            {% endif %}
+                        </td>
 
                         <td>
-                            <select name="{{ item_form.purchase_item.html_name }}" class="form-select batch-select" id="{{ item_form.purchase_item.auto_id }}">
-                                <option value="">-- Auto-Assign (FIFO) --</option>
-                                {% for batch in item_form.fields.purchase_item.queryset %}
-                                    <option value="{{ batch.id }}" 
-                                            data-product-id="{{ batch.product.id }}"
-                                            data-price="{{ batch.product.selling_price }}"
-                                            {% if item_form.purchase_item.value|stringformat:"s" == batch.id|stringformat:"s" %}selected{% endif %}>
-                                        PO-{{ batch.purchase_order.po_number }} | Stock: {{ batch.remaining_quantity }}
-                                    </option>
-                                {% endfor %}
-                            </select>
+                            {% if inv.platform_order_id %}
+                                <span class="font-monospace text-warning">{{ inv.platform_order_id }}</span>
+                            {% else %}
+                                <span class="font-monospace text-secondary">{{ inv.invoice_number }} <i class="bi bi-shop ms-1" title="Offline"></i></span>
+                            {% endif %}
                         </td>
 
-                        <td>{{ item_form.quantity }}</td>
-                        <td>{{ item_form.unit_price }}</td>
-                        <td class="text-end"><span class="row-total fw-bold font-monospace">0.00</span></td>
-                        <td class="text-center">
-                            <div class="d-none">{{ item_form.DELETE }}</div> 
-                            <button type="button" class="btn btn-sm btn-outline-danger remove-row"><i class="bi bi-trash"></i></button>
+                        <td>
+                            {% if inv.platform_order_status %}
+                                <span class="badge bg-secondary text-light">{{ inv.platform_order_status }}</span>
+                            {% else %}
+                                <span class="text-muted">-</span>
+                            {% endif %}
                         </td>
+                        
+                        <td class="font-monospace text-info small">
+                            {{ inv.platform_tracking_number|default:"-" }}
+                        </td>
+                        
+                        <td class="text-end font-monospace text-white">{{ inv.grand_total|floatformat:2 }}</td>
+                        
+                        <td class="text-end pe-4">
+                            <a href="{% url 'invoice_edit' inv.id %}" class="btn btn-sm btn-ghost text-secondary hover-white">
+                                <i class="bi bi-pencil-square"></i>
+                            </a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr id="noResultsRow">
+                        <td colspan="7" class="text-center py-5 text-muted">No invoices found.</td>
                     </tr>
                     {% endfor %}
                 </tbody>
             </table>
-            
-            <button type="button" class="btn btn-sm btn-outline-primary" id="add-row">
-                <i class="bi bi-plus-lg me-1"></i> Add Item
-            </button>
         </div>
-
-        <div class="row justify-content-end">
-            <div class="col-md-5 col-lg-4">
-                <div class="card bg-dark border-secondary p-3">
-                    <div class="d-flex justify-content-between mb-2">
-                        <span class="text-secondary">Subtotal:</span>
-                        <span id="displaySubtotal" class="fw-bold">0.00</span>
-                    </div>
-                    <div class="d-flex justify-content-between align-items-center mb-2">
-                        <span class="text-secondary">Shipping:</span>
-                        <div style="width: 100px;">{{ form.shipping_cost }}</div>
-                    </div>
-                    <div class="d-flex align-items-center justify-content-between mb-2">
-                        <div class="d-flex align-items-center gap-2">
-                            <span class="text-secondary">VAT</span>
-                            <div class="form-check form-switch mb-0">{{ form.tax_include }}</div>
-                            <div style="width: 60px;">{{ form.tax_percent }}</div>
-                            <span class="text-secondary small">%</span>
-                        </div>
-                        <span id="displayTax" class="text-warning">0.00</span>
-                    </div>
-                    <div class="border-top border-secondary my-2"></div>
-                    <div class="d-flex justify-content-between align-items-center">
-                        <span class="h5 mb-0 text-white">Total:</span>
-                        <span id="displayGrandTotal" class="h4 mb-0 text-success font-monospace">0.00</span>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="d-flex justify-content-end gap-2 mt-4">
-            {% if is_editing %}
-                <a href="{% url 'invoice_list' %}" class="btn btn-ghost px-4">Cancel</a>
-                <button type="submit" class="btn btn-warning px-4 fw-bold">Update Invoice</button>
-            {% else %}
-                <button type="submit" class="btn btn-brand px-4">Save Invoice</button>
-            {% endif %}
-        </div>
-      </form>
     </div>
-  </div>
 
-  <div class="card rounded-xl shadow-sm mt-5">
-    <div class="card-header bg-transparent border-secondary py-3">
-        <h5 class="mb-0 text-white">Recent Invoices</h5>
-    </div>
-    <div class="table-responsive">
-        <table class="table table-darkish table-hover align-middle mb-0">
-            <thead>
-                <tr class="text-secondary small text-uppercase">
-                    <th class="ps-4">Date</th>
-                    <th>Inv Number</th>
-                    <th>Customer</th>
-                    <th>Status</th>
-                    <th class="text-end">Total</th>
-                    <th class="text-end pe-4">Action</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for inv in invoices %}
-                <tr>
-                    <td class="ps-4 text-secondary">{{ inv.invoice_date|date:"d/m/Y" }}</td>
-                    <td class="font-monospace text-white">{{ inv.invoice_number }}</td>
-                    <td>{{ inv.customer.name }}</td>
-                    <td><span class="badge bg-secondary bg-opacity-25 text-light border border-secondary border-opacity-50">{{ inv.status }}</span></td>
-                    <td class="text-end font-monospace">{{ inv.total_amount|floatformat:2 }}</td>
-                    <td class="text-end pe-4">
-                        <a href="{% url 'invoice_edit' inv.id %}" class="btn btn-sm btn-ghost"><i class="bi bi-pencil"></i></a>
-                    </td>
-                </tr>
-                {% empty %}
-                <tr><td colspan="6" class="text-center py-4 text-muted">No invoices found.</td></tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-  </div>
 </div>
 
 <table style="display:none;">
@@ -199,40 +336,28 @@
         {% for hidden in formset.empty_form.hidden_fields %}
             {{ hidden }}
         {% endfor %}
-
-        <td>
-            {{ formset.empty_form.product }}
-        </td>
-
+        <td>{{ formset.empty_form.product }}</td>
         <td>
             <select name="{{ formset.empty_form.purchase_item.html_name }}" 
-                    class="form-select batch-select" 
+                    class="form-select form-select-sm batch-select" 
                     id="{{ formset.empty_form.purchase_item.auto_id }}">
-                <option value="">-- Auto-Assign (FIFO) --</option>
-                
+                <option value="">-- Auto-Assign --</option>
                 {% for batch in formset.empty_form.fields.purchase_item.queryset %}
                     <option value="{{ batch.id }}" 
-                            data-product-id="{{ batch.product.id }}"
-                            data-price="{{ batch.product.selling_price }}">
+                            data-product-id="{{ batch.product.id }}">
                         PO-{{ batch.purchase_order.po_number }} | Stock: {{ batch.remaining_quantity }}
                     </option>
                 {% endfor %}
             </select>
         </td>
-
+        <td><input type="text" name="{{ formset.empty_form.sku.html_name }}" class="form-control form-control-sm" placeholder="SKU"></td>
+        <td><textarea name="{{ formset.empty_form.item_name.html_name }}" class="form-control form-control-sm" rows="1"></textarea></td>
         <td>{{ formset.empty_form.quantity }}</td>
-
         <td>{{ formset.empty_form.unit_price }}</td>
-
-        <td class="text-end">
-            <span class="row-total fw-bold font-monospace">0.00</span>
-        </td>
-
-        <td class="text-center">
+        <td class="text-end px-3"><span class="row-total fw-bold font-monospace text-info">0.00</span></td>
+        <td>
             <div class="d-none">{{ formset.empty_form.DELETE }}</div>
-            <button type="button" class="btn btn-sm btn-outline-danger remove-row">
-                <i class="bi bi-trash"></i>
-            </button>
+            <button type="button" class="btn btn-sm btn-outline-danger remove-row border-0"><i class="bi bi-trash"></i></button>
         </td>
     </tr>
 </table>
@@ -240,42 +365,31 @@
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     
+    // --- PART 1: INVOICE FORM CALCULATIONS ---
     const tableBody = document.querySelector('#itemsTable tbody');
     const totalForms = document.getElementById('id_invoice_items-TOTAL_FORMS');
     const addRowBtn = document.getElementById('add-row');
-    
-    // Totals Inputs
     const taxCheck = document.getElementById('id_tax_include');
     const taxPercentInput = document.getElementById('id_tax_percent');
     const shippingInput = document.getElementById('id_shipping_cost');
+    const discountInput = document.getElementById('id_discount_amount');
 
-    // --- DEPENDENCY LOGIC ---
-
+    // Batch Filters
     function filterBatches(row) {
         const productSelect = row.querySelector('.product-select');
         const batchSelect = row.querySelector('.batch-select');
-        
         if (!productSelect || !batchSelect) return;
 
         const selectedProductId = productSelect.value;
-
-        // Reset batch if it doesn't match the new product
         const selectedOption = batchSelect.options[batchSelect.selectedIndex];
+
         if (selectedOption && selectedOption.value !== "" && selectedOption.dataset.productId !== selectedProductId) {
             batchSelect.value = "";
         }
-
-        // Hide/Show options based on Product ID
         Array.from(batchSelect.options).forEach(option => {
-            if (option.value === "") return; // Always keep the "Auto-Assign" option visible
-
-            if (option.dataset.productId === selectedProductId) {
-                option.style.display = 'block'; 
-                option.disabled = false;
-            } else {
-                option.style.display = 'none'; 
-                option.disabled = true; 
-            }
+            if (option.value === "") return;
+            if (option.dataset.productId === selectedProductId) { option.style.display = 'block'; option.disabled = false; } 
+            else { option.style.display = 'none'; option.disabled = true; }
         });
     }
 
@@ -283,92 +397,51 @@ document.addEventListener('DOMContentLoaded', function() {
         const productSelect = row.querySelector('.product-select');
         const batchSelect = row.querySelector('.batch-select');
         const selectedOption = batchSelect.options[batchSelect.selectedIndex];
-        
         if (selectedOption.value !== "") {
             const associatedProductId = selectedOption.dataset.productId;
-            if (associatedProductId) {
-                productSelect.value = associatedProductId;
-                // Optional: Update Price
-                // const price = selectedOption.dataset.price;
-                // if(price) row.querySelector('.price').value = price;
-            }
+            if (associatedProductId) productSelect.value = associatedProductId;
         }
     }
 
-    // --- EVENT LISTENERS ---
-
-    // 1. Delegation for inputs (Calculations & Dependency)
+    // Events
     tableBody.addEventListener('change', function(e) {
         const row = e.target.closest('tr');
-        
-        // Dependency: Product Changed
-        if (e.target.classList.contains('product-select')) {
-            filterBatches(row);
-        }
-
-        // Dependency: Batch Changed
-        if (e.target.classList.contains('batch-select')) {
-            updateProductFromBatch(row);
-        }
-
-        // Calculations
-        calculateRow(row);
-        calculateAll();
+        if (e.target.classList.contains('product-select')) filterBatches(row);
+        if (e.target.classList.contains('batch-select')) updateProductFromBatch(row);
+        calculateRow(row); calculateAll();
     });
 
     tableBody.addEventListener('input', function(e) {
         if (e.target.classList.contains('qty') || e.target.classList.contains('price')) {
-            const row = e.target.closest('tr');
-            calculateRow(row);
-            calculateAll();
+            calculateRow(e.target.closest('tr')); calculateAll();
         }
     });
 
-    // 2. Add New Row Logic
     addRowBtn.addEventListener('click', function() {
         const formIdx = totalForms.value;
         const emptyRow = document.getElementById('empty-row-template').cloneNode(true);
-        
-        // Regex to update indices
         emptyRow.innerHTML = emptyRow.innerHTML.replace(/__prefix__/g, formIdx);
-        emptyRow.removeAttribute('id');
-        emptyRow.classList.add('item-row');
-        
-        // Append to table
+        emptyRow.removeAttribute('id'); emptyRow.classList.add('item-row');
         tableBody.appendChild(emptyRow);
-        
-        // Update Total Forms count
         totalForms.value = parseInt(formIdx) + 1;
-
-        // CRITICAL: Initialize the new row's state
-        // This hides all batch options initially since no product is selected
         filterBatches(emptyRow);
     });
 
-    // 3. Remove Row Logic
     tableBody.addEventListener('click', function(e) {
         if (e.target.closest('.remove-row')) {
             const row = e.target.closest('tr');
             const deleteBox = row.querySelector('input[name$="-DELETE"]');
-            if (deleteBox) {
-                deleteBox.checked = true;
-                row.style.display = 'none'; 
-                row.classList.remove('item-row'); 
-            } else {
-                row.remove();
-            }
+            if (deleteBox) { deleteBox.checked = true; row.style.display = 'none'; row.classList.remove('item-row'); } 
+            else { row.remove(); }
             calculateAll();
         }
     });
 
-    // 4. Totals Listeners
-    [taxCheck, taxPercentInput, shippingInput].forEach(el => {
-        el.addEventListener('input', calculateAll);
-        el.addEventListener('change', calculateAll);
+    [taxCheck, taxPercentInput, shippingInput, discountInput].forEach(el => {
+        if(el) { el.addEventListener('input', calculateAll); el.addEventListener('change', calculateAll); }
     });
 
-    // --- CALCULATION FUNCTIONS ---
-
+    // Calc Functions
     function calculateRow(row) {
         const qty = parseFloat(row.querySelector('.qty').value) || 0;
         const price = parseFloat(row.querySelector('.price').value) || 0;
@@ -385,31 +458,79 @@ document.addEventListener('DOMContentLoaded', function() {
 
         const taxPercent = parseFloat(taxPercentInput.value) || 0;
         const shipping = parseFloat(shippingInput.value) || 0;
+        const discount = parseFloat(discountInput.value) || 0;
         const isTaxIncluded = taxCheck.checked;
         
         let taxAmount = 0;
         let grandTotal = 0;
+        let taxableBase = Math.max(0, subtotal - discount);
 
         if (isTaxIncluded) {
-            taxAmount = subtotal - (subtotal / (1 + (taxPercent / 100)));
-            grandTotal = subtotal + shipping;
+            taxAmount = taxableBase - (taxableBase / (1 + (taxPercent / 100)));
+            grandTotal = (subtotal - discount) + shipping;
         } else {
-            taxAmount = subtotal * (taxPercent / 100);
-            grandTotal = subtotal + taxAmount + shipping;
+            taxAmount = taxableBase * (taxPercent / 100);
+            grandTotal = (subtotal - discount) + taxAmount + shipping;
         }
 
         document.getElementById('displaySubtotal').textContent = subtotal.toFixed(2);
         document.getElementById('displayTax').textContent = taxAmount.toFixed(2);
         document.getElementById('displayGrandTotal').textContent = grandTotal.toFixed(2);
     }
-
-    // --- INITIALIZATION ---
-    // Run filter on all existing rows (for Edit mode)
-    document.querySelectorAll('.item-row').forEach(row => {
-        filterBatches(row);
-        calculateRow(row);
-    });
+    
+    // Init Calc
+    document.querySelectorAll('.item-row').forEach(row => { filterBatches(row); calculateRow(row); });
     calculateAll();
+
+
+    // --- PART 2: TABLE FILTER LOGIC ---
+    const table = document.getElementById("recentInvoicesTable");
+    const globalSearch = document.getElementById("globalSearch");
+    const colFilters = document.querySelectorAll(".col-filter");
+    const rows = table.querySelectorAll("tbody tr:not(#noResultsRow)");
+
+    function filterData() {
+        const globalTerm = globalSearch.value.toLowerCase();
+        
+        rows.forEach(row => {
+            const cells = row.cells;
+            let showRow = true;
+
+            // Column Specific Filters
+            colFilters.forEach(filter => {
+                const colIndex = filter.getAttribute("data-col");
+                const filterVal = filter.value.toLowerCase();
+                const cellText = cells[colIndex].textContent.toLowerCase().trim();
+
+                if (filterVal !== "") {
+                    if (filter.tagName === 'SELECT') {
+                         if (!cellText.includes(filterVal)) showRow = false;
+                    } 
+                    else if (colIndex === "5") { // Total > X
+                        const amount = parseFloat(cellText.replace(/,/g, ''));
+                        const filterAmount = parseFloat(filterVal);
+                        if (!isNaN(filterAmount) && amount < filterAmount) showRow = false;
+                    } 
+                    else {
+                        if (!cellText.includes(filterVal)) showRow = false;
+                    }
+                }
+            });
+
+            // Global Search
+            if (showRow && globalTerm !== "") {
+                if (!row.innerText.toLowerCase().includes(globalTerm)) showRow = false;
+            }
+
+            row.style.display = showRow ? "" : "none";
+        });
+    }
+
+    globalSearch.addEventListener("input", filterData);
+    colFilters.forEach(input => {
+        input.addEventListener("input", filterData);
+        input.addEventListener("change", filterData);
+    });
 });
 </script>
 {% endblock %}

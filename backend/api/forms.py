@@ -177,12 +177,16 @@ class InvoiceForm(forms.ModelForm):
             'shipping_cost': forms.NumberInput(attrs={'class': 'form-control', 'id': 'id_shipping_cost', 'step': '0.01', 'value': '0.00'}),
             'notes': forms.Textarea(attrs={'class': 'form-control', 'rows': 2}),
         }
-    
+        labels = {
+            'status': 'Status',
+        }
+            
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         if not self.instance.pk:
             from django.utils import timezone
             self.fields['invoice_date'].initial = timezone.now().date()
+            self.fields['status'].initial = 'draft'  # Default to "แบบร่าง"
 
 class InvoiceItemCustomChoiceField(forms.ModelChoiceField):
     """Custom field to display detailed stock info in the dropdown"""
