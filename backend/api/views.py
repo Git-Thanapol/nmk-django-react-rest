@@ -15,6 +15,9 @@ from .utils_import_core import universal_invoice_import
 from .utils_processors import process_tiktok_orders, process_shopee_orders
 import os
 from django.core.files.storage import FileSystemStorage
+from .forms import ReportFilterForm
+from .utils_reports import generate_purchase_tax_report, generate_sales_tax_report, generate_stock_report
+
 
 class NoteListCreateView(generics.ListCreateAPIView):
     queryset = Note.objects.all()
@@ -957,3 +960,42 @@ def product_mapping_view(request):
         'products': products
     }
     return render(request, 'product_mapping.html', context)
+
+
+def report_dashboard_view(request):
+    form = ReportFilterForm(request.POST or None)
+    
+    if request.method == 'POST' and form.is_valid():
+        report_type = request.POST.get('report_type')
+        company = form.cleaned_data['company']
+        start_date = form.cleaned_data['start_date']
+        end_date = form.cleaned_data['end_date']
+
+        # --- Report 1: Purchase Tax ---
+        if report_type == 'purchase_tax':
+            queryset = PurchaseOrder.objects.filter(
+                company=company,
+                order_date__range=[start_date, end_date]
+            ).order_by('order_date')
+            return generate_purchase_tax_report(queryset, company, start_date, end_date)
+            
+        # --- Report 2: Sales Tax (NEW) ---
+        elif report_type == 'sales_tax':
+            # Filter invoices for specific company, date range, and ensure they are finalized (BILLED)
+            queryset = Invoice.objects.filter(
+                #company=company,
+                #status='BILLED',  # Only include finalized tax invoices
+                invoice_date__range=[start_date, end_date]
+            ).order_by('invoice_date', 'invoice_number')
+            
+            return generate_sales_tax_report(queryset, company, start_date, end_date)
+        
+        # --- NEW: Stock Report ---
+        elif report_type == 'stock_report':
+            return generate_stock_report(company, start_date, end_date)
+
+    context = {
+        'form': form,
+        'page_title': 'Reports Center'
+    }
+    return render(request, 'reports.html', context)

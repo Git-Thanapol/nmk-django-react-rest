@@ -52,4 +52,8 @@ urlpatterns = [
 
     # Help Page
     path('help/', views.help, name='help'),
+
+    path('reports/', views.report_dashboard_view, name='reports'),
 ]
+
+

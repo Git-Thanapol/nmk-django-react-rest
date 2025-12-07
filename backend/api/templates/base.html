@@ -120,6 +120,13 @@
           </a>
 
           <a 
+            class="nav-link {% if request.path == '/reports/' %}active{% endif %}"
+            href="{% url 'reports' %}"
+          >
+            <i class="bi bi-layers me-2"></i>Reports
+          </a>
+
+          <a 
             class="nav-link {% if request.path == '/product_mapping/' %}active{% endif %}"
             href="{% url 'product_mapping' %}"
           >

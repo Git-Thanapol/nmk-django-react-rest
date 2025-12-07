@@ -248,3 +248,22 @@ class ImportFileForm(forms.Form):
     )
     # Hidden field to track which platform is being imported
     platform = forms.CharField(widget=forms.HiddenInput(), initial='tiktok')
+
+
+from django import forms
+from .models import Company
+
+class ReportFilterForm(forms.Form):
+    company = forms.ModelChoiceField(
+        queryset=Company.objects.all(),
+        widget=forms.Select(attrs={'class': 'form-select'}),
+        label="Select Company"
+    )
+    start_date = forms.DateField(
+        widget=forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}),
+        label="Start Date"
+    )
+    end_date = forms.DateField(
+        widget=forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}),
+        label="End Date"
+    )

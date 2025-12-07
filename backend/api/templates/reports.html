@@ -1,0 +1,144 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Reports{% endblock %}
+{% block page_title %}Reports & Analytics{% endblock %}
+
+{% block content %}
+<div class="container-fluid p-4">
+    
+    <div class="row g-4">
+        
+        <div class="col-md-4 col-lg-3">
+            <div class="card h-100 shadow-sm hover-shadow border-0">
+                <div class="card-body text-center p-4">
+                    <div class="mb-3">
+                        <span class="avatar avatar-lg bg-primary bg-opacity-10 text-primary rounded-circle p-3">
+                            <i class="bi bi-file-earmark-spreadsheet fs-2"></i>
+                        </span>
+                    </div>
+                    <h5 class="card-title fw-bold">Purchase Tax Report</h5>
+                    <p class="card-text text-muted small">
+                        Generate Excel report for Input VAT (Purchase Orders) matching Revenue Department format.
+                    </p>
+                    <button type="button" class="btn btn-outline-primary w-100 stretched-link" 
+                            data-bs-toggle="modal" 
+                            data-bs-target="#reportModal"
+                            data-report-type="purchase_tax"
+                            data-report-name="Purchase Tax Report (รายงานภาษีซื้อ)">
+                        Generate
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4 col-lg-3">
+            <div class="card h-100 shadow-sm hover-shadow border-0">
+                <div class="card-body text-center p-4">
+                    <div class="mb-3">
+                        <span class="avatar avatar-lg bg-success bg-opacity-10 text-success rounded-circle p-3">
+                            <i class="bi bi-receipt fs-2"></i>
+                        </span>
+                    </div>
+                    <h5 class="card-title fw-bold">Sales Tax Report</h5>
+                    <p class="card-text text-muted small">
+                        Output VAT report based on Sales Invoices matching Revenue Department format.
+                    </p>
+                    <button type="button" class="btn btn-outline-success w-100 stretched-link" 
+                            data-bs-toggle="modal" 
+                            data-bs-target="#reportModal"
+                            data-report-type="sales_tax"
+                            data-report-name="Sales Tax Report (รายงานภาษีขาย)">
+                        Generate
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4 col-lg-3">
+            <div class="card h-100 shadow-sm hover-shadow border-0">
+                <div class="card-body text-center p-4">
+                    <div class="mb-3">
+                        <span class="avatar avatar-lg bg-warning bg-opacity-10 text-warning rounded-circle p-3">
+                            <i class="bi bi-box-seam fs-2"></i>
+                        </span>
+                    </div>
+                    <h5 class="card-title fw-bold">Stock Report</h5>
+                    <p class="card-text text-muted small">
+                        Check product movement and current balance. <br> Supports negative stock tracking.
+                    </p>
+                    <button type="button" class="btn btn-outline-warning w-100 stretched-link" 
+                            data-bs-toggle="modal" 
+                            data-bs-target="#reportModal"
+                            data-report-type="stock_report"
+                            data-report-name="Stock Report (รายงานสินค้าคงเหลือ)">
+                        Generate
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="reportModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header bg-dark text-white">
+                <h5 class="modal-title" id="modalTitle">Report Setup</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="POST" action="{% url 'reports' %}">
+                {% csrf_token %}
+                <div class="modal-body p-4">
+                    <input type="hidden" name="report_type" id="reportTypeInput">
+                    
+                    <div class="mb-3">
+                        <label class="form-label text-secondary small">Select Company</label>
+                        {{ form.company }}
+                    </div>
+                    
+                    <div class="row g-2">
+                        <div class="col-6">
+                            <label class="form-label text-secondary small">Start Date</label>
+                            {{ form.start_date }}
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label text-secondary small">End Date</label>
+                            {{ form.end_date }}
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer bg-light">
+                    <button type="button" class="btn btn-ghost" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-download me-2"></i>Download Excel
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Script to pass data to the modal based on which card was clicked
+    document.addEventListener('DOMContentLoaded', function () {
+        var reportModal = document.getElementById('reportModal');
+        reportModal.addEventListener('show.bs.modal', function (event) {
+            var button = event.relatedTarget;
+            var reportType = button.getAttribute('data-report-type');
+            var reportName = button.getAttribute('data-report-name');
+            
+            var modalTitle = reportModal.querySelector('.modal-title');
+            var typeInput = reportModal.querySelector('#reportTypeInput');
+            
+            modalTitle.textContent = reportName;
+            typeInput.value = reportType;
+        });
+    });
+</script>
+
+<style>
+    .hover-shadow { transition: transform 0.2s, box-shadow 0.2s; }
+    .hover-shadow:hover { transform: translateY(-5px); box-shadow: 0 .5rem 1rem rgba(0,0,0,.15)!important; }
+</style>
+{% endblock %}
