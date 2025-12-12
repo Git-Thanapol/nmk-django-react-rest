@@ -4,49 +4,50 @@
 {% block title %}Invoices{% endblock %}
 {% block page_title %}Sales & Invoicing{% endblock %}
 
+{% load humanize %}
 {% block content %}
 <div class="container-fluid p-0">
 
     {% if form.instance.pk and form.instance.platform_name and form.instance.platform_name != 'Offline' %}
     <div class="card rounded-xl mb-4 shadow-sm border-0 bg-dark bg-gradient text-white">
         <div class="card-header bg-transparent border-secondary py-3">
-            <h6 class="mb-0 text-info"><i class="bi bi-layers-fill me-2"></i>Platform Order Details</h6>
+            <h6 class="mb-0 text-info"><i class="bi bi-layers-fill me-2"></i>รายละเอียดคำสั่งซื้อออนไลน์</h6>
         </div>
         <div class="card-body">
             <div class="row g-3">
                 <div class="col-md-3">
-                    <small class="text-secondary d-block">Platform Name</small>
+                    <small class="text-secondary d-block">ชื่อแพลตฟอร์ม</small>
                     <span class="fw-bold">{{ form.instance.platform_name }}</span>
                 </div>
                 <div class="col-md-3">
-                    <small class="text-secondary d-block">Order ID</small>
+                    <small class="text-secondary d-block">เลขที่คำสั่งซื้อ</small>
                     <span class="font-monospace text-warning">{{ form.instance.platform_order_id }}</span>
                 </div>
                 <div class="col-md-3">
-                    <small class="text-secondary d-block">Platform Status</small>
+                    <small class="text-secondary d-block">สถานะคำสั่งซื้อออนไลน์</small>
                     <span class="badge bg-secondary border border-secondary">{{ form.instance.platform_order_status|default:"-" }}</span>
                 </div>
                 <div class="col-md-3">
-                    <small class="text-secondary d-block">Tracking Number</small>
-                    <span class="font-monospace">{{ form.instance.platform_tracking_number|default:"-" }}</span>
+                    <small class="text-secondary d-block">เลข Tracking</small>
+                    <span class="text-secondary">{{ form.instance.platform_tracking_number|default:"-" }}</span>
                 </div>
                 
                 <div class="col-12"><hr class="border-secondary opacity-25 my-1"></div>
 
                 <div class="col-md-3">
-                    <small class="text-secondary d-block">Recipient Name</small>
+                    <small class="text-secondary d-block">ชื่อผู้รับ</small>
                     <span>{{ form.instance.recipient_name|default:"-" }}</span>
                 </div>
                 <div class="col-md-3">
-                    <small class="text-secondary d-block">Warehouse</small>
+                    <small class="text-secondary d-block">คลังสินค้า</small>
                     <span>{{ form.instance.warehouse_name|default:"-" }}</span>
                 </div>
                 <div class="col-md-3">
-                    <small class="text-secondary d-block">Grand Total</small>
-                    <span class="text-success fw-bold font-monospace">{{ form.instance.grand_total|floatformat:2 }}</span>
+                    <small class="text-secondary d-block">ยอดรวมสุทธิ</small>
+                    <span class="text-success fw-bold ">{{ form.instance.grand_total|floatformat:2|intcomma }}</span>
                 </div>
                  <div class="col-md-3">
-                    <small class="text-secondary d-block">Address</small>
+                    <small class="text-secondary d-block">ที่อยู่</small>
                     <span class="text-muted small">{{ form.instance.recipient_address|truncatechars:50 }}</span>
                 </div>
             </div>
@@ -60,7 +61,7 @@
                 {% if is_editing %}
                     <i class="bi bi-pencil-square me-2 text-warning"></i>Edit Invoice: <span class="text-warning">{{ editing_invoice.invoice_number }}</span>
                 {% else %}
-                    <i class="bi bi-receipt me-2"></i>Create New Invoice
+                    <i class="bi bi-receipt me-2"></i> สร้างใบแจ้งหนี้ใหม่
                 {% endif %}
             </h5>
         </div>
@@ -84,35 +85,37 @@
 
                 <div class="row g-3 mb-4">
                     <div class="col-md-3">
-                        <label class="form-label text-secondary small">Invoice No.</label>
+                        <label class="form-label text-secondary small">หมายเลขใบแจ้งหนี้</label>
                         {{ form.invoice_number }}
                     </div>
                     <div class="col-md-3">
-                        <label class="form-label text-secondary small">Customer</label>
+                        <label class="form-label text-secondary small">ลูกค้า</label>
                         {{ form.customer }}
                     </div>
                     <div class="col-md-3">
-                        <label class="form-label text-secondary small">Date</label>
+                        <label class="form-label text-secondary small">วันที่</label>
                         {{ form.invoice_date }}
-                    </div>
+                    </div>                    
                     <div class="col-md-3">
-                        <label class="form-label text-secondary small">Tax Sequence No.</label>
-                        <input type="text" name="tax_sequence_number" class="form-control" value="{{ form.instance.tax_sequence_number|default:'' }}">
-                    </div>
-                    
-                    <div class="col-md-3">
-                        <label class="form-label text-secondary small">Salesperson</label>
+                        <label class="form-label text-secondary small">ผู้ขาย</label>
                         <input type="text" name="saleperson" class="form-control" value="{{ form.instance.saleperson|default:'' }}">
                     </div>
                     <div class="col-md-3">
-                        <label class="form-label text-secondary small">Status</label>
+                        <label class="form-label text-secondary small">สถานะคำสั่งใบแจ้งหนี้</label>
                         <input type="text" name="status" class="form-control" value="{{ form.instance.status|default:'' }}">
                         {% comment %} {{ form.status_choices }} {% endcomment %}
-
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label text-secondary small">เลขที่ลำดับภาษี</label>
+                        <input type="text" name="tax_sequence_number" class="form-control" value="{{ form.instance.tax_sequence_number|default:'' }}">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label text-secondary small">วันที่กำหนดส่งภาษี</label>
+                        {{ form.tax_sender_date }}
                     </div>
                     {% if not is_editing %}
                         <div class="col-md-3">
-                            <label class="form-label text-secondary small">Channel</label>
+                            <label class="form-label text-secondary small">ช่องทางการขาย</label>
                             <input type="text" name="channel" class="form-control" value="{{ form.instance.platform_name|default:'' }}">
                             {% comment %} {{ form.platform_name }} {% endcomment %}
                         </div>
@@ -127,13 +130,13 @@
                     <table class="table table-darkish table-bordered align-middle text-center" id="itemsTable">
                         <thead class="bg-light bg-opacity-10">
                             <tr class="text-secondary small text-uppercase">
-                                <th style="width: 20%">Product</th>
-                                <th style="width: 20%">Batch (Stock)</th>
+                                <th style="width: 20%">สินค้าในระบบ</th>
+                                <th style="width: 20%">ระบุ (Stock)</th>
                                 <th style="width: 10%">SKU (Platform)</th>
-                                <th style="width: 15%">Item Name (Platform)</th>
-                                <th style="width: 10%">Qty</th>
-                                <th style="width: 10%">Price</th>
-                                <th style="width: 10%" class="text-end">Total</th>
+                                <th style="width: 15%">ชื่อสินค้า (Platform)</th>
+                                <th style="width: 10%">จำนวน</th>
+                                <th style="width: 10%">ราคาต่อหน่วย</th>
+                                <th style="width: 10%" class="text-end">รวมต่อรายการ</th>
                                 <th style="width: 5%"></th>
                             </tr>
                         </thead>
@@ -160,7 +163,7 @@
                                 <td><textarea name="{{ item_form.item_name.html_name }}" class="form-control form-control-sm" rows="1">{{ item_form.item_name.value|default:'' }}</textarea></td>
                                 <td>{{ item_form.quantity }}</td>
                                 <td>{{ item_form.unit_price }}</td>
-                                <td class="text-end px-3"><span class="row-total fw-bold font-monospace text-info">0.00</span></td>
+                                <td class="text-end px-3"><span class="row-total fw-bold text-info">0.00</span></td>
                                 <td>
                                     <div class="d-none">{{ item_form.DELETE }}</div> 
                                     <button type="button" class="btn btn-sm btn-outline-danger remove-row border-0"><i class="bi bi-trash"></i></button>
@@ -170,23 +173,23 @@
                         </tbody>
                     </table>
                     <button type="button" class="btn btn-sm btn-outline-primary mt-2" id="add-row">
-                        <i class="bi bi-plus-lg me-1"></i> Add Item Line
+                        <i class="bi bi-plus-lg me-1"></i> เพิ่มรายการสินค้า
                     </button>
                 </div>
 
                 <div class="row mt-4">
                     <div class="col-md-7">
-                        <label class="form-label text-secondary small">Notes</label>
+                        <label class="form-label text-secondary small">หมายเหตุ</label>
                         {{ form.notes }}
                     </div>
                     <div class="col-md-5">
                         <div class="card bg-dark border-secondary p-3">
                             <div class="d-flex justify-content-between mb-2">
-                                <span class="text-secondary">Subtotal</span>
+                                <span class="text-secondary">รวมราคาสินค้า</span>
                                 <span id="displaySubtotal" class="fw-bold">0.00</span>
                             </div>
                             <div class="d-flex justify-content-between align-items-center mb-2">
-                                <span class="text-secondary">Discount</span>
+                                <span class="text-secondary">ส่วนลด</span>
                                 <div style="width: 120px;">
                                     <input type="number" name="discount_amount" id="id_discount_amount" 
                                            class="form-control form-control-sm text-end" 
@@ -194,24 +197,24 @@
                                 </div>
                             </div>
                             <div class="d-flex justify-content-between align-items-center mb-2">
-                                <span class="text-secondary">Shipping Cost</span>
+                                <span class="text-secondary">ค่าขนส่ง</span>
                                 <div style="width: 120px;">{{ form.shipping_cost }}</div>
                             </div>
                             <div class="d-flex align-items-center justify-content-between mb-3">
                                 <div class="d-flex align-items-center gap-2">
-                                    <span class="text-secondary">VAT Included?</span>
+                                    <span class="text-secondary">รวมภาษี ?</span>
                                     <div class="form-check form-switch mb-0 ms-2">{{ form.tax_include }}</div>
                                 </div>
                                 <div class="d-flex align-items-center gap-2">
                                     <div style="width: 70px;">{{ form.tax_percent }}</div>
                                     <span class="text-secondary small">%</span>
-                                    <span id="displayTax" class="text-warning ms-2 font-monospace">0.00</span>
+                                    <span id="displayTax" class="ms-2">0.00</span>
                                 </div>
                             </div>
                             <div class="border-top border-secondary my-2"></div>
                             <div class="d-flex justify-content-between align-items-center mt-2">
-                                <span class="h5 mb-0 text-white">Grand Total</span>
-                                <span id="displayGrandTotal" class="h4 mb-0 text-success font-monospace">0.00</span>
+                                <span class="h5 mb-0 text-white">ยอดรวมสุทธิ</span>
+                                <span id="displayGrandTotal" class="h4 mb-0  fw-bold">0.00</span>
                             </div>
                         </div>
                     </div>
@@ -219,10 +222,10 @@
 
                 <div class="d-flex justify-content-end gap-2 mt-4">
                     {% if is_editing %}
-                        <a href="{% url 'invoice_list' %}" class="btn btn-ghost px-4">Cancel</a>
-                        <button type="submit" class="btn btn-warning px-4 fw-bold">Update Invoice</button>
+                        <a href="{% url 'invoice_list' %}" class="btn btn-ghost px-4">ย้อนกลับ</a>
+                        <button type="submit" class="btn btn-warning px-4 fw-bold">อัพเดทใบแจ้งหนี้</button>
                     {% else %}
-                        <button type="submit" class="btn btn-brand px-4">Save Invoice</button>
+                        <button type="submit" class="btn btn-brand px-4">บันทึกใบแจ้งหนี้</button>
                     {% endif %}
                 </div>
             </form>
@@ -236,7 +239,7 @@
             </div>
             <div class="input-group input-group-sm w-auto">
                 <span class="input-group-text bg-secondary border-secondary text-light"><i class="bi bi-search"></i></span>
-                <input type="text" id="globalSearch" class="form-control bg-dark border-secondary text-light" placeholder="Global Search...">
+                <input type="text" id="globalSearch" class="form-control bg-dark border-secondary text-light" placeholder="ค้นหา ...">
             </div>
         </div>
 
@@ -244,17 +247,17 @@
             <table class="table table-darkish table-hover align-middle mb-0" id="recentInvoicesTable">
                 <thead>
                     <tr class="text-secondary small text-uppercase bg-light bg-opacity-10">
-                        <th class="ps-4" style="width: 12%">Date</th>
-                        <th style="width: 10%">Internal Status</th>
-                        <th style="width: 15%">Platform Order ID</th>
-                        <th style="width: 15%">Platform Status</th>
-                        <th style="width: 15%">Tracking No.</th>
-                        <th class="text-end" style="width: 10%">Total</th>
-                        <th class="text-end pe-4" style="width: 10%">Action</th>
+                        <th class="ps-4" style="width: 12%">วันที่ใบแจ้งหนี้</th>
+                        <th style="width: 10%">สถานะคำสั่งใบแจ้งหนี้</th>
+                        <th style="width: 15%">เลขที่คำสั่งซื้อออนไลน์</th>
+                        <th style="width: 15%">สถานะคำสั่งซื้อออนไลน์</th>
+                        <th style="width: 15%">เลข Tracking</th>
+                        <th class="text-end" style="width: 10%">ยอดรวมสุทธิ</th>
+                        <th class="text-end pe-4" style="width: 10%">แก้ไข</th>
                     </tr>
                     <tr class="filter-row bg-dark">
                         <th class="ps-4 p-2">
-                            <input type="text" class="form-control form-control-sm bg-dark border-secondary text-light col-filter" data-col="0" placeholder="Filter Date">
+                            <input type="text" class="form-control form-control-sm bg-dark border-secondary text-light col-filter" data-col="0" placeholder="วันที่แจ้งหนี้ (YYYY-MM-DD)">
                         </th>
                         <th class="p-2">
                             <select class="form-select form-select-sm bg-dark border-secondary text-light col-filter" data-col="1">
@@ -265,16 +268,16 @@
                             </select>
                         </th>
                         <th class="p-2">
-                            <input type="text" class="form-control form-control-sm bg-dark border-secondary text-light col-filter" data-col="2" placeholder="Filter ID">
+                            <input type="text" class="form-control form-control-sm bg-dark border-secondary text-light col-filter" data-col="2" placeholder="กรองเลขที่ ID">
                         </th>
                          <th class="p-2">
-                            <input type="text" class="form-control form-control-sm bg-dark border-secondary text-light col-filter" data-col="3" placeholder="Filter Status">
+                            <input type="text" class="form-control form-control-sm bg-dark border-secondary text-light col-filter" data-col="3" placeholder="กรองสถานะ">
                         </th>
                         <th class="p-2">
-                            <input type="text" class="form-control form-control-sm bg-dark border-secondary text-light col-filter" data-col="4" placeholder="Filter Tracking">
+                            <input type="text" class="form-control form-control-sm bg-dark border-secondary text-light col-filter" data-col="4" placeholder="กรอง Tracking">
                         </th>
                         <th class="p-2 text-end">
-                            <input type="text" class="form-control form-control-sm bg-dark border-secondary text-light col-filter text-end" data-col="5" placeholder="> Amount">
+                            <input type="text" class="form-control form-control-sm bg-dark border-secondary text-light col-filter text-end" data-col="5" placeholder="> ยอดรวมสุทธิ">
                         </th>
                         <th></th>
                     </tr>
@@ -314,7 +317,7 @@
                             {{ inv.platform_tracking_number|default:"-" }}
                         </td>
                         
-                        <td class="text-end font-monospace text-white">{{ inv.grand_total|floatformat:2 }}</td>
+                        <td class="text-end text-white">{{ inv.grand_total|floatformat:2|intcomma }}</td>
                         
                         <td class="text-end pe-4">
                             <a href="{% url 'invoice_edit' inv.id %}" class="btn btn-sm btn-ghost text-secondary hover-white">

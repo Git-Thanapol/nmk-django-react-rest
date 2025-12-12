@@ -157,10 +157,12 @@ class PurchaseOrder(models.Model):
     created_by = models.ForeignKey('auth.User', on_delete=models.PROTECT)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    
     
     class Meta:
         db_table = 'purchase_orders'
-        unique_together = ['company', 'po_number']
+        #unique_together = ['company', 'po_number'] # Changed 12-12-2025 Allow duplicate PO numbers for testing
         ordering = ['-order_date']
     
     def __str__(self):
@@ -235,6 +237,8 @@ class Invoice(models.Model):
     customer = models.ForeignKey('Customer', on_delete=models.PROTECT, related_name='invoices', null=True, blank=True)
     
     invoice_date = models.DateField(default=timezone.now)      
+    
+    tax_sender_date = models.DateField(null=True, blank=True)
     tax_sequence_number = models.CharField(max_length=100, blank=True, null=True)
     saleperson = models.CharField(max_length=100, blank=True)
     status = models.CharField(max_length=100, default='DRAFT') 

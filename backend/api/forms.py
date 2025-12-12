@@ -1,7 +1,8 @@
 from django import forms
 from django.forms import inlineformset_factory
-from .models import Customer, Vendor, Product, Transaction,PurchaseOrder, PurchaseItem, Product, Invoice, InvoiceItem
+from .models import Customer, Vendor, Product, Transaction,PurchaseOrder, PurchaseItem, Product, Invoice, InvoiceItem,Company
 from django.core.validators import FileExtensionValidator
+from django import forms
 
 
 
@@ -128,15 +129,30 @@ class PurchaseOrderForm(forms.ModelForm):
         widgets = {
             'po_number': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'ระบุรหัสคำสั่งซื้อ เช่น PO-2024-XXXX'}),
             'vendor': forms.Select(attrs={'class': 'form-select'}),
-            'order_date': forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}),
-            'expected_delivery_date': forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}),
+            #'order_date': forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}),
+            #'expected_delivery_date': forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}),
             'purchase_type': forms.Select(attrs={'class': 'form-select'}),
             'status': forms.Select(attrs={'class': 'form-select'}),
             'tax_include': forms.CheckboxInput(attrs={'class': 'form-check-input', 'id': 'id_tax_include'}), # ID for JS
             'tax_percent': forms.NumberInput(attrs={'class': 'form-control', 'id': 'id_tax_percent', 'step': '0.01'}), # ID for JS
             'notes': forms.Textarea(attrs={'class': 'form-control', 'rows': 2}),
-            'tax_sender_date': forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}),
+            #'tax_sender_date': forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}),
             'tax_sequence_number': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'ระบุเลขที่ลำดับภาษี'}),
+
+
+            # --- FIX: Force YYYY-MM-DD format for Date Pickers ---
+            'order_date': forms.DateInput(
+                attrs={'class': 'form-control', 'type': 'date'}, 
+                format='%Y-%m-%d'
+            ),
+            'expected_delivery_date': forms.DateInput(
+                attrs={'class': 'form-control', 'type': 'date'}, 
+                format='%Y-%m-%d'
+            ),
+            'tax_sender_date': forms.DateInput(
+                attrs={'class': 'form-control', 'type': 'date'}, 
+                format='%Y-%m-%d'
+            ),
         }
     
     def __init__(self, *args, **kwargs):
@@ -169,7 +185,7 @@ class InvoiceForm(forms.ModelForm):
     class Meta:
         model = Invoice
         fields = ['invoice_number', 'customer', 'invoice_date', 'platform_name', 
-                  'status', 'tax_include', 'tax_percent', 'shipping_cost', 'notes']
+                  'status', 'tax_include', 'tax_percent', 'shipping_cost', 'notes', 'tax_sender_date','tax_sequence_number','saleperson']
         widgets = {
             'invoice_number': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'INV-2024-XXXX'}),
             'customer': forms.Select(attrs={'class': 'form-select'}),
@@ -180,6 +196,22 @@ class InvoiceForm(forms.ModelForm):
             'tax_percent': forms.NumberInput(attrs={'class': 'form-control', 'id': 'id_tax_percent', 'step': '0.01'}),
             'shipping_cost': forms.NumberInput(attrs={'class': 'form-control', 'id': 'id_shipping_cost', 'step': '0.01', 'value': '0.00'}),
             'notes': forms.Textarea(attrs={'class': 'form-control', 'rows': 2}),
+            #'tax_sender_date': forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}),
+            'tax_sequence_number': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'ระบุเลขที่ลำดับภาษี'}),
+            'saleperson': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'ระบุชื่อผู้ขาย'}),
+            'channel': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'ระบุช่องทางการขาย'}),
+
+
+            # --- FIX: Force YYYY-MM-DD format for Date Pickers ---
+            'invoice_date': forms.DateInput(
+                attrs={'class': 'form-control', 'type': 'date'}, 
+                format='%Y-%m-%d'
+            ),
+            'tax_sender_date': forms.DateInput(
+                attrs={'class': 'form-control', 'type': 'date'}, 
+                format='%Y-%m-%d'
+            ),
+
         }
         labels = {
             'status': 'Status',
@@ -253,9 +285,6 @@ class ImportFileForm(forms.Form):
     # Hidden field to track which platform is being imported
     platform = forms.CharField(widget=forms.HiddenInput(), initial='tiktok')
 
-
-from django import forms
-from .models import Company
 
 class ReportFilterForm(forms.Form):
     company = forms.ModelChoiceField(

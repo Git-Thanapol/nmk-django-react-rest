@@ -1,10 +1,10 @@
 {% extends 'base.html' %}
 {% load static %}
+{% load humanize %}
 
 {% block title %}Purchase Orders{% endblock %}
 {% block page_title %}Purchase Management{% endblock %}
 
-{% load humanize %}
 {% block content %}
 <div class="container-fluid p-0">
 
@@ -19,176 +19,242 @@
       </h5>
     </div>
 
+
+
     <div class="card-body">
-      <form method="POST" id="poForm">
-        {% csrf_token %}
-        
-        <div class="row g-3 mb-4">
-            <div class="col-md-3">
-                <label class="form-label text-secondary small">เลขที่ใบกำกับ</label>
-                {{ form.po_number }}
+        <form method="POST" id="poForm">
+            {% csrf_token %}
+            
+            {% if is_editing and editing_po.status == 'CANCELLED' %}
+                <fieldset disabled="disabled">
+            {% endif %}
+
+            <div class="row g-3 mb-4">
+                <div class="col-md-3">
+                    <label class="form-label text-secondary small">เลขที่ใบกำกับ</label>
+                    {{ form.po_number }}
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label text-secondary small">เจ้าหนี้</label>
+                    {{ form.vendor }}
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label text-secondary small">วันที่สั่งซื้อ</label>
+                    {{ form.order_date }}
+                </div>
+                
+                <div class="col-md-3">
+                    <label class="form-label text-secondary small">สถานะคำสั่งซื้อ</label>
+                    {{ form.status }}
+                </div>
+
+                <div class="col-md-3">
+                    <label class="form-label text-secondary small">วิธีการชำระ</label>
+                    {{ form.purchase_type }}
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label text-secondary small">วันที่ครบกำหนด</label>
+                    {{ form.expected_delivery_date }}
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label text-secondary small">วันที่กำหนดส่งภาษี</label>
+                    {{ form.tax_sender_date }}
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label text-secondary small">เลขที่ลำดับภาษี</label>
+                    {{ form.tax_sequence_number }}
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label text-secondary small">หมายเหตุ</label>
+                    {{ form.notes }}
+                </div>
             </div>
-            <div class="col-md-3">
-                <label class="form-label text-secondary small">เจ้าหนี้</label>
-                {{ form.vendor }}
+
+            <hr class="border-secondary">
+
+            <div class="table-responsive mb-4">
+                {{ formset.management_form }} 
+                <table class="table table-darkish table-bordered align-middle" id="itemsTable">
+                    <thead>
+                        <tr class="text-secondary small text-uppercase">
+                            <th style="width: 40%">สินค้า</th>
+                            <th style="width: 15%">จำนวน</th>
+                            <th style="width: 20%">ราคาต่อหน่วย</th>
+                            <th style="width: 20%" class="text-end">ยอดรวมรายการ</th>
+                            <th style="width: 5%"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item_form in formset %}
+                        <tr class="item-row">
+                            {% for hidden in item_form.hidden_fields %}{{ hidden }}{% endfor %}
+                            
+                            <td>{{ item_form.product }}</td>
+                            <td>{{ item_form.quantity }}</td>
+                            <td>{{ item_form.unit_cost }}</td>
+                            <td class="text-end">
+                                <span class="row-total fw-bold">0.00</span>
+                            </td>
+                            <td class="text-center">
+                                <div class="d-none">{{ item_form.DELETE }}</div> 
+                                <button type="button" class="btn btn-sm btn-outline-danger remove-row"><i class="bi bi-trash"></i></button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                
+                <button type="button" class="btn btn-sm btn-outline-primary" id="add-row">
+                    <i class="bi bi-plus-lg me-1"></i> เพิ่มรายการสินค้า
+                </button>
             </div>
-            <div class="col-md-3">
-                <label class="form-label text-secondary small">วันที่สั่งซื้อ</label>
-                {{ form.order_date }}
+
+            <div class="row justify-content-end">
+                <div class="col-md-5 col-lg-4">
+                    <div class="card bg-dark border-secondary p-3">
+                        <div class="d-flex justify-content-between mb-2">
+                            <span class="text-secondary">ยอดรวมสินค้า:</span>
+                            <span id="displaySubtotal" class="fw-bold">0.00</span>
+                        </div>
+                        
+                        <div class="d-flex align-items-center justify-content-between mb-2">
+                            <div class="d-flex align-items-center gap-2">
+                                <span class="text-secondary">ภาษี</span>
+                                <div class="form-check form-switch mb-0">
+                                    {{ form.tax_include }}
+                                </div>
+                                <div style="width: 70px;">
+                                    {{ form.tax_percent }} 
+                                </div>
+                                <span class="text-secondary small">%</span>
+                            </div>
+                            <span id="displayTax" class="fw-bold">0.00</span>
+                        </div>
+
+                        <div class="border-top border-secondary my-2"></div>
+                        
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span class="h5 mb-0 text-white">ยอดรวมสุทธิ:</span>
+                            <span id="displayGrandTotal" class="h4 mb-0 text-success fw-bold">0.00</span>
+                        </div>
+                    </div>
+                </div>
             </div>
-            <div class="col-md-3">
-                <label class="form-label text-secondary small">สถานะคำสั่งซื้อ</label>
-                {{ form.status }}
+
+            {% if is_editing and editing_po.status == 'CANCELLED' %}
+                </fieldset>
+            {% endif %}
+
+            <div class="d-flex justify-content-end gap-2 mt-4">
+                {% if is_editing %}
+                    <a href="{% url 'purchase_list' %}" class="btn btn-ghost px-4">ย้อนกลับ</a>
+                    
+                    {% if editing_po.status == 'CANCELLED' %}
+                        <button type="button" class="btn btn-secondary px-4" disabled>
+                            <i class="bi bi-lock-fill me-2"></i>Locked
+                        </button>
+                    {% elif editing_po.status == 'RECEIVED' %}
+                        <button type="submit" class="btn btn-danger px-4 fw-bold">
+                            <i class="bi bi-x-circle me-2"></i>Cancel Order
+                        </button>
+                    {% else %}
+                        <button type="submit" class="btn btn-warning px-4 fw-bold">อัพเดทคำสั่งซื้อ</button>
+                    {% endif %}
+
+                {% else %}
+                    <button type="submit" class="btn btn-brand px-4">บันทึกคำสั่งซื้อ</button>
+                {% endif %}
             </div>
-            <div class="col-md-3">
-                <label class="form-label text-secondary small">วิธีการชำระ</label>
-                {{ form.purchase_type }}
+        </form>
+        </div>
+    </div>
+
+    </div>
+
+
+    </div>
+
+    <div class="card rounded-xl shadow-sm mt-5 mb-5 border-0">
+        <div class="card-header bg-dark bg-gradient border-secondary py-3 d-flex justify-content-between align-items-center">
+            <div>
+                <h5 class="mb-0 text-white"><i class="bi bi-clock-history me-2"></i>รายการคำสั่งซื้อล่าสุด</h5>
             </div>
-            <div class="col-md-3">
-                <label class="form-label text-secondary small">วันที่ครบกำหนด</label>
-                {{ form.expected_delivery_date }}
-            </div>
-            <div class="col-md-3">
-                <label class="form-label text-secondary small">วันที่กำหนดส่งภาษี</label>
-                {{ form.tax_sender_date }}
-            </div>
-            <div class="col-md-3">
-                <label class="form-label text-secondary small">เลขที่ลำดับภาษี</label>
-                {{ form.tax_sequence_number }}
-            </div>
-            <div class="col-md-6">
-                <label class="form-label text-secondary small">หมายเหตุ</label>
-                {{ form.notes }}
+            <div class="input-group input-group-sm w-auto">
+                <span class="input-group-text bg-secondary border-secondary text-light"><i class="bi bi-search"></i></span>
+                <input type="text" id="globalSearch" class="form-control bg-dark border-secondary text-light" placeholder="ค้นหา...">
             </div>
         </div>
 
-        <hr class="border-secondary">
-
-        <div class="table-responsive mb-4">
-            {{ formset.management_form }} <table class="table table-darkish table-bordered align-middle" id="itemsTable">
+        <div class="table-responsive">
+            <table class="table table-darkish table-hover align-middle mb-0" id="recentOrdersTable">
                 <thead>
-                    <tr class="text-secondary small text-uppercase">
-                        <th style="width: 40%">สินค้า</th>
-                        <th style="width: 15%">จำนวน</th>
-                        <th style="width: 20%">ราคาต่อหน่วย</th>
-                        <th style="width: 20%" class="text-end">ยอดรวมรายการ</th>
-                        <th style="width: 5%"></th>
+                    <tr class="text-secondary small text-uppercase bg-light bg-opacity-10">
+                        <th class="ps-4" style="width: 15%">วันที่สั่งซื้อ</th>
+                        <th style="width: 20%">หมายเลขคำสั่งซื้อ</th>
+                        <th style="width: 25%">ผู้ขาย</th>
+                        <th style="width: 15%">สถานะ</th>
+                        <th class="text-end" style="width: 15%">ยอดรวม</th>
+                        <th class="text-end pe-4" style="width: 10%">แก้ไข</th>
+                    </tr>
+                    <tr class="filter-row bg-dark">
+                        <th class="ps-4 p-2">
+                            <input type="text" class="form-control form-control-sm bg-dark border-secondary text-light col-filter" data-col="0" placeholder="กรองวันที่">
+                        </th>
+                        <th class="p-2">
+                            <input type="text" class="form-control form-control-sm bg-dark border-secondary text-light col-filter" data-col="1" placeholder="กรองเลขที่">
+                        </th>
+                        <th class="p-2">
+                            <input type="text" class="form-control form-control-sm bg-dark border-secondary text-light col-filter" data-col="2" placeholder="กรองผู้ขาย">
+                        </th>
+                        <th class="p-2">
+                            <select class="form-select form-select-sm bg-dark border-secondary text-light col-filter" data-col="3">
+                                <option value="">ทั้งหมด</option>
+                                <option value="DRAFT">Draft</option>
+                                <option value="ORDERED">Ordered</option>
+                                <option value="RECEIVED">Received</option>
+                                <option value="CANCELLED">Cancelled</option>
+                            </select>
+                        </th>
+                        <th class="p-2 text-end">
+                            <input type="text" class="form-control form-control-sm bg-dark border-secondary text-light col-filter text-end" data-col="4" placeholder="> ยอดเงิน">
+                        </th>
+                        <th></th>
                     </tr>
                 </thead>
                 <tbody>
-                    {% for item_form in formset %}
-                    <tr class="item-row">
-                        {% for hidden in item_form.hidden_fields %}
-                            {{ hidden }}
-                        {% endfor %}
+                    {% for order in orders %}
+                    <tr>
+                        <td class="ps-4 text-secondary">{{ order.order_date|date:"d/m/Y" }}</td>
                         
-                        <td>{{ item_form.product }}</td>
-                        <td>{{ item_form.quantity }}</td>
-                        <td>{{ item_form.unit_cost }}</td>
-                        <td class="text-end">
-                            <span class="row-total fw-bold">0.00</span>
+                        <td class="font-monospace text-white">{{ order.po_number }}</td>
+                        
+                        <td>{{ order.vendor.name }}</td>
+                        
+                        <td>
+                            <span class="badge bg-secondary bg-opacity-25 text-light border border-secondary border-opacity-50">
+                                {{ order.status }}
+                            </span>
                         </td>
-                        <td class="text-center">
-                            <div class="d-none">{{ item_form.DELETE }}</div> 
-                            <button type="button" class="btn btn-sm btn-outline-danger remove-row">
-                                <i class="bi bi-trash"></i>
-                            </button>
+                        
+                        <td class="text-end font-monospace text-info">{{ order.total_amount|floatformat:2|intcomma }}</td>
+                        
+                        <td class="text-end pe-4">
+                            <a href="{% url 'purchase_edit' order.id %}" class="btn btn-sm btn-ghost text-secondary hover-white">
+                                <i class="bi bi-pencil"></i>
+                            </a>
                         </td>
+                    </tr>
+                    {% empty %}
+                    <tr id="noResultsRow">
+                        <td colspan="6" class="text-center py-5 text-muted">ไม่พบคำสั่งซื้อ</td>
                     </tr>
                     {% endfor %}
                 </tbody>
             </table>
-            
-            <button type="button" class="btn btn-sm btn-outline-primary" id="add-row">
-                <i class="bi bi-plus-lg me-1"></i> เพิ่มรายการสินค้า
-            </button>
         </div>
-
-        <div class="row justify-content-end">
-            <div class="col-md-5 col-lg-4">
-                <div class="card bg-dark border-secondary p-3">
-                    <div class="d-flex justify-content-between mb-2">
-                        <span class="text-secondary">ยอดรวมสินค้า:</span>
-                        <span id="displaySubtotal" class="fw-bold">0.00</span>
-                    </div>
-                    
-                    <div class="d-flex align-items-center justify-content-between mb-2">
-                        <div class="d-flex align-items-center gap-2">
-                            <span class="text-secondary">ภาษี</span>
-                            <div class="form-check form-switch mb-0">
-                                {{ form.tax_include }}
-                            </div>
-                            <div style="width: 70px;">
-                                {{ form.tax_percent }} 
-                            </div>
-                            <span class="text-secondary small">%</span>
-                        </div>
-                        <span id="displayTax" class="fw-bold">0.00</span>
-                    </div>
-
-                    <div class="border-top border-secondary my-2"></div>
-                    
-                    <div class="d-flex justify-content-between align-items-center">
-                        <span class="h5 mb-0 text-white">ยอดรวมสุทธิ:</span>
-                        <span id="displayGrandTotal" class="h4 mb-0 text-success fw-bold">0.00</span>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="d-flex justify-content-end gap-2 mt-4">
-            {% if is_editing %}
-                <a href="{% url 'purchase_list' %}" class="btn btn-ghost px-4">ยกเลิกคำสั่งซื้อ</a>
-                <button type="submit" class="btn btn-warning px-4 fw-bold">อัพเดทคำสั่งซื้อ</button>
-            {% else %}
-                <button type="submit" class="btn btn-brand px-4">บันทึกคำสั่งซื้อ</button>
-            {% endif %}
-        </div>
-      </form>
     </div>
-  </div>
 
-  <div class="card rounded-xl shadow-sm mt-5">
-    <div class="card-header bg-transparent border-secondary py-3">
-        <h5 class="mb-0 text-white">รายการคำสั่งซื้อล่าสุด</h5>
     </div>
-    <div class="table-responsive">
-        <table class="table table-darkish table-hover align-middle mb-0">
-            <thead>
-                <tr class="text-secondary small text-uppercase">
-                    <th class="ps-4">วันที่สั่งซื้อ</th>
-                    <th>หมายเลขคำสั่งซื้อ</th>
-                    <th>ผู้ขาย</th>
-                    <th>สถานะคำสั่งซื้อ</th>
-                    <th class="text-end">ยอดรวม</th>
-                    <th class="text-end pe-4">แก้ไข</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for order in orders %}
-                <tr>
-                    <td class="ps-4 text-secondary">{{ order.order_date|date:"d/m/Y" }}</td>
-                    <td class="font-monospace text-white">{{ order.po_number }}</td>
-                    <td>{{ order.vendor.name }}</td>
-                    <td>
-                        <span class="badge bg-secondary bg-opacity-25 text-light border border-secondary border-opacity-50">
-                            {{ order.status }}
-                        </span>
-                    </td>
-                    <td class="text-end ">{{ order.total_amount|floatformat:2|intcomma}}</td>
-                    <td class="text-end pe-4">
-                        <a href="{% url 'purchase_edit' order.id %}" class="btn btn-sm btn-ghost"><i class="bi bi-pencil"></i></a>
-                    </td>
-                </tr>
-                {% empty %}
-                <tr><td colspan="6" class="text-center py-4 text-muted">No orders found.</td></tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-  </div>
-
-</div>
 
 <table style="display:none;">
     <tr id="empty-row-template">
@@ -206,18 +272,19 @@
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     
+    // ==========================================
+    // 1. PURCHASE ORDER FORM LOGIC
+    // ==========================================
     const tableBody = document.querySelector('#itemsTable tbody');
     const totalForms = document.getElementById('id_purchase_items-TOTAL_FORMS');
     const addRowBtn = document.getElementById('add-row');
     const taxCheck = document.getElementById('id_tax_include');
     const taxPercentInput = document.getElementById('id_tax_percent');
 
-    // --- 1. INITIAL CALCULATION ---
+    // Init Calc
     calculateAll();
 
-    // --- 2. EVENT LISTENERS ---
-    
-    // Listen for inputs on the whole table (Delegation)
+    // Listeners
     tableBody.addEventListener('input', function(e) {
         if (e.target.classList.contains('qty') || e.target.classList.contains('price')) {
             calculateRow(e.target.closest('tr'));
@@ -225,44 +292,35 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
-    // Listen for tax changes
     taxCheck.addEventListener('change', calculateAll);
     taxPercentInput.addEventListener('input', calculateAll);
 
-    // Listen for Add Row
     addRowBtn.addEventListener('click', function() {
         const formIdx = totalForms.value;
         const emptyRow = document.getElementById('empty-row-template').cloneNode(true);
-        
-        // Regex to replace __prefix__ with the new index number
         emptyRow.innerHTML = emptyRow.innerHTML.replace(/__prefix__/g, formIdx);
         emptyRow.removeAttribute('id');
-        emptyRow.classList.add('item-row'); // Add class for selector
-        
+        emptyRow.classList.add('item-row');
         tableBody.appendChild(emptyRow);
         totalForms.value = parseInt(formIdx) + 1;
     });
 
-    // Listen for Remove Row
     tableBody.addEventListener('click', function(e) {
         if (e.target.closest('.remove-row')) {
             const row = e.target.closest('tr');
-            // If it's a saved row, check the hidden DELETE box
             const deleteBox = row.querySelector('input[name$="-DELETE"]');
             if (deleteBox) {
                 deleteBox.checked = true;
-                row.style.display = 'none'; // Visual hide
-                row.classList.remove('item-row'); // Remove class so it isn't calculated
+                row.style.display = 'none'; 
+                row.classList.remove('item-row');
             } else {
-                // If it's a new unsaved row, just remove DOM
                 row.remove();
             }
             calculateAll();
         }
     });
 
-    // --- 3. MATH FUNCTIONS ---
-
+    // Calc Functions
     function calculateRow(row) {
         const qty = parseFloat(row.querySelector('.qty').value) || 0;
         const price = parseFloat(row.querySelector('.price').value) || 0;
@@ -273,36 +331,87 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function calculateAll() {
         let subtotal = 0;
-        const rows = document.querySelectorAll('tr.item-row'); // Only visible active rows
-
-        rows.forEach(row => {
-            // Check if row is not hidden (deleted)
-            if (row.style.display !== 'none') {
-                subtotal += calculateRow(row);
-            }
+        document.querySelectorAll('tr.item-row').forEach(row => {
+            if (row.style.display !== 'none') subtotal += calculateRow(row);
         });
 
-        // Tax Logic
         const taxPercent = parseFloat(taxPercentInput.value) || 0;
         const isTaxIncluded = taxCheck.checked;
         let taxAmount = 0;
         let grandTotal = 0;
 
         if (isTaxIncluded) {
-            // Formula: Tax = Total - (Total / (1 + Rate/100))
             taxAmount = subtotal - (subtotal / (1 + (taxPercent / 100)));
-            grandTotal = subtotal; // If included, grand total is just the sum of items
+            grandTotal = subtotal; 
         } else {
-            // Formula: Tax = Total * (Rate/100)
             taxAmount = subtotal * (taxPercent / 100);
             grandTotal = subtotal + taxAmount;
         }
 
-        // Update DOM
         document.getElementById('displaySubtotal').textContent = subtotal.toFixed(2);
         document.getElementById('displayTax').textContent = taxAmount.toFixed(2);
         document.getElementById('displayGrandTotal').textContent = grandTotal.toFixed(2);
     }
+
+    // ==========================================
+    // 2. RECENT ORDERS TABLE FILTERING
+    // ==========================================
+    const table = document.getElementById("recentOrdersTable");
+    const globalSearch = document.getElementById("globalSearch");
+    const colFilters = document.querySelectorAll(".col-filter");
+    const rows = table.querySelectorAll("tbody tr:not(#noResultsRow)");
+
+    function filterData() {
+        const globalTerm = globalSearch.value.toLowerCase();
+        let visibleCount = 0;
+
+        rows.forEach(row => {
+            const cells = row.cells;
+            let showRow = true;
+
+            // Column Filters
+            colFilters.forEach(filter => {
+                const colIndex = filter.getAttribute("data-col");
+                const filterVal = filter.value.toLowerCase();
+                const cellText = cells[colIndex].textContent.toLowerCase().trim();
+
+                if (filterVal !== "") {
+                    // Specific Logic for Status (Exact match via dropdown)
+                    if (filter.tagName === 'SELECT') {
+                         if (!cellText.includes(filterVal)) showRow = false;
+                    } 
+                    // Logic for Amount (> X)
+                    else if (colIndex === "4") { 
+                        const amount = parseFloat(cellText.replace(/,/g, ''));
+                        const filterAmount = parseFloat(filterVal);
+                        if (!isNaN(filterAmount) && amount < filterAmount) showRow = false;
+                    } 
+                    // Standard Text Search
+                    else {
+                        if (!cellText.includes(filterVal)) showRow = false;
+                    }
+                }
+            });
+
+            // Global Search
+            if (showRow && globalTerm !== "") {
+                if (!row.innerText.toLowerCase().includes(globalTerm)) showRow = false;
+            }
+
+            row.style.display = showRow ? "" : "none";
+            if(showRow) visibleCount++;
+        });
+        
+        // Show "No Results" row if needed
+        const noResRow = document.getElementById("noResultsRow");
+        if(noResRow) noResRow.style.display = (visibleCount === 0) ? "" : "none";
+    }
+
+    globalSearch.addEventListener("input", filterData);
+    colFilters.forEach(input => {
+        input.addEventListener("input", filterData);
+        input.addEventListener("change", filterData);
+    });
 });
 </script>
 {% endblock %}

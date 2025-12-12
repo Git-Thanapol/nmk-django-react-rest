@@ -481,28 +481,51 @@ def purchase_order_view(request, pk=None):
         po_instance = None
         is_editing = False
 
+    # --- RULE 1: If CANCELLED -> Completely Locked (Read-Only) ---
+    if is_editing and po_instance.status == 'CANCELLED': # 'Cancelled' in Thai
+        # If user tries to POST (Save) to a cancelled order, block it
+        if request.method == 'POST':
+            messages.error(request, "Cannot edit a Cancelled order.")
+            return redirect('purchase_edit', pk=pk) # Reload page
+
     # 2. Handle POST (Save Data)
     if request.method == 'POST':
         form = PurchaseOrderForm(request.POST, instance=po_instance)
-        formset = PurchaseItemFormSet(request.POST, instance=po_instance)
+        # Note: We don't load formset yet because we might reject the save immediately
+        #formset = PurchaseItemFormSet(request.POST, instance=po_instance)
         
-        if form.is_valid() and formset.is_valid():
-            with transaction.atomic(): # Use atomic to ensure header & items save together
-                # A. Save Header
-                po = form.save(commit=False)
-                if not is_editing:
-                    po.created_by = request.user
-                    po.company = Company.objects.first() # Placeholder logic
-                po.save()
+        if form.is_valid():
+            # --- RULE 2: If 'Paid'/'RECEIVED' -> Allow ONLY 'CANCELLED' ---
+            if is_editing and po_instance.status == 'RECEIVED': # Change 'RECEIVED' to 'Paid' if needed
+                new_status = form.cleaned_data.get('status')
                 
-                # B. Save Items
-                formset.instance = po
-                formset.save()
-                
-                # C. Recalculate Totals (The model method we wrote earlier)
-                po.calculate_totals()
-                
-                return redirect('purchase_list')
+                if new_status != 'CANCELLED':
+                    messages.error(request, "Paid/Received orders can only be changed to 'CANCELLED'. Other edits are forbidden.")
+                    return redirect('purchase_edit', pk=pk)
+            
+            # --- Normal Save Logic Continues ---
+            formset = PurchaseItemFormSet(request.POST, instance=po_instance)
+
+            if form.is_valid() and formset.is_valid():
+                try:
+                    with transaction.atomic(): # Use atomic to ensure header & items save together
+                        # A. Save Header
+                        po = form.save(commit=False)
+                        if not is_editing:
+                            po.created_by = request.user
+                            po.company = Company.objects.first() # Placeholder logic
+                        po.save()
+                        
+                        # B. Save Items
+                        formset.instance = po
+                        formset.save()
+                        
+                        # C. Recalculate Totals (The model method we wrote earlier)
+                        po.calculate_totals()
+                        
+                        return redirect('purchase_list')
+                except Exception as e:
+                    messages.error(request, str(e))
     else:
         form = PurchaseOrderForm(instance=po_instance)
         formset = PurchaseItemFormSet(instance=po_instance)
