@@ -106,12 +106,15 @@
                     </div>
                     <div class="col-md-3">
                         <label class="form-label text-secondary small">Status</label>
-                        {{ form.status_choices }}
+                        <input type="text" name="status" class="form-control" value="{{ form.instance.status|default:'' }}">
+                        {% comment %} {{ form.status_choices }} {% endcomment %}
+
                     </div>
                     {% if not is_editing %}
                         <div class="col-md-3">
                             <label class="form-label text-secondary small">Channel</label>
-                            {{ form.platform_name }}
+                            <input type="text" name="channel" class="form-control" value="{{ form.instance.platform_name|default:'' }}">
+                            {% comment %} {{ form.platform_name }} {% endcomment %}
                         </div>
                     {% endif %}
                 </div>

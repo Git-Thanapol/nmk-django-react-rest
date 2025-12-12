@@ -3,6 +3,8 @@ from django.forms import inlineformset_factory
 from .models import Customer, Vendor, Product, Transaction,PurchaseOrder, PurchaseItem, Product, Invoice, InvoiceItem
 from django.core.validators import FileExtensionValidator
 
+
+
 class CustomerForm(forms.ModelForm):
     class Meta:
         model = Customer
@@ -122,9 +124,9 @@ class PurchaseOrderForm(forms.ModelForm):
     class Meta:
         model = PurchaseOrder
         fields = ['po_number', 'vendor', 'order_date', 'purchase_type', 
-                  'expected_delivery_date', 'tax_include', 'tax_percent', 'notes', 'status']
+                  'expected_delivery_date', 'tax_include', 'tax_percent', 'notes', 'status','tax_sender_date','tax_sequence_number']
         widgets = {
-            'po_number': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'PO-2024-XXXX'}),
+            'po_number': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'ระบุรหัสคำสั่งซื้อ เช่น PO-2024-XXXX'}),
             'vendor': forms.Select(attrs={'class': 'form-select'}),
             'order_date': forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}),
             'expected_delivery_date': forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}),
@@ -133,6 +135,8 @@ class PurchaseOrderForm(forms.ModelForm):
             'tax_include': forms.CheckboxInput(attrs={'class': 'form-check-input', 'id': 'id_tax_include'}), # ID for JS
             'tax_percent': forms.NumberInput(attrs={'class': 'form-control', 'id': 'id_tax_percent', 'step': '0.01'}), # ID for JS
             'notes': forms.Textarea(attrs={'class': 'form-control', 'rows': 2}),
+            'tax_sender_date': forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}),
+            'tax_sequence_number': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'ระบุเลขที่ลำดับภาษี'}),
         }
     
     def __init__(self, *args, **kwargs):
@@ -149,7 +153,7 @@ class PurchaseItemForm(forms.ModelForm):
         widgets = {
             'product': forms.Select(attrs={'class': 'form-select product-select'}),
             'quantity': forms.NumberInput(attrs={'class': 'form-control qty', 'min': '1'}),
-            'unit_cost': forms.NumberInput(attrs={'class': 'form-control price', 'step': '0.01'}),
+            'unit_cost': forms.NumberInput(attrs={'class': 'form-control price', 'step': '1'}),
         }
 
 # Logic: Link Parent (PurchaseOrder) to Child (PurchaseItem)
@@ -186,7 +190,7 @@ class InvoiceForm(forms.ModelForm):
         if not self.instance.pk:
             from django.utils import timezone
             self.fields['invoice_date'].initial = timezone.now().date()
-            self.fields['status'].initial = 'draft'  # Default to "แบบร่าง"
+            self.fields['status'].initial = 'DRAFT'  # Default to "แบบร่าง"
 
 class InvoiceItemCustomChoiceField(forms.ModelChoiceField):
     """Custom field to display detailed stock info in the dropdown"""

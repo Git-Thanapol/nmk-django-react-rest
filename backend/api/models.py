@@ -7,6 +7,8 @@ from decimal import Decimal
 from django.db import migrations, models
 
 
+DATE_INPUT_FORMATS = ['%d-%m-%Y']
+
 # Create your models here.
 class Note(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE,related_name='notes')
@@ -18,7 +20,6 @@ class Note(models.Model):
     def __str__(self):
         return self.title
     
-
 class Company(models.Model):
     """Multi-company support"""
     name = models.CharField(max_length=200)
@@ -123,16 +124,15 @@ class Product(models.Model):
 class PurchaseOrder(models.Model):
     """Purchase order from vendors"""
     STATUS_CHOICES = [
-        ('DRAFT', 'Draft'),
-        ('ORDERED', 'Ordered'),
-        ('RECEIVED', 'Received'),
-        ('CANCELLED', 'Cancelled'),
+        ('DRAFT', 'แบบร่าง'),
+        ('PAID', 'ชำระเงินแล้ว'),
+        ('CANCELLED', 'ยกเลิก'),
     ]
 
     PURCHASE_TYPE_CHOICES = [
-        ('Credit', 'Credit'),
-        ('Cash', 'Cash'),
-        ('Check', 'Check'),
+        ('Credit', 'เครดิต'),
+        ('Cash', 'เงินสด'),
+        ('Check', 'เงินเช็ค'),
     ]
     
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='purchase_orders', null=True, blank=True)
@@ -145,11 +145,14 @@ class PurchaseOrder(models.Model):
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='DRAFT')
     subtotal = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     discount_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+
     tax_include = models.BooleanField(default=True)
     tax_percent = models.DecimalField(max_digits=5, decimal_places=2, default=7)  # Default 7% VAT
     tax_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     total_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     notes = models.TextField(blank=True, null=True)
+
+    tax_sender_date = models.DateField(null=True, blank=True)
     tax_sequence_number = models.CharField(max_length=100, blank=True, null=True)
     created_by = models.ForeignKey('auth.User', on_delete=models.PROTECT)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -161,7 +164,7 @@ class PurchaseOrder(models.Model):
         ordering = ['-order_date']
     
     def __str__(self):
-        return f"PO-{self.po_number} ({self.company})"
+        return f"{self.po_number} ({self.company})"
     
     def calculate_totals(self):
         """Calculate order totals from items"""
@@ -235,6 +238,7 @@ class Invoice(models.Model):
     tax_sequence_number = models.CharField(max_length=100, blank=True, null=True)
     saleperson = models.CharField(max_length=100, blank=True)
     status = models.CharField(max_length=100, default='DRAFT') 
+    #status = models.ChoicesField(choices=STATUS_CHOICES, default='DRAFT')
 
     # Financials
     tax_include = models.BooleanField(default=True)

@@ -59,6 +59,7 @@ INSTALLED_APPS = [
     "rest_framework", # Django REST framework
     "rest_framework_simplejwt", # JWT authentication
     "corsheaders", # CORS headers
+    "django.contrib.humanize", # Humanize numbers
 ]
 
 MIDDLEWARE = [

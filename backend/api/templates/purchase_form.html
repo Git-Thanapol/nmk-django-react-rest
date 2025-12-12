@@ -4,6 +4,7 @@
 {% block title %}Purchase Orders{% endblock %}
 {% block page_title %}Purchase Management{% endblock %}
 
+{% load humanize %}
 {% block content %}
 <div class="container-fluid p-0">
 
@@ -11,9 +12,9 @@
     <div class="card-header bg-transparent border-secondary py-3">
       <h5 class="mb-0 text-white">
         {% if is_editing %}
-            <i class="bi bi-pencil-square me-2 text-warning"></i>Edit PO: <span class="text-warning">{{ editing_po.po_number }}</span>
+            <i class="bi bi-pencil-square me-2 text-warning"></i>แก้ไขคำสั่งซื้อ: <span class="text-warning">{{ editing_po.po_number }}</span>
         {% else %}
-            <i class="bi bi-cart-plus me-2"></i>Create Purchase Order
+            <i class="bi bi-cart-plus me-2"></i>สร้างคำสั่งซื้อใหม่
         {% endif %}
       </h5>
     </div>
@@ -24,31 +25,39 @@
         
         <div class="row g-3 mb-4">
             <div class="col-md-3">
-                <label class="form-label text-secondary small">PO Number</label>
+                <label class="form-label text-secondary small">เลขที่ใบกำกับ</label>
                 {{ form.po_number }}
             </div>
             <div class="col-md-3">
-                <label class="form-label text-secondary small">Vendor</label>
+                <label class="form-label text-secondary small">เจ้าหนี้</label>
                 {{ form.vendor }}
             </div>
             <div class="col-md-3">
-                <label class="form-label text-secondary small">Order Date</label>
+                <label class="form-label text-secondary small">วันที่สั่งซื้อ</label>
                 {{ form.order_date }}
             </div>
             <div class="col-md-3">
-                <label class="form-label text-secondary small">Status</label>
+                <label class="form-label text-secondary small">สถานะคำสั่งซื้อ</label>
                 {{ form.status }}
             </div>
             <div class="col-md-3">
-                <label class="form-label text-secondary small">Type</label>
+                <label class="form-label text-secondary small">วิธีการชำระ</label>
                 {{ form.purchase_type }}
             </div>
             <div class="col-md-3">
-                <label class="form-label text-secondary small">Exp. Delivery</label>
+                <label class="form-label text-secondary small">วันที่ครบกำหนด</label>
                 {{ form.expected_delivery_date }}
             </div>
+            <div class="col-md-3">
+                <label class="form-label text-secondary small">วันที่กำหนดส่งภาษี</label>
+                {{ form.tax_sender_date }}
+            </div>
+            <div class="col-md-3">
+                <label class="form-label text-secondary small">เลขที่ลำดับภาษี</label>
+                {{ form.tax_sequence_number }}
+            </div>
             <div class="col-md-6">
-                <label class="form-label text-secondary small">Notes</label>
+                <label class="form-label text-secondary small">หมายเหตุ</label>
                 {{ form.notes }}
             </div>
         </div>
@@ -59,10 +68,10 @@
             {{ formset.management_form }} <table class="table table-darkish table-bordered align-middle" id="itemsTable">
                 <thead>
                     <tr class="text-secondary small text-uppercase">
-                        <th style="width: 40%">Product</th>
-                        <th style="width: 15%">Quantity</th>
-                        <th style="width: 20%">Unit Cost</th>
-                        <th style="width: 20%" class="text-end">Total</th>
+                        <th style="width: 40%">สินค้า</th>
+                        <th style="width: 15%">จำนวน</th>
+                        <th style="width: 20%">ราคาต่อหน่วย</th>
+                        <th style="width: 20%" class="text-end">ยอดรวมรายการ</th>
                         <th style="width: 5%"></th>
                     </tr>
                 </thead>
@@ -77,7 +86,7 @@
                         <td>{{ item_form.quantity }}</td>
                         <td>{{ item_form.unit_cost }}</td>
                         <td class="text-end">
-                            <span class="row-total fw-bold font-monospace">0.00</span>
+                            <span class="row-total fw-bold">0.00</span>
                         </td>
                         <td class="text-center">
                             <div class="d-none">{{ item_form.DELETE }}</div> 
@@ -91,7 +100,7 @@
             </table>
             
             <button type="button" class="btn btn-sm btn-outline-primary" id="add-row">
-                <i class="bi bi-plus-lg me-1"></i> Add Item
+                <i class="bi bi-plus-lg me-1"></i> เพิ่มรายการสินค้า
             </button>
         </div>
 
@@ -99,13 +108,13 @@
             <div class="col-md-5 col-lg-4">
                 <div class="card bg-dark border-secondary p-3">
                     <div class="d-flex justify-content-between mb-2">
-                        <span class="text-secondary">Subtotal:</span>
+                        <span class="text-secondary">ยอดรวมสินค้า:</span>
                         <span id="displaySubtotal" class="fw-bold">0.00</span>
                     </div>
                     
                     <div class="d-flex align-items-center justify-content-between mb-2">
                         <div class="d-flex align-items-center gap-2">
-                            <span class="text-secondary">Tax</span>
+                            <span class="text-secondary">ภาษี</span>
                             <div class="form-check form-switch mb-0">
                                 {{ form.tax_include }}
                             </div>
@@ -114,14 +123,14 @@
                             </div>
                             <span class="text-secondary small">%</span>
                         </div>
-                        <span id="displayTax" class="text-warning">0.00</span>
+                        <span id="displayTax" class="fw-bold">0.00</span>
                     </div>
 
                     <div class="border-top border-secondary my-2"></div>
                     
                     <div class="d-flex justify-content-between align-items-center">
-                        <span class="h5 mb-0 text-white">Grand Total:</span>
-                        <span id="displayGrandTotal" class="h4 mb-0 text-success font-monospace">0.00</span>
+                        <span class="h5 mb-0 text-white">ยอดรวมสุทธิ:</span>
+                        <span id="displayGrandTotal" class="h4 mb-0 text-success fw-bold">0.00</span>
                     </div>
                 </div>
             </div>
@@ -129,10 +138,10 @@
 
         <div class="d-flex justify-content-end gap-2 mt-4">
             {% if is_editing %}
-                <a href="{% url 'purchase_list' %}" class="btn btn-ghost px-4">Cancel</a>
-                <button type="submit" class="btn btn-warning px-4 fw-bold">Update Order</button>
+                <a href="{% url 'purchase_list' %}" class="btn btn-ghost px-4">ยกเลิกคำสั่งซื้อ</a>
+                <button type="submit" class="btn btn-warning px-4 fw-bold">อัพเดทคำสั่งซื้อ</button>
             {% else %}
-                <button type="submit" class="btn btn-brand px-4">Save Order</button>
+                <button type="submit" class="btn btn-brand px-4">บันทึกคำสั่งซื้อ</button>
             {% endif %}
         </div>
       </form>
@@ -141,18 +150,18 @@
 
   <div class="card rounded-xl shadow-sm mt-5">
     <div class="card-header bg-transparent border-secondary py-3">
-        <h5 class="mb-0 text-white">Recent Purchase Orders</h5>
+        <h5 class="mb-0 text-white">รายการคำสั่งซื้อล่าสุด</h5>
     </div>
     <div class="table-responsive">
         <table class="table table-darkish table-hover align-middle mb-0">
             <thead>
                 <tr class="text-secondary small text-uppercase">
-                    <th class="ps-4">Date</th>
-                    <th>PO Number</th>
-                    <th>Vendor</th>
-                    <th>Status</th>
-                    <th class="text-end">Total</th>
-                    <th class="text-end pe-4">Action</th>
+                    <th class="ps-4">วันที่สั่งซื้อ</th>
+                    <th>หมายเลขคำสั่งซื้อ</th>
+                    <th>ผู้ขาย</th>
+                    <th>สถานะคำสั่งซื้อ</th>
+                    <th class="text-end">ยอดรวม</th>
+                    <th class="text-end pe-4">แก้ไข</th>
                 </tr>
             </thead>
             <tbody>
@@ -166,7 +175,7 @@
                             {{ order.status }}
                         </span>
                     </td>
-                    <td class="text-end font-monospace">{{ order.total_amount|floatformat:2 }}</td>
+                    <td class="text-end ">{{ order.total_amount|floatformat:2|intcomma}}</td>
                     <td class="text-end pe-4">
                         <a href="{% url 'purchase_edit' order.id %}" class="btn btn-sm btn-ghost"><i class="bi bi-pencil"></i></a>
                     </td>
