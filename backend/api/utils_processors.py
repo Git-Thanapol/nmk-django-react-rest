@@ -21,13 +21,14 @@ def process_shopee_orders(file_path):
         '*หมายเลขติดตามพัสดุ': 'tracking_no',
         'เวลาส่งสินค้า': 'shipped_date',
         'ชื่อสินค้า': 'item_name',
-        'เลขรหัสสินค้า': 'sku', # Shopee 'Parent SKU' or Reference
+        #'เลขรหัสสินค้า': 'sku', # Shopee 'Parent SKU' or Reference
         'จำนวน': 'quantity',
         'ราคาตั้งต้น': 'unit_price'
     }
     
     # Rename available columns
     df = df.rename(columns=col_map)
+    df['sku'] = df['item_name'].copy()
 
     # 3. Create Header DataFrame (Group by Order)
     # We need to aggregate because Shopee CSV has one row per Item
@@ -144,7 +145,7 @@ def process_lazada_orders(file_path):
     df = df.rename(columns=col_map)
     df['address'] = df['FullAddress']
     df['quantity'] = 1
-    df['total_amount'] = df['paidPrice']
+    df['total_amount'] = df['subtotal']
 
     # 3. Headers
     bill_header = df.groupby('order_id').agg({

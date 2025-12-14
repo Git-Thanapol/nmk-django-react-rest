@@ -1,5 +1,6 @@
 {% extends 'base.html' %}
 {% load static %}
+{% load humanize %}
 
 {% block title %}Transactions{% endblock %}
 {% block page_title %}Income & Expenses{% endblock %}
@@ -14,7 +15,7 @@
         {% if is_editing %}
             <i class="bi bi-pencil-square me-2 text-warning"></i>Edit Transaction: <span class="text-warning">{{ editing_transaction.transaction_number }}</span>
         {% else %}
-            <i class="bi bi-wallet2 me-2"></i>Record Transaction
+            <i class="bi bi-wallet2 me-2"></i>บันทึกรายรับ-รายจ่ายใหม่
         {% endif %}
       </h5>
     </div>
@@ -25,48 +26,48 @@
         <div class="row g-3">
           
           <div class="col-md-3">
-            <label class="form-label text-secondary small">Transaction No.</label>
+            <label class="form-label text-secondary small">หมายเลขธุรกรรม</label>
             {{ form.transaction_number }}
           </div>
           <div class="col-md-3">
-            <label class="form-label text-secondary small">Date</label>
+            <label class="form-label text-secondary small">วันที่</label>
             {{ form.transaction_date }}
           </div>
           <div class="col-md-3">
-            <label class="form-label text-secondary small">Type</label>
+            <label class="form-label text-secondary small">รายรับ / รายจ่าย</label>
             {{ form.type }}
           </div>
           <div class="col-md-3">
-            <label class="form-label text-secondary small">Category</label>
+            <label class="form-label text-secondary small">ประเภท</label>
             {{ form.category }}
           </div>
 
           <div class="col-md-4">
-            <label class="form-label text-secondary small">Amount</label>
+            <label class="form-label text-secondary small">จำนวนเงินทั้งสิ้น</label>
             <div class="input-group">
                 <span class="input-group-text bg-dark border-secondary text-secondary">฿</span>
                 {{ form.amount }}
             </div>
           </div>
           <div class="col-md-8">
-            <label class="form-label text-secondary small">Reference (Optional)</label>
+            <label class="form-label text-secondary small">หมายเลขอ้างอิง</label>
             {{ form.reference }}
           </div>
 
           <div class="col-12">
-            <label class="form-label text-secondary small">Description</label>
+            <label class="form-label text-secondary small">คำอธิบายรายการ</label>
             {{ form.description }}
           </div>
 
           <div class="col-12 d-flex align-items-center justify-content-end gap-2 mt-3">
             {% if is_editing %}
-                <a href="{% url 'transaction_list' %}" class="btn btn-ghost px-4">Cancel</a>
+                <a href="{% url 'transaction_list' %}" class="btn btn-ghost px-4">ยกเลิก</a>
                 <button type="submit" class="btn btn-warning px-4 text-dark fw-bold">
-                    <i class="bi bi-check-lg me-2"></i>Update
+                    <i class="bi bi-check-lg me-2"></i>อัพเดทรายการ
                 </button>
             {% else %}
                 <button type="submit" class="btn btn-brand px-4">
-                    <i class="bi bi-plus-lg me-2"></i>Add Transaction
+                    <i class="bi bi-plus-lg me-2"></i>เพิ่มรายการใหม่
                 </button>
             {% endif %}
           </div>
@@ -127,13 +128,13 @@
       <table class="table table-darkish table-hover align-middle mb-0">
         <thead class="text-secondary small text-uppercase">
           <tr>
-            <th class="ps-4">Date</th>
+            <th class="ps-4">วันที่</th>
             <th>Tx Number</th>
-            <th>Type</th>
-            <th>Category</th>
-            <th>Description</th>
-            <th class="text-end">Amount</th>
-            <th class="text-end pe-4">Actions</th>
+            <th>รายรับ / รายจ่าย</th>
+            <th>ประเภท</th>
+            <th>คำอธิบายรายการ</th>
+            <th class="text-end">จำนวนเงินทั้งสิ้น</th>
+            <th class="text-end pe-4">แก้ไข</th>
           </tr>
         </thead>
         <tbody>
@@ -143,9 +144,9 @@
             <td class="font-monospace">{{ txn.transaction_number }}</td>
             <td>
                 {% if txn.type == 'INCOME' %}
-                    <span class="badge rounded-pill text-bg-success bg-opacity-10 text-success border border-success border-opacity-25">INCOME</span>
+                    <span class="badge rounded-pill text-bg-success bg-opacity-10 text-success border border-success border-opacity-25">รายรับ</span>
                 {% else %}
-                    <span class="badge rounded-pill text-bg-danger bg-opacity-10 text-danger border border-danger border-opacity-25">EXPENSE</span>
+                    <span class="badge rounded-pill text-bg-danger bg-opacity-10 text-danger border border-danger border-opacity-25">รายจ่าย</span>
                 {% endif %}
             </td>
             <td>
@@ -159,8 +160,8 @@
                     <div class="small text-muted"><i class="bi bi-hash me-1"></i>{{ txn.reference }}</div>
                 {% endif %}
             </td>
-            <td class="text-end fw-bold font-monospace {% if txn.type == 'INCOME' %}text-success{% else %}text-danger{% endif %}">
-                {% if txn.type == 'INCOME' %}+{% else %}-{% endif %} {{ txn.amount|floatformat:2 }}
+            <td class="text-end fw-bold {% if txn.type == 'INCOME' %}text-success{% else %}text-danger{% endif %}">
+                {% if txn.type == 'INCOME' %}+{% else %}-{% endif %} {{ txn.amount|floatformat:2|intcomma  }}
             </td>
             <td class="text-end pe-4">
               <a href="{% url 'transaction_edit' txn.id %}" class="btn btn-sm btn-ghost" title="Edit">

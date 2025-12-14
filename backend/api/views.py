@@ -1,22 +1,71 @@
-from django.shortcuts import render,redirect, get_object_or_404
-from django.contrib.auth.models import User
-from rest_framework import generics
-from .serializers import UserSerializer, NoteSerializer
-from rest_framework.permissions import IsAuthenticated, AllowAny
-from .models import Note, Customer, Company, Vendor, Product, Transaction, PurchaseOrder, PurchaseItem,Invoice, InvoiceItem,ProductAlias
-from .forms import CustomerForm, VendorForm, ProductForm, TransactionForm, PurchaseOrderForm, PurchaseItemFormSet,InvoiceForm, InvoiceItemFormSet, ImportFileForm
-from django.db import transaction
-from django.db.models import Q,Count
+# Django core
+import os
+
 from django import forms
+from django.contrib import messages
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
-from django.contrib import messages
-from .utils_import_core import universal_invoice_import
-from .utils_processors import process_tiktok_orders, process_shopee_orders
-import os
+from django.contrib.auth.models import User
 from django.core.files.storage import FileSystemStorage
-from .forms import ReportFilterForm
-from .utils_reports import generate_purchase_tax_report, generate_sales_tax_report, generate_stock_report
+from django.db import transaction
+from django.db.models import Count, Q
+from django.http import HttpResponse
+from django.shortcuts import get_object_or_404, redirect, render
+from django.template.loader import render_to_string,get_template
+
+# Third-party
+import weasyprint
+from xhtml2pdf import pisa
+from rest_framework import generics
+from rest_framework.permissions import AllowAny, IsAuthenticated
+from pybaht import bahttext
+
+# Local apps – models
+from .models import (
+    Company,
+    Customer,
+    Invoice,
+    InvoiceItem,
+    Note,
+    Product,
+    ProductAlias,
+    PurchaseItem,
+    PurchaseOrder,
+    Transaction,
+    Vendor,
+)
+
+# Local apps – forms
+from .forms import (
+    CustomerForm,
+    ImportFileForm,
+    InvoiceForm,
+    InvoiceItemFormSet,
+    ProductForm,
+    PurchaseItemFormSet,
+    PurchaseOrderForm,
+    ReportFilterForm,
+    TransactionForm,
+    VendorForm,
+)
+
+# Local apps – serializers
+from .serializers import NoteSerializer, UserSerializer
+
+# Local apps – utilities
+from .utils_import_core import universal_invoice_import
+from .utils_pdf import link_callback
+from .utils_processors import (
+    process_lazada_orders,
+    process_shopee_orders,
+    process_tiktok_orders,
+)
+from .utils_reports import (
+    generate_purchase_tax_report,
+    generate_sales_tax_report,
+    generate_stock_report,
+)
+
 
 
 class NoteListCreateView(generics.ListCreateAPIView):
@@ -895,9 +944,9 @@ def platform_import_view(request):
                     header_df, items_df = process_shopee_orders(file_path)
                     target_platform_name = 'Shopee'
                 
-                # elif platform == 'lazada':
-                #     header_df, items_df = process_lazada_orders(file_path)
-                #     target_platform_name = 'Lazada'
+                elif platform == 'lazada':
+                    header_df, items_df = process_lazada_orders(file_path)
+                    target_platform_name = 'Lazada'
 
                 else:
                     raise ValueError(f"Platform '{platform}' is not yet supported.")
@@ -1022,3 +1071,31 @@ def report_dashboard_view(request):
         'page_title': 'Reports Center'
     }
     return render(request, 'reports.html', context)
+
+
+#@login_required
+def invoice_pdf_view(request, pk):
+    invoice = get_object_or_404(Invoice, pk=pk)
+    
+    context = {
+        'invoice': invoice,
+        'items': invoice.invoice_items.all(),
+        'company': invoice.company,
+    }
+
+    # 1. Render HTML
+    html_string = render_to_string('pdf/invoice_print.html', context)
+
+    # 2. Base URL for static files
+    # WeasyPrint needs to know where to find /static/ files on disk
+    base_url = request.build_absolute_uri('/')
+
+    # 3. Generate PDF
+    # WeasyPrint handles fonts and images automatically if base_url is correct
+    pdf_file = weasyprint.HTML(string=html_string, base_url=base_url).write_pdf()
+
+    # 4. Return Response
+    response = HttpResponse(pdf_file, content_type='application/pdf')
+    filename = f"Invoice_{invoice.invoice_number}.pdf"
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    return response

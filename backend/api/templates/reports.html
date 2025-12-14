@@ -17,16 +17,16 @@
                             <i class="bi bi-file-earmark-spreadsheet fs-2"></i>
                         </span>
                     </div>
-                    <h5 class="card-title fw-bold">Purchase Tax Report</h5>
+                    <h5 class="card-title fw-bold">รายงานภาษีซื้อ</h5>
                     <p class="card-text text-muted small">
-                        Generate Excel report for Input VAT (Purchase Orders) matching Revenue Department format.
+                        สร้างรายงาน Excel สำหรับ ภาษีซื้อ (ใบสั่งซื้อ / Purchase Orders) <br> ให้เป็นไปตามรูปแบบของ กรมสรรพากร
                     </p>
                     <button type="button" class="btn btn-outline-primary w-100 stretched-link" 
                             data-bs-toggle="modal" 
                             data-bs-target="#reportModal"
                             data-report-type="purchase_tax"
                             data-report-name="Purchase Tax Report (รายงานภาษีซื้อ)">
-                        Generate
+                        สร้างรายงาน
                     </button>
                 </div>
             </div>
@@ -40,16 +40,16 @@
                             <i class="bi bi-receipt fs-2"></i>
                         </span>
                     </div>
-                    <h5 class="card-title fw-bold">Sales Tax Report</h5>
+                    <h5 class="card-title fw-bold">รายงานภาษีขาย</h5>
                     <p class="card-text text-muted small">
-                        Output VAT report based on Sales Invoices matching Revenue Department format.
+                        รายงาน ภาษีขาย (Output VAT) จากใบแจ้งหนี้ขาย (Sales Invoices) <br> ตามรูปแบบของ กรมสรรพากร
                     </p>
                     <button type="button" class="btn btn-outline-success w-100 stretched-link" 
                             data-bs-toggle="modal" 
                             data-bs-target="#reportModal"
                             data-report-type="sales_tax"
                             data-report-name="Sales Tax Report (รายงานภาษีขาย)">
-                        Generate
+                        สร้างรายงาน
                     </button>
                 </div>
             </div>
@@ -63,16 +63,16 @@
                             <i class="bi bi-box-seam fs-2"></i>
                         </span>
                     </div>
-                    <h5 class="card-title fw-bold">Stock Report</h5>
+                    <h5 class="card-title fw-bold">รายงานสินค้าคงเหลือ</h5>
                     <p class="card-text text-muted small">
-                        Check product movement and current balance. <br> Supports negative stock tracking.
+                        ตรวจสอบความเคลื่อนไหวของสินค้าและยอดคงเหลือปัจจุบัน <br> รองรับการติดตามสต็อกติดลบ
                     </p>
                     <button type="button" class="btn btn-outline-warning w-100 stretched-link" 
                             data-bs-toggle="modal" 
                             data-bs-target="#reportModal"
                             data-report-type="stock_report"
                             data-report-name="Stock Report (รายงานสินค้าคงเหลือ)">
-                        Generate
+                        สร้างรายงาน
                     </button>
                 </div>
             </div>
@@ -93,25 +93,25 @@
                     <input type="hidden" name="report_type" id="reportTypeInput">
                     
                     <div class="mb-3">
-                        <label class="form-label text-secondary small">Select Company</label>
+                        <label class="form-label text-secondary small">เลือกร้านค้า</label>
                         {{ form.company }}
                     </div>
                     
                     <div class="row g-2">
                         <div class="col-6">
-                            <label class="form-label text-secondary small">Start Date</label>
+                            <label class="form-label text-secondary small">วันที่เริ่ม</label>
                             {{ form.start_date }}
                         </div>
                         <div class="col-6">
-                            <label class="form-label text-secondary small">End Date</label>
+                            <label class="form-label text-secondary small">วันที่จบ</label>
                             {{ form.end_date }}
                         </div>
                     </div>
                 </div>
                 <div class="modal-footer bg-light">
-                    <button type="button" class="btn btn-ghost" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-ghost" data-bs-dismiss="modal">ยกเลิก</button>
                     <button type="submit" class="btn btn-primary">
-                        <i class="bi bi-download me-2"></i>Download Excel
+                        <i class="bi bi-download me-2"></i>ดาวน์โหลด Excel
                     </button>
                 </div>
             </form>

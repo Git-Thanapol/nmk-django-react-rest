@@ -14,7 +14,7 @@
         {% if is_editing %}
             <i class="bi bi-pencil-square me-2 text-warning"></i>Edit Vendor: <span class="text-warning">{{ editing_vendor.name }}</span>
         {% else %}
-            <i class="bi bi-shop me-2"></i>Register New Vendor
+            <i class="bi bi-shop me-2"></i>เพิ่ม Vendor ใหม่
         {% endif %}
       </h5>
     </div>
@@ -25,11 +25,11 @@
         <div class="row g-3">
           
           <div class="col-md-6">
-            <label class="form-label text-secondary small">Vendor Name</label>
+            <label class="form-label text-secondary small">ชื่อ</label>
             {{ form.name }}
           </div>
           <div class="col-md-6">
-            <label class="form-label text-secondary small">Contact Person</label>
+            <label class="form-label text-secondary small">ผู้ติดต่อ</label>
             {{ form.contact_person }}
           </div>
 
@@ -44,7 +44,7 @@
           </div>
 
           <div class="col-md-4">
-            <label class="form-label text-secondary small">Phone Number</label>
+            <label class="form-label text-secondary small">เบอร์โทรศัพท์</label>
             {{ form.phone }}
           </div>
           <div class="col-md-4">
@@ -52,12 +52,12 @@
             {{ form.email }}
           </div>
           <div class="col-md-4">
-            <label class="form-label text-secondary small">Tax ID</label>
+            <label class="form-label text-secondary small">เลขประจำตัวผู้เสียภาษีอากร</label>
             {{ form.tax_id }}
           </div>
 
           <div class="col-12">
-            <label class="form-label text-secondary small">Address</label>
+            <label class="form-label text-secondary small">ที่อยู่</label>
             {{ form.address }}
           </div>
 
@@ -72,14 +72,14 @@
             <div class="d-flex gap-2">
                 {% if is_editing %}
                     <a href="{% url 'vendor_list' %}" class="btn btn-ghost px-4">
-                        Cancel
+                        ยกเลิก
                     </a>
                     <button type="submit" class="btn btn-warning px-4 text-dark fw-bold">
-                        <i class="bi bi-check-lg me-2"></i>Update Vendor
+                        <i class="bi bi-check-lg me-2"></i>อัพเดท Vendor
                     </button>
                 {% else %}
                     <button type="submit" class="btn btn-brand px-4">
-                        <i class="bi bi-save me-2"></i>Save Vendor
+                        <i class="bi bi-save me-2"></i>บันทึก Vendor
                     </button>
                 {% endif %}
             </div>
@@ -90,10 +90,11 @@
   </div>
 
   <div class="card rounded-xl shadow-sm">
-    <div class="card-header bg-transparent border-secondary py-3 d-flex flex-column flex-md-row align-items-center justify-content-between gap-3">
-      <h5 class="mb-0 text-white"><i class="bi bi-list-check me-2"></i>Vendor Directory</h5>
-      <form method="GET" class="d-flex gap-2 w-100 w-md-auto">
-        </form>
+    <div class="card-header bg-transparent border-secondary py-3
+                d-flex flex-column flex-md-row align-items-center justify-content-between gap-3">
+      <h5 class="mb-0 text-white">
+        <i class="bi bi-list-check me-2"></i>รายการคู่ค้า
+      </h5>
     </div>
 
     <div class="table-responsive">

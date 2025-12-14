@@ -1,5 +1,6 @@
 {% extends 'base.html' %}
 {% load static %}
+{$ load humanize %}
 
 {% block title %}Products{% endblock %}
 {% block page_title %}Product Management{% endblock %}
@@ -12,9 +13,9 @@
     <div class="card-header bg-transparent border-secondary py-3">
       <h5 class="mb-0 text-white">
         {% if is_editing %}
-            <i class="bi bi-pencil-square me-2 text-warning"></i>Edit Product: <span class="text-warning">{{ editing_product.sku }}</span>
+            <i class="bi bi-pencil-square me-2 text-warning"></i>แก้ไขสินค้า : <span class="text-warning">{{ editing_product.sku }}</span>
         {% else %}
-            <i class="bi bi-box-seam me-2"></i>Add New Product
+            <i class="bi bi-box-seam me-2"></i>เพิ่มสินค้าใหม่
         {% endif %}
       </h5>
     </div>
@@ -31,48 +32,48 @@
 
         <div class="row g-3">
           <div class="col-md-3">
-            <label class="form-label text-secondary small">SKU Code</label>
+            <label class="form-label text-secondary small">รหัส SKU</label>
             {{ form.sku }}
           </div>
           <div class="col-md-5">
-            <label class="form-label text-secondary small">Product Name</label>
+            <label class="form-label text-secondary small">ชื่อสินค้า</label>
             {{ form.name }}
           </div>
           <div class="col-md-4">
-            <label class="form-label text-secondary small">Category</label>
+            <label class="form-label text-secondary small">ประเภท</label>
             {{ form.category }}
             <datalist id="category_list">
-                <option value="SMARTPHONE">
-                <option value="ACCESSORY">
-                <option value="TABLET">
-                <option value="SERVICE">
-                {% comment %} {% for cat in existing_categories %}
+                <option value="สมาร์ทโฟน">
+                <option value="อุปกรณ์เสริม">
+                <option value="แทปเล็ต">
+                <option value="บริการ">
+                {% for cat in existing_categories %}
                     <option value="{{ cat }}">
-                {% endfor %} {% endcomment %}
+                {% endfor %}
             </datalist>
           </div>
 
           <div class="col-md-3">
-            <label class="form-label text-secondary small">Cost Price</label>
+            <label class="form-label text-secondary small">มูลค่าสินค้า (โดยประมาณ)</label>
             <div class="input-group">
                 <span class="input-group-text bg-dark border-secondary text-secondary">฿</span>
                 {{ form.cost_price }}
             </div>
           </div>
           <div class="col-md-3">
-            <label class="form-label text-secondary small">Selling Price</label>
+            <label class="form-label text-secondary small">ราคาขาย (โดยประมาณ)</label>
             <div class="input-group">
                 <span class="input-group-text bg-dark border-secondary text-secondary">฿</span>
                 {{ form.selling_price }}
             </div>
           </div>
-          <div class="col-md-6">
+          {% comment %} <div class="col-md-6">
             <label class="form-label text-secondary small">Company (Optional)</label>
             {{ form.company }}
-          </div>
+          </div> {% endcomment %}
 
           <div class="col-12">
-            <label class="form-label text-secondary small">Description</label>
+            <label class="form-label text-secondary small">คำอธิบายสินค้า</label>
             {{ form.description }}
           </div>
 
@@ -86,13 +87,13 @@
             
             <div class="d-flex gap-2">
                 {% if is_editing %}
-                    <a href="{% url 'product_list' %}" class="btn btn-ghost px-4">Cancel</a>
+                    <a href="{% url 'product_list' %}" class="btn btn-ghost px-4">ยกเลิก</a>
                     <button type="submit" class="btn btn-warning px-4 text-dark fw-bold">
-                        <i class="bi bi-check-lg me-2"></i>Update Product
+                        <i class="bi bi-check-lg me-2"></i>อัพเดทสินค้า
                     </button>
                 {% else %}
                     <button type="submit" class="btn btn-brand px-4">
-                        <i class="bi bi-save me-2"></i>Save Product
+                        <i class="bi bi-save me-2"></i>บันทึกสินค้า
                     </button>
                 {% endif %}
             </div>
@@ -104,24 +105,40 @@
 
   <div class="card rounded-xl shadow-sm">
     
-    <div class="card-header bg-transparent border-secondary py-3 d-flex flex-column flex-md-row align-items-center justify-content-between gap-3">
-      <h5 class="mb-0 text-white"><i class="bi bi-list-stars me-2"></i>Product Inventory</h5>
-      
-      <form method="GET" class="d-flex gap-2 w-100 w-md-auto">
-        <select name="status" class="form-select form-select-sm bg-dark text-light border-secondary" style="width: 120px;" onchange="this.form.submit()">
-            <option value="">Status</option>
-            <option value="active" {% if request.GET.status == 'active' %}selected{% endif %}>Active</option>
-            <option value="inactive" {% if request.GET.status == 'inactive' %}selected{% endif %}>Inactive</option>
+    <div class="card-header bg-transparent border-secondary py-3
+                d-flex flex-column flex-md-row align-items-stretch align-items-md-center gap-3">
+
+      <!-- Title -->
+      <h5 class="mb-0 text-white text-center text-md-start">
+        <i class="bi bi-list-stars me-2"></i>รายการสินค้า
+      </h5>
+
+      <!-- Filters -->
+      <form method="GET"
+            class="d-flex flex-column flex-sm-row gap-2 ms-md-auto w-100 w-md-auto">
+
+        <!-- Status -->
+        <select name="status"
+                class="form-select form-select-sm bg-dark text-light border-secondary w-sm-auto"
+                onchange="this.form.submit()"
+                style="min-width: 120px;">
+          <option value="">Status</option>
+          <option value="active" {% if request.GET.status == 'active' %}selected{% endif %}>Active</option>
+          <option value="inactive" {% if request.GET.status == 'inactive' %}selected{% endif %}>Inactive</option>
         </select>
 
-        <div class="input-group input-group-sm">
-          <input type="text" name="q" class="form-control bg-dark text-light border-secondary" 
-                 placeholder="Search SKU, Name, Cat..." 
-                 value="{{ search_query|default:'' }}">
+        <!-- Search -->
+        <div class="input-group input-group-sm flex-grow-1" style="min-width: 220px;">
+          <input type="text"
+                name="q"
+                class="form-control bg-dark text-light border-secondary"
+                placeholder="ค้นหา SKU, ขื่อ, ประเภทสินค้า..."
+                value="{{ search_query|default:'' }}">
           <button class="btn btn-outline-secondary" type="submit">
             <i class="bi bi-search"></i>
           </button>
         </div>
+
       </form>
     </div>
 
@@ -129,13 +146,13 @@
       <table class="table table-darkish table-hover align-middle mb-0">
         <thead class="text-secondary small text-uppercase">
           <tr>
-            <th class="ps-4">Product Info</th>
+            <th class="ps-4">รายการสินค้า</th>
             <th>Category</th>
-            <th class="text-end">Cost</th>
-            <th class="text-end">Price</th>
-            <th class="text-center">Stock</th>
-            <th class="text-center">Status</th>
-            <th class="text-end pe-4">Actions</th>
+            <th class="text-end">ต้นทุน</th>
+            <th class="text-end">ราคาขาย</th>
+            <th class="text-center">จำนวนคงเหลือ</th>
+            <th class="text-center">Active</th>
+            <th class="text-end pe-4">แก้ไข</th>
           </tr>
         </thead>
         <tbody>
@@ -157,15 +174,16 @@
                     {{ product.category }}
                 </span>
             </td>
-            <td class="text-end font-monospace text-muted">{{ product.cost_price|floatformat:2 }}</td>
-            <td class="text-end font-monospace text-success fw-bold">{{ product.selling_price|floatformat:2 }}</td>
+            <td class="text-end  text-muted">{{ product.cost_price|floatformat:2 }}</td>
+            <td class="text-end  text-success">{{ product.selling_price|floatformat:2 }}</td>
             
             <td class="text-center">
-                {% if product.current_stock > 0 %}
+                {% comment %} <span class="text-white">{{ product.current_stock }}</span> {% endcomment %}
+                {% if product.current_stock >= 0 %}
                     <span class="text-white">{{ product.current_stock }}</span>
                 {% else %}
-                    <span class="text-danger small">Out of Stock</span>
-                {% endif %}
+                    <span class="text-danger">{{ product.current_stock }}</span>
+                {% endif %} 
             </td>
 
             <td class="text-center">

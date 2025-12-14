@@ -5,6 +5,8 @@ from django.core.validators import MinValueValidator
 from django.utils import timezone
 from decimal import Decimal
 from django.db import migrations, models
+from django.db.models import Sum
+from django.db.models.functions import Coalesce
 
 
 DATE_INPUT_FORMATS = ['%d-%m-%Y']
@@ -116,10 +118,21 @@ class Product(models.Model):
 
     @property
     def current_stock(self):
-        """Calculate current stock quantity"""
-        total_purchased = self.purchase_items.aggregate(total=models.Sum('quantity'))['total'] or 0
-        total_sold = self.invoice_items.aggregate(total=models.Sum('quantity'))['total'] or 0
-        return total_purchased - total_sold
+        """
+        Calculate current stock: Total Purchased - Total Sold.
+        Uses Coalesce ensures we get 0 instead of None if no records exist.
+        """
+        # Note: We use 'purchase_items' and 'invoice_items' here. 
+        # This requires related_name to be set in the child models (see below).
+        total_in = self.purchase_items.aggregate(
+            total=Coalesce(Sum('quantity'), 0)
+        )['total']
+        
+        total_out = self.invoice_items.aggregate(
+            total=Coalesce(Sum('quantity'), 0)
+        )['total']
+        
+        return total_in - total_out
 
 class PurchaseOrder(models.Model):
     """Purchase order from vendors"""
@@ -192,7 +205,7 @@ class PurchaseOrder(models.Model):
 class PurchaseItem(models.Model):
     """Individual items in a purchase order"""
     purchase_order = models.ForeignKey(PurchaseOrder, on_delete=models.CASCADE, related_name='purchase_items')
-    product = models.ForeignKey(Product, on_delete=models.PROTECT)
+    product = models.ForeignKey(Product, on_delete=models.PROTECT,related_name='purchase_items')
     quantity = models.PositiveIntegerField(validators=[MinValueValidator(1)],default=1 )
     unit_cost = models.DecimalField(max_digits=10, decimal_places=2)
     total_price = models.DecimalField(max_digits=12, decimal_places=2, editable=False)
@@ -241,8 +254,8 @@ class Invoice(models.Model):
     tax_sender_date = models.DateField(null=True, blank=True)
     tax_sequence_number = models.CharField(max_length=100, blank=True, null=True)
     saleperson = models.CharField(max_length=100, blank=True)
-    status = models.CharField(max_length=100, default='DRAFT') 
-    #status = models.ChoicesField(choices=STATUS_CHOICES, default='DRAFT')
+    #status = models.CharField(max_length=100, default='DRAFT') 
+    status = models.CharField(choices=STATUS_CHOICES, default='แบบร่าง')
 
     # Financials
     tax_include = models.BooleanField(default=True)
@@ -277,7 +290,7 @@ class Invoice(models.Model):
         ordering = ['-invoice_date']
     
     def __str__(self):
-        return f"INV-{self.invoice_number} ({self.company})"
+        return f"{self.invoice_number} ({self.company})"
     
     def calculate_totals(self):
         """
@@ -325,7 +338,7 @@ class Invoice(models.Model):
 class InvoiceItem(models.Model):
     """Individual items in an invoice with purchase item tracking"""
     invoice = models.ForeignKey(Invoice, on_delete=models.CASCADE, related_name='invoice_items')
-    product = models.ForeignKey(Product, on_delete=models.PROTECT, null=True, blank=True)
+    product = models.ForeignKey(Product, on_delete=models.PROTECT, null=True, blank=True, related_name='invoice_items')
     purchase_item = models.ForeignKey(PurchaseItem, on_delete=models.PROTECT, related_name='invoice_items', null=True, blank=True)
 
     sku = models.CharField(max_length=100, blank=True)  # Store platform SKU/name for reference
@@ -397,18 +410,18 @@ class InvoiceItem(models.Model):
 class Transaction(models.Model):
     """Other income/expense transactions"""
     TRANSACTION_TYPES = [
-        ('INCOME', 'Income'),
-        ('EXPENSE', 'Expense'),
+        ('INCOME', 'รายรับ'),
+        ('EXPENSE', 'รายจ่าย'),
     ]
     
     CATEGORY_CHOICES = [
-        ('REPAIR_SERVICE', 'Phone Repair Service'),
-        ('DELIVERY', 'Delivery Service'),
-        ('SALARY', 'Salary'),
-        ('RENT', 'Rent'),
-        ('UTILITY', 'Utility'),
-        ('MARKETING', 'Marketing'),
-        ('OTHER', 'Other'),
+        ('REPAIR_SERVICE', 'ค่าซ่อมบริการ'),
+        ('DELIVERY', 'ค่าส่งสินค้า'),
+        ('SALARY', 'เงินเดือนพนักงาน'),
+        ('RENT', 'ค่าเช่า'),
+        ('UTILITY', 'ค่าสาธารณูปโภค'),
+        ('MARKETING', 'ค่าโฆษณา'),
+        ('OTHER', 'อื่นๆ'),
     ]
     
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='transactions', null=True, blank=True)

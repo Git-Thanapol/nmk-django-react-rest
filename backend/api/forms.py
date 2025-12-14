@@ -39,12 +39,12 @@ class VendorForm(forms.ModelForm):
         model = Vendor
         fields = ['name', 'contact_person', 'phone', 'email', 'address', 'tax_id', 'is_active']
         widgets = {
-            'name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Vendor Name'}),
-            'contact_person': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Contact Person Name'}),
+            'name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'ชื่อผู้ขาย / บริษัท'}),
+            'contact_person': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'ชื่อผู้ติดต่อ'}),
             'phone': forms.TextInput(attrs={'class': 'form-control', 'placeholder': '081-234-5678'}),
             'email': forms.EmailInput(attrs={'class': 'form-control', 'placeholder': 'vendor@email.com'}),
-            'address': forms.Textarea(attrs={'class': 'form-control', 'rows': 2, 'placeholder': 'Vendor Address'}),
-            'tax_id': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Tax ID'}),
+            'address': forms.Textarea(attrs={'class': 'form-control', 'rows': 2, 'placeholder': 'ที่อยู่ผู้ขาย'}),
+            'tax_id': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'เลขประจำตัวผู้เสียภาษีอากรไม่ต้องมีขีด', 'maxlength': '13'}),
             'is_active': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
         }
 
@@ -63,7 +63,7 @@ class ProductForm(forms.ModelForm):
         widget=forms.TextInput(attrs={
             'class': 'form-control', 
             'list': 'category_list', 
-            'placeholder': 'Select or type new category...',
+            'placeholder': 'เลือกประเภท หรือ เพิ่มประเภทใหม่...',
             'autocomplete': 'off'
         })
     )
@@ -72,9 +72,9 @@ class ProductForm(forms.ModelForm):
         model = Product
         fields = ['sku', 'name', 'description', 'category', 'cost_price', 'selling_price', 'is_active', 'company']
         widgets = {
-            'sku': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Unique SKU'}),
-            'name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Product Name'}),
-            'description': forms.Textarea(attrs={'class': 'form-control', 'rows': 2, 'placeholder': 'Product details...'}),
+            'sku': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'รหัสสินค้า (SKU) ต้องไม่ซ้ำ'}),
+            'name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'ระบุชื่อสินค้า...'}),
+            'description': forms.Textarea(attrs={'class': 'form-control', 'rows': 2, 'placeholder': 'ระบุรายละเอียดสินค้า...'}),
             'cost_price': forms.NumberInput(attrs={'class': 'form-control', 'step': '1'}),
             'selling_price': forms.NumberInput(attrs={'class': 'form-control', 'step': '1'}),
             'is_active': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
@@ -96,7 +96,7 @@ class ProductForm(forms.ModelForm):
             qs = qs.exclude(pk=instance.pk)
             
         if qs.exists():
-            raise forms.ValidationError(f"SKU '{sku}' is already in use.")
+            raise forms.ValidationError(f"SKU '{sku}' นี้มีอยู่ในระบบแล้ว กรุณาใช้รหัสอื่น.")
         return sku
     
 class TransactionForm(forms.ModelForm):
@@ -104,13 +104,13 @@ class TransactionForm(forms.ModelForm):
         model = Transaction
         fields = ['transaction_number', 'transaction_date', 'type', 'category', 'amount', 'reference', 'description']
         widgets = {
-            'transaction_number': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'e.g. TX-2024-001'}),
+            'transaction_number': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'ตัวอย่างเช่น .. TX-2024-001'}),
             'transaction_date': forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}),
             'type': forms.Select(attrs={'class': 'form-select'}),
             'category': forms.Select(attrs={'class': 'form-select'}),
             'amount': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'placeholder': '0.00'}),
-            'reference': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Ref / Receipt ID'}),
-            'description': forms.Textarea(attrs={'class': 'form-control', 'rows': 2, 'placeholder': 'Details of expenditure or income...'}),
+            'reference': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'หมายเลขอ้างอิง / หมายเลขใบเสร็จ (ถ้ามี)'}),
+            'description': forms.Textarea(attrs={'class': 'form-control', 'rows': 2, 'placeholder': 'อธิบายรายละเอียด...'}),
         }
 
     def __init__(self, *args, **kwargs):
@@ -185,7 +185,7 @@ class InvoiceForm(forms.ModelForm):
     class Meta:
         model = Invoice
         fields = ['invoice_number', 'customer', 'invoice_date', 'platform_name', 
-                  'status', 'tax_include', 'tax_percent', 'shipping_cost', 'notes', 'tax_sender_date','tax_sequence_number','saleperson']
+                  'status', 'tax_include', 'tax_percent', 'shipping_cost', 'notes', 'tax_sender_date','tax_sequence_number','saleperson','platform_name']
         widgets = {
             'invoice_number': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'INV-2024-XXXX'}),
             'customer': forms.Select(attrs={'class': 'form-select'}),
@@ -199,7 +199,8 @@ class InvoiceForm(forms.ModelForm):
             #'tax_sender_date': forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}),
             'tax_sequence_number': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'ระบุเลขที่ลำดับภาษี'}),
             'saleperson': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'ระบุชื่อผู้ขาย'}),
-            'channel': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'ระบุช่องทางการขาย'}),
+            'platform_name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'ระบุช่องทางการขาย'}),
+            'status': forms.Select(attrs={'class': 'form-select'}),          
 
 
             # --- FIX: Force YYYY-MM-DD format for Date Pickers ---
@@ -222,7 +223,7 @@ class InvoiceForm(forms.ModelForm):
         if not self.instance.pk:
             from django.utils import timezone
             self.fields['invoice_date'].initial = timezone.now().date()
-            self.fields['status'].initial = 'DRAFT'  # Default to "แบบร่าง"
+            self.fields['status'].initial = 'แบบร่าง'  # Default to "แบบร่าง"
 
 class InvoiceItemCustomChoiceField(forms.ModelChoiceField):
     """Custom field to display detailed stock info in the dropdown"""

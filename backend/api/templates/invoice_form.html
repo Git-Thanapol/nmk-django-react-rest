@@ -1,10 +1,11 @@
 {% extends 'base.html' %}
 {% load static %}
+{% load humanize %}
 
 {% block title %}Invoices{% endblock %}
 {% block page_title %}Sales & Invoicing{% endblock %}
 
-{% load humanize %}
+
 {% block content %}
 <div class="container-fluid p-0">
 
@@ -59,7 +60,7 @@
         <div class="card-header bg-transparent border-secondary py-3">
             <h5 class="mb-0 text-white">
                 {% if is_editing %}
-                    <i class="bi bi-pencil-square me-2 text-warning"></i>Edit Invoice: <span class="text-warning">{{ editing_invoice.invoice_number }}</span>
+                    <i class="bi bi-pencil me-2 text-warning"></i>แก้ไขใบแจ้งหนี้: <span class="text-warning">{{ editing_invoice.invoice_number }}</span>
                 {% else %}
                     <i class="bi bi-receipt me-2"></i> สร้างใบแจ้งหนี้ใหม่
                 {% endif %}
@@ -102,8 +103,8 @@
                     </div>
                     <div class="col-md-3">
                         <label class="form-label text-secondary small">สถานะคำสั่งใบแจ้งหนี้</label>
-                        <input type="text" name="status" class="form-control" value="{{ form.instance.status|default:'' }}">
-                        {% comment %} {{ form.status_choices }} {% endcomment %}
+                        {% comment %} <input type="text" name="status" class="form-control" value="{{ form.instance.status|default:'' }}"> {% endcomment %}
+                        {{ form.status }}
                     </div>
                     <div class="col-md-3">
                         <label class="form-label text-secondary small">เลขที่ลำดับภาษี</label>
@@ -113,13 +114,13 @@
                         <label class="form-label text-secondary small">วันที่กำหนดส่งภาษี</label>
                         {{ form.tax_sender_date }}
                     </div>
-                    {% if not is_editing %}
+                    {% comment %} {% if not is_editing %} {% endcomment %}
                         <div class="col-md-3">
                             <label class="form-label text-secondary small">ช่องทางการขาย</label>
-                            <input type="text" name="channel" class="form-control" value="{{ form.instance.platform_name|default:'' }}">
-                            {% comment %} {{ form.platform_name }} {% endcomment %}
+                            {% comment %} <input type="text" name="channel" class="form-control" value="{{ form.instance.platform_name|default:'' }}"> {% endcomment %}
+                            {{ form.platform_name }}
                         </div>
-                    {% endif %}
+                    {% comment %} {% endif %} {% endcomment %}
                 </div>
 
                 <hr class="border-secondary">
@@ -132,9 +133,9 @@
                             <tr class="text-secondary small text-uppercase">
                                 <th style="width: 20%">สินค้าในระบบ</th>
                                 <th style="width: 20%">ระบุ (Stock)</th>
-                                <th style="width: 10%">SKU (Platform)</th>
+                                <th style="width: 10%">ต้นทุน</th> <th style="width: 10%">SKU (Platform)</th>
                                 <th style="width: 15%">ชื่อสินค้า (Platform)</th>
-                                <th style="width: 10%">จำนวน</th>
+                                <th style="width: 8%">จำนวน</th>
                                 <th style="width: 10%">ราคาต่อหน่วย</th>
                                 <th style="width: 10%" class="text-end">รวมต่อรายการ</th>
                                 <th style="width: 5%"></th>
@@ -146,24 +147,41 @@
                                 {% for hidden in item_form.hidden_fields %}{{ hidden }}{% endfor %}
                                 
                                 <td>{{ item_form.product }}</td>
+
                                 <td>
-                                    <select name="{{ item_form.purchase_item.html_name }}" class="form-select form-select-sm batch-select" id="{{ item_form.purchase_item.auto_id }}">
-                                        <option value="">-- Auto-Assign --</option>
+                                    <select name="{{ item_form.purchase_item.html_name }}" 
+                                            class="form-select form-select-sm batch-select" 
+                                            id="{{ item_form.purchase_item.auto_id }}">
+                                        <option value="" data-cost="0">-- Auto-Assign --</option>
+                                        
                                         {% for batch in item_form.fields.purchase_item.queryset %}
                                             <option value="{{ batch.id }}" 
                                                     data-product-id="{{ batch.product.id }}"
                                                     data-price="{{ batch.product.selling_price }}"
+                                                    data-cost="{{ batch.unit_cost }}" 
                                                     {% if item_form.purchase_item.value|stringformat:"s" == batch.id|stringformat:"s" %}selected{% endif %}>
-                                                    PO-{{ batch.purchase_order.po_number }} | Stock: {{ batch.remaining_quantity }}
+                                                    {{ batch.purchase_order.po_number }} | Stock: {{ batch.remaining_quantity }} | Cost: {{ batch.unit_cost|floatformat:2|intcomma }}
                                             </option>
                                         {% endfor %}
                                     </select>
                                 </td>
+
+                                <td>
+                                    {% with cost=item_form.instance.purchase_item.unit_cost|default:0 %}
+                                        <span class="unit-cost-display text-secondary">{{ cost|floatformat:2|intcomma }}</span>
+                                    {% endwith %}
+                                </td>
+
                                 <td><input type="text" name="{{ item_form.sku.html_name }}" value="{{ item_form.sku.value|default:'' }}" class="form-control form-control-sm" placeholder="SKU"></td>
+                                
                                 <td><textarea name="{{ item_form.item_name.html_name }}" class="form-control form-control-sm" rows="1">{{ item_form.item_name.value|default:'' }}</textarea></td>
+                                
                                 <td>{{ item_form.quantity }}</td>
+                                
                                 <td>{{ item_form.unit_price }}</td>
+                                
                                 <td class="text-end px-3"><span class="row-total fw-bold text-info">0.00</span></td>
+                                
                                 <td>
                                     <div class="d-none">{{ item_form.DELETE }}</div> 
                                     <button type="button" class="btn btn-sm btn-outline-danger remove-row border-0"><i class="bi bi-trash"></i></button>
@@ -222,6 +240,10 @@
 
                 <div class="d-flex justify-content-end gap-2 mt-4">
                     {% if is_editing %}
+                        <a href="{% url 'invoice_pdf' editing_invoice.id %}" class="btn btn-outline-danger px-4">
+                            <i class="bi bi-printer me-2"></i>Print / PDF
+                        </a>
+
                         <a href="{% url 'invoice_list' %}" class="btn btn-ghost px-4">ย้อนกลับ</a>
                         <button type="submit" class="btn btn-warning px-4 fw-bold">อัพเดทใบแจ้งหนี้</button>
                     {% else %}
@@ -235,7 +257,7 @@
     <div class="card rounded-xl shadow-sm mt-5 mb-5 border-0">
         <div class="card-header bg-dark bg-gradient border-secondary py-3 d-flex justify-content-between align-items-center">
             <div>
-                <h5 class="mb-0 text-white"><i class="bi bi-clock-history me-2"></i>Recent Orders (Last 1000)</h5>
+                <h5 class="mb-0 text-white"><i class="bi bi-clock-history me-2"></i>ใบแจ้งหนี้ล่าสุด (Last 1000)</h5>
             </div>
             <div class="input-group input-group-sm w-auto">
                 <span class="input-group-text bg-secondary border-secondary text-light"><i class="bi bi-search"></i></span>
@@ -253,7 +275,8 @@
                         <th style="width: 15%">สถานะคำสั่งซื้อออนไลน์</th>
                         <th style="width: 15%">เลข Tracking</th>
                         <th class="text-end" style="width: 10%">ยอดรวมสุทธิ</th>
-                        <th class="text-end pe-4" style="width: 10%">แก้ไข</th>
+                        <th class="text-end pe-4" style="width: 5%">แก้ไข</th>
+                        <th class="text-end pe-4" style="width: 5%">PDF</th>
                     </tr>
                     <tr class="filter-row bg-dark">
                         <th class="ps-4 p-2">
@@ -279,6 +302,7 @@
                         <th class="p-2 text-end">
                             <input type="text" class="form-control form-control-sm bg-dark border-secondary text-light col-filter text-end" data-col="5" placeholder="> ยอดรวมสุทธิ">
                         </th>
+                        <th></th>
                         <th></th>
                     </tr>
                 </thead>
@@ -321,13 +345,18 @@
                         
                         <td class="text-end pe-4">
                             <a href="{% url 'invoice_edit' inv.id %}" class="btn btn-sm btn-ghost text-secondary hover-white">
-                                <i class="bi bi-pencil-square"></i>
+                                <i class="bi bi-pencil"></i>
+                            </a>
+                        </td>
+                        <td class="text-end pe-4">
+                            <a href="{% url 'invoice_pdf' inv.id %}" class="btn btn-sm btn-outline-danger me-1" title="Download PDF">
+                                <i class="bi bi-file-earmark-pdf"></i>
                             </a>
                         </td>
                     </tr>
                     {% empty %}
                     <tr id="noResultsRow">
-                        <td colspan="7" class="text-center py-5 text-muted">No invoices found.</td>
+                        <td colspan="7" class="text-center py-5 text-muted">ไม่พบใบแจ้งหนี้ที่ค้นหา</td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -347,15 +376,17 @@
             <select name="{{ formset.empty_form.purchase_item.html_name }}" 
                     class="form-select form-select-sm batch-select" 
                     id="{{ formset.empty_form.purchase_item.auto_id }}">
-                <option value="">-- Auto-Assign --</option>
+                <option value="" data-cost="0">-- Auto-Assign --</option>
                 {% for batch in formset.empty_form.fields.purchase_item.queryset %}
                     <option value="{{ batch.id }}" 
-                            data-product-id="{{ batch.product.id }}">
-                        PO-{{ batch.purchase_order.po_number }} | Stock: {{ batch.remaining_quantity }}
+                            data-product-id="{{ batch.product.id }}"
+                            data-cost="{{ batch.unit_cost }}">
+                        PO-{{ batch.purchase_order.po_number }} | Stock: {{ batch.remaining_quantity }} | Cost: {{ batch.unit_cost|floatformat:2|intcomma }}
                     </option>
                 {% endfor %}
             </select>
         </td>
+        <td><span class="unit-cost-display text-secondary">0.00</span></td>
         <td><input type="text" name="{{ formset.empty_form.sku.html_name }}" class="form-control form-control-sm" placeholder="SKU"></td>
         <td><textarea name="{{ formset.empty_form.item_name.html_name }}" class="form-control form-control-sm" rows="1"></textarea></td>
         <td>{{ formset.empty_form.quantity }}</td>
@@ -402,10 +433,27 @@ document.addEventListener('DOMContentLoaded', function() {
     function updateProductFromBatch(row) {
         const productSelect = row.querySelector('.product-select');
         const batchSelect = row.querySelector('.batch-select');
+        const costDisplay = row.querySelector('.unit-cost-display'); // Selector for the cost span
+        
+        // Get selected option
         const selectedOption = batchSelect.options[batchSelect.selectedIndex];
+        
         if (selectedOption.value !== "") {
+            // 1. Update Product Dropdown if needed
             const associatedProductId = selectedOption.dataset.productId;
-            if (associatedProductId) productSelect.value = associatedProductId;
+            if (associatedProductId && productSelect) {
+                productSelect.value = associatedProductId;
+            }
+
+            // 2. Update Unit Cost Display
+            const cost = parseFloat(selectedOption.dataset.cost) || 0;
+            if (costDisplay) {
+                // Format nicely with commas (optional) or fixed decimals
+                costDisplay.textContent = cost.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}); 
+            }
+        } else {
+            // Reset if "Auto Assign" or empty
+            if (costDisplay) costDisplay.textContent = "0.00";
         }
     }
 

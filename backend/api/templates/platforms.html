@@ -30,7 +30,7 @@
 
                 <div class="card-body p-4 d-flex flex-column">
                     <p class="text-muted small mb-4">
-                        Import sales orders, calculate fees, and update inventory automatically from TikTok CSV/Excel exports.
+                        นำเข้าคำสั่งขาย คำนวณค่าธรรมเนียม และอัปเดตสต็อกสินค้าโดยอัตโนมัติจากไฟล์ CSV/Excel ที่ส่งออกจาก TikTok Shop Seller Center
                     </p>
 
                     <form method="post" enctype="multipart/form-data" id="tiktokForm">
@@ -44,8 +44,8 @@
                              style="border-style: dashed !important; cursor: pointer;"
                              onclick="document.getElementById('tiktokFile').click();">
                             <i class="bi bi-cloud-arrow-up fs-1 text-secondary"></i>
-                            <div class="mt-2 fw-medium text-secondary">Click to Select File</div>
-                            <small class="text-muted">.csv, .xlsx, .xls supported</small>
+                            <div class="mt-2 fw-medium text-secondary">คลิกเพื่อเลือกไฟล์</div>
+                            <small class="text-secondary">รองรับไฟล์ .csv, .xlsx, .xls</small>
                         </div>
 
                         <div id="tiktok-step-2" class="d-none mt-3">
@@ -81,7 +81,7 @@
                 </div>
                 <div class="card-body p-4 d-flex flex-column">
                     <p class="text-muted small mb-4">
-                        Integration for Shopee Seller Centre exports. Supports Order and Income reports.
+                        เชื่อมต่อการนำเข้าข้อมูลจาก Shopee Seller Centre รองรับรายงานคำสั่งซื้อและรายงานรายได้
                     </p>
                     <form method="post" enctype="multipart/form-data" id="shopeeForm">
                         {% csrf_token %}
@@ -94,8 +94,8 @@
                              style="border-style: dashed !important; cursor: pointer;"
                              onclick="document.getElementById('shopeeFile').click();">
                             <i class="bi bi-cloud-arrow-up fs-1 text-secondary"></i>
-                            <div class="mt-2 fw-medium text-secondary">Click to Select File</div>
-                            <small class="text-muted">.csv, .xlsx, .xls supported</small>
+                            <div class="mt-2 fw-medium text-secondary">คลิกเพื่อเลือกไฟล์</div>
+                            <small class="text-secondary">รองรับไฟล์ .csv, .xlsx, .xls</small>
                         </div>
 
                         <div id="shopee-step-2" class="d-none mt-3">
@@ -131,7 +131,7 @@
                 </div>
                 <div class="card-body p-4 d-flex flex-column">
                     <p class="text-muted small mb-4">
-                        Integration for Lazada Seller Center. Automated reconciliation for payout statements.
+                        เชื่อมต่อการนำเข้าข้อมูลจาก Lazada Seller Center รองรับรายงานคำสั่งซื้อและรายงานรายได้
                     </p>
                     <form method="post" enctype="multipart/form-data" id="lazadaForm">
                         {% csrf_token %}
@@ -144,8 +144,8 @@
                              style="border-style: dashed !important; cursor: pointer;"
                              onclick="document.getElementById('lazadaFile').click();">
                             <i class="bi bi-cloud-arrow-up fs-1 text-secondary"></i>
-                            <div class="mt-2 fw-medium text-secondary">Click to Select File</div>
-                            <small class="text-muted">.csv, .xlsx, .xls supported</small>
+                            <div class="mt-2 fw-medium text-secondary">คลิกเพื่อเลือกไฟล์</div>
+                            <small class="text-secondary">รองรับไฟล์ .csv, .xlsx, .xls</small>
                         </div>
 
                         <div id="lazada-step-2" class="d-none mt-3">

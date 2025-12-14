@@ -29,6 +29,7 @@ urlpatterns = [
     #path('invoice_form/', views.invoice_form, name='invoice_form'),
     path('invoices/', views.invoice_view, name='invoice_list'),
     path('invoices/edit/<int:pk>/', views.invoice_view, name='invoice_edit'),
+    path('invoice/<int:pk>/pdf/', views.invoice_pdf_view, name='invoice_pdf'),
 
     # Vendor Management
     #path('vendor_list/', views.vendor_list, name='vendor_list'),

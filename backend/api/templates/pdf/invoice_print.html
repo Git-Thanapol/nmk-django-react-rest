@@ -1,0 +1,323 @@
+{% load static %}
+{% load humanize %}
+{% load report_tags %}
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <title>Invoice {{ invoice.invoice_number }}</title>
+    
+    <style>
+        /* 1. Font Configuration */
+        @font-face {
+            font-family: 'Sarabun';
+            /* WeasyPrint can load local static files if base_url is set in view */
+            /*src: url(".static/fonts/Sarabun-Regular.ttf"); */
+            src: url('{% static "fonts/Sarabun-Regular.ttf" %}');
+        }
+
+        /* 2. Page Layout */
+        @page {
+            size: A4;
+            margin: 1cm;
+            
+            /* Footer on every page */
+            @bottom-center {
+                content: "หน้า " counter(page) " / " counter(pages);
+                font-family: 'Sarabun';
+                font-size: 10px;
+            }
+        }
+
+        /* 3. Global Styles */
+        body {
+            font-family: 'Sarabun', sans-serif;
+            font-size: 12px;
+            line-height: 1.4;
+            color: #000;
+        }
+
+        /* Utilities */
+        .text-right { text-align: right; }
+        .text-center { text-align: center; }
+        .fw-bold { font-weight: bold; }
+        .w-100 { width: 100%; }
+        
+        /* Tables */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 10px;
+        }
+        
+        th, td {
+            padding: 4px 6px;
+            vertical-align: top;
+        }
+
+        /* Header Table (No borders) */
+        .header-table td { padding: 0; }
+        .company-name { font-size: 16px; font-weight: bold; }
+        .doc-title { font-size: 20px; font-weight: bold; }
+
+        /* Info Boxes (Bordered container) */
+        .box-container {
+            border: 1px solid #000;
+            border-radius: 4px;
+            padding: 10px;
+            height: 100px;
+        }
+        .info-row { margin-bottom: 4px; }
+        .info-label { font-weight: bold; display: inline-block; width: 80px; }
+
+        /* Items Table (Bordered) */
+        .items-table th {
+            background-color: #f0f0f0;
+            border: 1px solid #000;
+            font-weight: bold;
+            text-align: center;
+        }
+        .items-table td {
+            border-left: 1px solid #000;
+            border-right: 1px solid #000;
+        }
+        .items-table tr:last-child td {
+            border-bottom: 1px solid #000;
+        }
+
+        /* Summary & Totals */
+        .baht-box {
+            border: 1px solid #000;
+            background-color: #f9f9f9;
+            padding: 8px;
+            margin-bottom: 10px;
+        }
+        .totals-table td {
+            border: 1px solid #000;
+            padding: 4px;
+        }
+        .totals-bg { background-color: #f0f0f0; font-weight: bold; }
+
+        /* Signatures */
+        .sig-table td {
+            border: 1px solid #000;
+            border-radius: 4px;
+            text-align: center;
+            vertical-align: bottom;
+            height: 80px;
+            padding-bottom: 10px;
+            width: 25%;
+        }
+        .sig-header {
+            background-color: #f0f0f0;
+            border-bottom: 1px solid #000;
+            font-weight: bold;
+            display: block;
+            padding: 4px;
+            margin-bottom: 40px; /* Space for signature */
+        }
+        /* NEW: Styles for tables inside the info boxes */
+        .inner-box-table {
+            width: 100%;
+            border: none;
+            margin: 0;
+        }
+        .inner-box-table td {
+            border: none;       /* No borders for inner content */
+            padding: 1px 2px;   /* Tighter padding */
+            vertical-align: top;
+        }
+        .inner-label-col {
+            width: 110px;       /* Increased width to fit Thai text */
+            font-weight: bold;
+            white-space: nowrap; /* Prevent text wrapping */
+        }
+    </style>
+</head>
+<body>
+
+    <table class="header-table">
+        <tr>
+            <td width="60%">
+                {% comment %} <div class="company-name">{{ invoice.company.name|default:"My Company Name" }} (Head Office)</div>
+                <div>{{ invoice.company.address|default:"-" }}</div>
+                <div>หมายเลขประจำตัวผู้เสียภาษี: {{ invoice.company.tax_id|default:"-" }}</div> {% endcomment %}
+
+                {% comment %} Fixed Company Info {% endcomment %}
+                <div class="company-name">บริษัท เคไอที23 จำกัด (สำนักงานใหญ่)</div>
+                <div>444 ชั้น 4 อาคารเอ็ม บี เค เซ็นเตอร์ ห้องเลขที่ บี 96-97</div>
+                <div>ถนนพญาไทย แขวงวังใหม่ เขตประทุมวัน กรุงเทพมหานคร 10330</div>
+                <div>โทรศัพท์: 066-131-5452</div>
+                <div>หมายเลขประจำตัวผู้เสียภาษี: 01005567051441 / สำนักงานใหญ่</div>
+            </td>
+            <td width="40%" class="text-right">
+                <div class="doc-title">ใบเสร็จรับเงิน / ใบกำกับภาษี</div>
+                <div>ต้นฉบับ / Original</div>
+            </td>
+        </tr>
+    </table>
+
+    <div style="height: 10px;"></div>
+
+    <table>
+        <tr>
+            <td width="50%" style="padding: 0 5px 0 0;">
+                <div class="box-container">
+                    <table class="inner-box-table">
+                        <tr>
+                            <td class="inner-label-col" style="width: 80px;">รหัสลูกค้า:</td>
+                            <td>{{ invoice.recipient_name|default:invoice.recipient_name }}</td>
+                        </tr>
+                        <tr>
+                            <td class="inner-label-col" style="width: 80px;">นามลูกค้า:</td>
+                            <td>{{ invoice.recipient_name|default:invoice.recipient_name }}</td>
+                        </tr>
+                        <tr>
+                            <td class="inner-label-col" style="width: 80px;">ที่อยู่:</td>
+                            <td>{{ invoice.recipient_address|default:"-" }}</td>
+                        </tr>
+                        <tr>
+                            <td class="inner-label-col" style="width: 80px;">เลขผู้เสียภาษี:</td>
+                            <td>{{ invoice.customer.tax_id|default:"-" }}</td>
+                        </tr>
+                        <tr>
+                            <td class="inner-label-col" style="width: 80px;">ใบสั่งซื้อ:</td>
+                            <td>-</td>
+                        </tr>
+                    </table>
+                </div>
+            </td>
+
+            <td width="50%" style="padding: 0 0 0 5px;">
+                <div class="box-container">
+                    <table class="inner-box-table">
+                        <tr>
+                            <td class="inner-label-col">วันที่:</td>
+                            <td>{{ invoice.invoice_date|date:"d/m/Y" }}</td>
+                        </tr>
+                        <tr>
+                            <td class="inner-label-col">เลขที่ใบกำกับภาษี:</td>
+                            <td>{{ invoice.invoice_number }}</td>
+                        </tr>
+                        <tr>
+                            <td class="inner-label-col">พนักงานขาย:</td>
+                            <td>{{ invoice.saleperson }}</td>
+                        </tr>
+                        <tr>
+                            <td class="inner-label-col">อ้างอิง:</td>
+                            <td>{{ invoice.platform_order_id }}</td>
+                        </tr>
+                        <tr>
+                            <td class="inner-label-col">วันที่ครบกำหนด:</td>
+                            <td>-</td>
+                        </tr>
+                        <tr>
+                            <td class="inner-label-col">วิธีการจัดส่ง:</td>
+                            <td>-</td>
+                        </tr>
+                    </table>
+                </div>
+            </td>
+        </tr>
+    </table>
+
+    <table class="items-table">
+        <thead>
+            <tr>
+                <th width="5%">#</th>
+                <th width="15%">รหัสสินค้า</th>
+                <th width="40%">รายการ</th>
+                <th width="10%">จำนวน</th>
+                <th width="10%">หน่วยละ</th>
+                <th width="10%">ส่วนลด</th>
+                <th width="10%">จำนวนเงิน</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in items %}
+            <tr>
+                <td class="text-center">{{ forloop.counter }}</td>
+                <td>{{ item.sku|default:"-" }}</td>
+                <td>{{ item.item_name }}</td>
+                <td class="text-center">{{ item.quantity }}</td>
+                <td class="text-right">{{ item.unit_price|floatformat:2|intcomma }}</td>
+                <td class="text-right">-</td>
+                <td class="text-right">{{ item.total_price|floatformat:2|intcomma }}</td>
+            </tr>
+            {% endfor %}
+            
+            {% for i in "12345" %} 
+            {% if forloop.counter > items|length %}
+            <tr>
+                <td style="color:transparent">.</td>
+                <td></td><td></td><td></td><td></td><td></td><td></td>
+            </tr>
+            {% endif %}
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <table>
+        <tr>
+            <td width="65%" style="padding-right: 10px;">
+                <div class="baht-box">
+                    <strong>ยอดเงินสุทธิ  </strong> ({{ invoice.grand_total|bahttext }})
+                </div>
+                <div style="font-size: 10px; color: red;">
+                    หมายเหตุ: {{ invoice.notes }}
+                </div>
+            </td>
+            <td width="35%">
+                <table class="totals-table">
+                    <tr>
+                        <td class="text-right">รวมเป็นเงิน</td>
+                        <td class="text-right">{{ invoice.subtotal|floatformat:2|intcomma }}</td>
+                    </tr>
+                    <tr>
+                        <td class="text-right">ส่วนลด</td>
+                        <td class="text-right">{{ invoice.discount_amount|floatformat:2|intcomma }}</td>
+                    </tr>
+                    <tr>
+                        <td class="text-right">ค่าขนส่ง</td>
+                        <td class="text-right">{{ invoice.shipping_cost|floatformat:2|intcomma }}</td>
+                    </tr>
+                    <tr>
+                        <td class="text-right">VAT {{ invoice.tax_percent|floatformat:0 }}%</td>
+                        <td class="text-right">{{ invoice.tax_amount|floatformat:2|intcomma }}</td>
+                    </tr>
+                    <tr class="totals-bg">
+                        <td class="text-right">ยอดเงินสุทธิ</td>
+                        <td class="text-right">{{ invoice.grand_total|floatformat:2|intcomma }}</td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+
+    <table class="sig-table" style="margin-top: 20px; border-spacing: 5px; border-collapse: separate;">
+        <tr>
+            <td>
+                <div class="sig-header">ผู้ส่งสินค้า</div>
+                __________________<br>
+                วันที่ ..../..../....
+            </td>
+            <td>
+                <div class="sig-header">ผู้รับสินค้า</div>
+                __________________<br>
+                วันที่ ..../..../....
+            </td>
+            <td>
+                <div class="sig-header">ผู้ตรวจสอบ</div>
+                __________________<br>
+                วันที่ ..../..../....
+            </td>
+            <td>
+                <div class="sig-header">ผู้อนุมัติ</div>
+                __________________<br>
+                วันที่ ..../..../....
+            </td>
+        </tr>
+    </table>
+
+</body>
+</html>
