@@ -30,6 +30,7 @@ backend/*.log
 .env.*
 backend/.env
 frontend/.env
+postgres.env*
 
 # IDEs and editors
 .vscode/
