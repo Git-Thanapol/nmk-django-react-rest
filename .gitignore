@@ -27,7 +27,7 @@ backend/*.log
 
 # Environment
 .env
-#.env.*
+.env.*
 backend/.env
 frontend/.env
 
