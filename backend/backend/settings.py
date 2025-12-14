@@ -14,6 +14,7 @@ from pathlib import Path
 from datetime import timedelta
 from dotenv import load_dotenv
 import os
+from decouple import config
 
 load_dotenv()  # Load environment variables from .env file
 
@@ -26,12 +27,30 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-2=#=25lg5p+7m5gqzlg!dayi18ibd$ak)vy$2axo4!(lidm2f)'
+# 1. SECRET KEY (Warning W009)
+# Read from .env file, or use a dummy default for dev
+SECRET_KEY = config('SECRET_KEY', default='django-insecure-change-me-locally')
 
+# 2. DEBUG (Warning W018)
+# vital: Cast to boolean. Default to True for dev, MUST be False in prod .env
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+#DEBUG = True
+DEBUG = config('DEBUG', default=True, cast=bool)
 
-ALLOWED_HOSTS = ["*"]
+# 3. ALLOWED_HOSTS
+# Add your domain or IP here.
+ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='127.0.0.1,localhost', cast=lambda v: [s.strip() for s in v.split(',')])
+
+
+# 4. HTTPS SETTINGS (Warnings W004, W008, W012, W016)
+# Only enable these if not in Debug mode (i.e., on Production)
+if not DEBUG:
+    SECURE_SSL_REDIRECT = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_HSTS_SECONDS = 31536000  # 1 year
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
@@ -144,11 +163,16 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.1/howto/static-files/
 
-STATIC_URL = 'static/'
+# 1. URL to access static files (e.g., http://domain.com/static/css/style.css)
+STATIC_URL = '/static/'
 
-import os
+# 2. STATIC_ROOT: Where 'collectstatic' will put all files for Production (Nginx)
+# This directory is created automatically by the collectstatic command.
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+
+# 3. STATICFILES_DIRS: Where you put your custom CSS/Fonts during development
+# Django looks here for files to copy.
 STATICFILES_DIRS = [
-    os.path.join(BASE_DIR, 'static'),
     os.path.join(BASE_DIR, 'api/static'),
 ]
 
