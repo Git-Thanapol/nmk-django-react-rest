@@ -27,12 +27,13 @@ backend/*.log
 
 # Environment
 .env
-.env.*
+#.env.*
 backend/.env
 frontend/.env
 
 # IDEs and editors
 .vscode/
+.data_processing/
 .idea/
 *.suo
 *.ntvs*
@@ -60,3 +61,7 @@ coverage/
 *.pem
 *.key
 
+.initial_import_product.sql
+.links.txt
+.myGit.txt
+.texting.md
