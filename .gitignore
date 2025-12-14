@@ -28,9 +28,13 @@ backend/*.log
 # Environment
 .env
 .env.*
+.env.prod
 backend/.env
+backend/.env.prod
 frontend/.env
-postgres.env*
+frontend/.env.prod
+postgres/.env
+postgres/.env.prod
 
 # IDEs and editors
 .vscode/
