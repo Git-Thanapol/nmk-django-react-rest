@@ -19,7 +19,7 @@
                     </div>
                     <h5 class="card-title fw-bold">รายงานภาษีซื้อ</h5>
                     <p class="card-text text-muted small">
-                        สร้างรายงาน Excel สำหรับ ภาษีซื้อ (ใบสั่งซื้อ / Purchase Orders) <br> ให้เป็นไปตามรูปแบบของ กรมสรรพากร
+                        สร้างรายงาน Excel สำหรับ ภาษีซื้อ <br> (ใบสั่งซื้อ / Purchase Orders) <br> ให้เป็นไปตามรูปแบบของ กรมสรรพากร
                     </p>
                     <button type="button" class="btn btn-outline-primary w-100 stretched-link" 
                             data-bs-toggle="modal" 
@@ -42,7 +42,7 @@
                     </div>
                     <h5 class="card-title fw-bold">รายงานภาษีขาย</h5>
                     <p class="card-text text-muted small">
-                        รายงาน ภาษีขาย (Output VAT) จากใบแจ้งหนี้ขาย (Sales Invoices) <br> ตามรูปแบบของ กรมสรรพากร
+                        รายงาน ภาษีขาย (Output VAT) <br> จากใบแจ้งหนี้ขาย (Sales Invoices) <br> ตามรูปแบบของ กรมสรรพากร
                     </p>
                     <button type="button" class="btn btn-outline-success w-100 stretched-link" 
                             data-bs-toggle="modal" 
@@ -59,13 +59,36 @@
             <div class="card h-100 shadow-sm hover-shadow border-0">
                 <div class="card-body text-center p-4">
                     <div class="mb-3">
+                        <span class="avatar avatar-lg bg-info bg-opacity-10 text-info rounded-circle p-3">
+                            <i class="bi bi-arrow-left-right fs-2"></i>
+                        </span>
+                    </div>
+                    <h5 class="card-title fw-bold">รายงานสรุปภาษี (รวม)</h5>
+                    <p class="card-text text-muted small">
+                        รายงานสรุปยอดซื้อ-ขาย <br>  และภาษีมูลค่าเพิ่มในไฟล์เดียว <br> เรียงตามวันที่เพื่อตรวจสอบยอดสุทธิ 
+                    </p>
+                    <button type="button" class="btn btn-outline-info w-100 stretched-link" 
+                            data-bs-toggle="modal" 
+                            data-bs-target="#reportModal"
+                            data-report-type="combined_tax"
+                            data-report-name="Combined VAT Report (สรุปภาษีซื้อ-ขาย)">
+                        สร้างรายงาน
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4 col-lg-3">
+            <div class="card h-100 shadow-sm hover-shadow border-0">
+                <div class="card-body text-center p-4">
+                    <div class="mb-3">
                         <span class="avatar avatar-lg bg-warning bg-opacity-10 text-warning rounded-circle p-3">
                             <i class="bi bi-box-seam fs-2"></i>
                         </span>
                     </div>
                     <h5 class="card-title fw-bold">รายงานสินค้าคงเหลือ</h5>
                     <p class="card-text text-muted small">
-                        ตรวจสอบความเคลื่อนไหวของสินค้าและยอดคงเหลือปัจจุบัน <br> รองรับการติดตามสต็อกติดลบ
+                        ตรวจสอบความเคลื่อนไหวของสินค้า<br> และยอดคงเหลือปัจจุบัน <br> รองรับการติดตามสต็อกติดลบ
                     </p>
                     <button type="button" class="btn btn-outline-warning w-100 stretched-link" 
                             data-bs-toggle="modal" 
@@ -93,8 +116,17 @@
                     <input type="hidden" name="report_type" id="reportTypeInput">
                     
                     <div class="mb-3">
-                        <label class="form-label text-secondary small">เลือกร้านค้า</label>
+                        <label class="form-label text-secondary small">เลือกบริษัท / ร้านค้า</label>
                         {{ form.company }}
+                    </div>
+
+                    <div class="mb-3" id="reportBasisContainer">
+                        <label class="form-label text-secondary small">เงื่อนไขการเรียงลำดับ</label>
+                        {{ form.report_basis }}
+                        <div class="form-text text-muted small mt-1">
+                            <i class="bi bi-info-circle me-1"></i>
+                            เลือก 'วันที่ยื่นภาษี' เพื่อดูรายการที่ยื่นจริงในเดือนนั้น
+                        </div>
                     </div>
                     
                     <div class="row g-2">
@@ -120,9 +152,10 @@
 </div>
 
 <script>
-    // Script to pass data to the modal based on which card was clicked
     document.addEventListener('DOMContentLoaded', function () {
         var reportModal = document.getElementById('reportModal');
+        var reportBasisContainer = document.getElementById('reportBasisContainer');
+
         reportModal.addEventListener('show.bs.modal', function (event) {
             var button = event.relatedTarget;
             var reportType = button.getAttribute('data-report-type');
@@ -133,6 +166,13 @@
             
             modalTitle.textContent = reportName;
             typeInput.value = reportType;
+
+            // Logic: Hide "Report Basis" selector if it's a Stock Report
+            if (reportType === 'stock_report') {
+                reportBasisContainer.style.display = 'none';
+            } else {
+                reportBasisContainer.style.display = 'block';
+            }
         });
     });
 </script>

@@ -25,23 +25,36 @@
         {% csrf_token %}
         <div class="row g-3">
           
-          <div class="col-md-3">
+          <div class="col-md-4">
             <label class="form-label text-secondary small">หมายเลขธุรกรรม</label>
             {{ form.transaction_number }}
           </div>
-          <div class="col-md-3">
+          <div class="col-md-4">
+            <label class="form-label text-secondary small">หมายเลขอ้างอิง</label>
+            {{ form.reference }}
+          </div>
+          <div class="col-md-4">
             <label class="form-label text-secondary small">วันที่</label>
             {{ form.transaction_date }}
           </div>
-          <div class="col-md-3">
-            <label class="form-label text-secondary small">รายรับ / รายจ่าย</label>
-            {{ form.type }}
-          </div>
-          <div class="col-md-3">
+
+          <div class="col-md-4">
             <label class="form-label text-secondary small">ประเภท</label>
             {{ form.category }}
           </div>
+          <div class="col-md-4">
+            <label class="form-label text-secondary small">ผู้ขาย / ผู้จัดหา</label>
+            {{ form.vendor }}
+          </div>
+          <div class="col-4">
+            <label class="form-label text-secondary small">นำเข้าสู่บริษัท</label>
+            {{ form.company }}
+          </div>
 
+          <div class="col-md-4">
+            <label class="form-label text-secondary small">รายรับ / รายจ่าย</label>
+            {{ form.type }}
+          </div>
           <div class="col-md-4">
             <label class="form-label text-secondary small">จำนวนเงินทั้งสิ้น</label>
             <div class="input-group">
@@ -49,15 +62,11 @@
                 {{ form.amount }}
             </div>
           </div>
-          <div class="col-md-8">
-            <label class="form-label text-secondary small">หมายเลขอ้างอิง</label>
-            {{ form.reference }}
-          </div>
-
-          <div class="col-12">
+          <div class="col-6">
             <label class="form-label text-secondary small">คำอธิบายรายการ</label>
             {{ form.description }}
           </div>
+
 
           <div class="col-12 d-flex align-items-center justify-content-end gap-2 mt-3">
             {% if is_editing %}

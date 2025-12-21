@@ -84,12 +84,12 @@
             <i class="bi bi-graph-up me-2"></i>ค่าใช้จ่ายอื่นๆ
           </a>
 
-          <a 
+          {% comment %} <a 
             class="nav-link {% if request.path == '/customer_list/' %}active{% endif %}"
             href="{% url 'customer_list' %}"
           >
             <i class="bi bi-file-person-fill me-2"></i>ผู้ซื้อ
-          </a>          
+          </a>           {% endcomment %}
 
           <a 
             class="nav-link {% if request.path == '/vendor_list/' %}active{% endif %}"
@@ -127,6 +127,14 @@
           </a>
 
           <hr />
+          
+          <a 
+            class="nav-link {% if request.path == '/company_list/' %}active{% endif %}"
+            href="{% url 'company_list' %}"
+          >
+            <i class="bi bi-building"></i> ข้อมูลบริษัท
+          </a>
+       
 
           <a 
             class="nav-link {% if request.path == '/admin/' %}active{% endif %}"

@@ -25,78 +25,56 @@ def get_thai_month_year(date_obj):
     ]
     return f"{thai_months[date_obj.month]} ปี พ.ศ. {date_obj.year + 543}"
 
-def generate_purchase_tax_report(queryset, company, start_date, end_date):
+def generate_purchase_tax_report(queryset, company, start_date, end_date, report_basis='create_date'):
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Purchase Tax Report"
 
-    # --- Styles ---
+    # ... (Keep Styles same as before) ...
     font_header = Font(name='Sarabun', size=14, bold=True)
     font_sub = Font(name='Sarabun', size=11)
     font_bold = Font(name='Sarabun', size=11, bold=True)
     border_thin = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
     align_center = Alignment(horizontal='center', vertical='center')
     align_right = Alignment(horizontal='right', vertical='center')
-    align_left = Alignment(horizontal='left', vertical='center')
 
     # --- 1. HEADER SECTION ---
-    ws.merge_cells('A1:B1')
-    ws['A1'] = get_thai_datetime()
-    ws['A1'].alignment = align_left
+    # ... (Keep rows 1 & 2 same as before) ...
+    ws.merge_cells('A1:B1'); ws['A1'] = get_thai_datetime()
+    ws.merge_cells('D1:F1'); ws['D1'] = str(company); ws['D1'].font = font_header; ws['D1'].alignment = align_center
+    ws.merge_cells('D2:F2'); ws['D2'] = "รายงานภาษีซื้อ"; ws['D2'].font = font_bold; ws['D2'].alignment = align_center
     
-    ws.merge_cells('D1:F1')
-    ws['D1'] = str(company) # Use str() in case company is an object
-    ws['D1'].font = font_header
-    ws['D1'].alignment = align_center
+    # NEW: Add subtitle to show filtering basis
+    basis_text = "(ยื่นตามวันที่เอกสาร)" if report_basis == 'create_date' else "(ยื่นตามวันที่จ่ายภาษี)"
+    ws['D2'].value = f"รายงานภาษีซื้อ {basis_text}"
 
-    ws['H1'] = "หน้า 1" 
-    ws['H1'].alignment = align_right
-
-    ws.merge_cells('D2:F2')
-    ws['D2'] = "รายงานภาษีซื้อ"
-    ws['D2'].font = font_bold
-    ws['D2'].alignment = align_center
-
-    ws['H2'] = "สำนักงานใหญ่" 
-    ws['H2'].alignment = align_right
-
+    # Row 3
     ws.merge_cells('D3:F3')
     ws['D3'] = f"เดือนภาษี {get_thai_month_year(start_date)}" 
     ws['D3'].alignment = align_center
 
-    # Safe access to tax_id
     tax_id = getattr(company, 'tax_id', '-')
     ws['H3'] = f"เลขประจำตัวผู้เสียภาษี {tax_id}"
     ws['H3'].alignment = align_right
 
-    # --- 2. TABLE HEADERS ---
+    # --- 2. TABLE HEADERS (Keep same) ---
     headers = [
-        ('A5:A6', 'ลำดับ', 5),
-        ('B5:C5', 'ใบกำกับภาษี', 0),
-        ('B6:B6', 'วัน/เดือน/ปี', 12),
-        ('C6:C6', 'เลขที่', 15),
-        ('D5:D6', 'ชื่อผู้ขายสินค้า/ผู้รับบริการ', 30),
-        ('E5:E6', 'เลขประจำตัวผู้เสียภาษี\nของผู้ขายสินค้า', 20),
-        ('F5:G5', 'สถานประกอบการ', 0),
-        ('F6:F6', 'สนญ.', 8),
-        ('G6:G6', 'สาขาที่', 8),
-        ('H5:H6', 'มูลค่าสินค้าหรือบริการ', 15),
-        ('I5:I6', 'จำนวนเงินภาษีมูลค่าเพิ่ม', 15),
+        ('A5:A6', 'ลำดับ', 5), ('B5:C5', 'ใบกำกับภาษี', 0), ('B6:B6', 'วัน/เดือน/ปี', 12), ('C6:C6', 'เลขที่', 15),
+        ('D5:D6', 'ชื่อผู้ขายสินค้า/ผู้รับบริการ', 30), ('E5:E6', 'เลขประจำตัวผู้เสียภาษี\nของผู้ขายสินค้า', 20),
+        ('F5:G5', 'สถานประกอบการ', 0), ('F6:F6', 'สนญ.', 8), ('G6:G6', 'สาขาที่', 8),
+        ('H5:H6', 'มูลค่าสินค้าหรือบริการ', 15), ('I5:I6', 'จำนวนเงินภาษีมูลค่าเพิ่ม', 15),
     ]
-
+    # ... (Keep Header generation loop same as before) ...
     for cell_range, text, width in headers:
         ws.merge_cells(cell_range)
-        top_left_cell = ws[cell_range.split(':')[0]]
-        top_left_cell.value = text
-        top_left_cell.font = font_bold
-        top_left_cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+        cell = ws[cell_range.split(':')[0]]
+        cell.value = text
+        cell.font = font_bold
+        cell.alignment = align_center
+        cell.border = border_thin
         for row in ws[cell_range]:
-            for cell in row:
-                cell.border = border_thin
-        
-        col_letter = cell_range.split(':')[0][0]
-        if width > 0:
-            ws.column_dimensions[col_letter].width = width
+            for c in row: c.border = border_thin
+        if width > 0: ws.column_dimensions[cell_range[0]].width = width
 
     ws.print_title_rows = '1:6'
 
@@ -107,20 +85,13 @@ def generate_purchase_tax_report(queryset, company, start_date, end_date):
     total_vat = 0
 
     for po in queryset:
-        # FIX: Changed po.date to po.order_date
+        # NOTE: Standard practice is to show the Document Date (order_date) 
+        # even if we sorted by Tax Date.
         po_date = po.order_date 
         thai_date = f"{po_date.day:02d}/{po_date.month:02d}/{po_date.year+543}"
         
         vendor_name = po.vendor.name if po.vendor else "Unknown"
-        # Check if vendor has tax_id field, otherwise empty
         vendor_tax = getattr(po.vendor, 'tax_id', '') 
-        
-        # Use total_amount logic based on tax inclusion
-        # Your model stores 'subtotal' and 'tax_amount' calculated in calculate_totals()
-        
-        # For Purchase Tax Report:
-        # Column H = Base Value (Subtotal)
-        # Column I = VAT Amount
         
         val = po.subtotal
         vat = po.tax_amount
@@ -128,103 +99,78 @@ def generate_purchase_tax_report(queryset, company, start_date, end_date):
         total_value += val
         total_vat += vat
 
-        # Prepare Data Row
         data = [
             (seq, 'center'),
             (thai_date, 'center'),
             (po.po_number, 'left'), 
             (vendor_name, 'left'),
             (vendor_tax, 'center'),
-            ('X', 'center'), 
-            ('', 'center'),
-            (val, 'number'),
-            (vat, 'number'),
+            ('X', 'center'), ('', 'center'),
+            (val, 'number'), (vat, 'number'),
         ]
-
-        col_indices = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I']
         
+        # ... (Keep Data writing loop same as before) ...
+        col_indices = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I']
         for i, (value, style_type) in enumerate(data):
             cell = ws[f"{col_indices[i]}{current_row}"]
             cell.value = value
             cell.font = font_sub
             cell.border = border_thin
-            
             if style_type == 'number':
                 cell.number_format = '#,##0.00'
                 cell.alignment = align_right
             elif style_type == 'center':
                 cell.alignment = align_center
             else:
-                cell.alignment = align_left
+                cell.alignment = Alignment(horizontal='left', vertical='center')
 
         current_row += 1
         seq += 1
 
-    # --- 4. TOTALS ROW ---
+    # --- 4. TOTALS ROW (Keep same) ---
+    # ... (Use your existing total row code) ...
     ws.merge_cells(f'A{current_row}:G{current_row}')
-    cell = ws[f'A{current_row}']
-    cell.value = "รวมทั้งสิ้น"
-    cell.font = font_bold
-    cell.alignment = align_right
-    cell.border = border_thin
-    
-    for col in ['B','C','D','E','F','G']:
-        ws[f'{col}{current_row}'].border = border_thin
+    ws[f'A{current_row}'] = "รวมทั้งสิ้น"
+    ws[f'A{current_row}'].alignment = align_right
+    ws[f'A{current_row}'].font = font_bold
+    ws[f'A{current_row}'].border = border_thin
+    for col in ['B','C','D','E','F','G']: ws[f'{col}{current_row}'].border = border_thin
 
     for col, val in [('H', total_value), ('I', total_vat)]:
-        cell = ws[f'{col}{current_row}']
-        cell.value = val
-        cell.font = font_bold
-        cell.number_format = '#,##0.00'
-        cell.alignment = align_right
-        cell.border = border_thin
+        c = ws[f'{col}{current_row}']
+        c.value = val
+        c.font = font_bold
+        c.number_format = '#,##0.00'
+        c.alignment = align_right
+        c.border = border_thin
 
     response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-    response['Content-Disposition'] = f'attachment; filename="Purchase_Tax_Report_{start_date}.xlsx"'
+    response['Content-Disposition'] = f'attachment; filename="Purchase_Tax_{report_basis}_{start_date}.xlsx"'
     wb.save(response)
     return response
 
-def generate_sales_tax_report(queryset, company, start_date, end_date):
-    """
-    Generates Output VAT Report (Sales Tax) based on Invoice model.
-    """
+def generate_sales_tax_report(queryset, company, start_date, end_date, report_basis='create_date'):
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Sales Tax Report"
 
-    # --- Styles ---
+    # ... (Styles) ...
     font_header = Font(name='Sarabun', size=14, bold=True)
     font_sub = Font(name='Sarabun', size=11)
     font_bold = Font(name='Sarabun', size=11, bold=True)
     border_thin = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
     align_center = Alignment(horizontal='center', vertical='center')
     align_right = Alignment(horizontal='right', vertical='center')
-    align_left = Alignment(horizontal='left', vertical='center')
 
-    # --- 1. HEADER SECTION ---
-    # Row 1: Print Date, Company, Page
-    ws.merge_cells('A1:B1')
-    ws['A1'] = get_thai_datetime()
-    ws['A1'].alignment = align_left
+    # ... (Headers) ...
+    ws.merge_cells('A1:B1'); ws['A1'] = get_thai_datetime()
+    ws.merge_cells('D1:F1'); ws['D1'] = str(company); ws['D1'].font = font_header; ws['D1'].alignment = align_center
     
-    ws.merge_cells('D1:F1')
-    ws['D1'] = str(company)
-    ws['D1'].font = font_header
-    ws['D1'].alignment = align_center
-
-    ws['H1'] = "หน้า 1" 
-    ws['H1'].alignment = align_right
-
-    # Row 2: Report Name
     ws.merge_cells('D2:F2')
-    ws['D2'] = "รายงานภาษีขาย" # <--- CHANGED TITLE
-    ws['D2'].font = font_bold
-    ws['D2'].alignment = align_center
+    basis_text = "(ยื่นตามวันที่เอกสาร)" if report_basis == 'create_date' else "(ยื่นตามวันที่จ่ายภาษี)"
+    ws['D2'].value = f"รายงานภาษีขาย {basis_text}"
+    ws['D2'].font = font_bold; ws['D2'].alignment = align_center
 
-    ws['H2'] = "สำนักงานใหญ่" 
-    ws['H2'].alignment = align_right
-
-    # Row 3: Month/Tax ID
     ws.merge_cells('D3:F3')
     ws['D3'] = f"เดือนภาษี {get_thai_month_year(start_date)}" 
     ws['D3'].alignment = align_center
@@ -233,119 +179,92 @@ def generate_sales_tax_report(queryset, company, start_date, end_date):
     ws['H3'] = f"เลขประจำตัวผู้เสียภาษี {tax_id}"
     ws['H3'].alignment = align_right
 
-    # --- 2. TABLE HEADERS ---
+    # ... (Table Headers - Same as before) ...
     headers = [
-        ('A5:A6', 'ลำดับ', 5),
-        ('B5:C5', 'ใบกำกับภาษี', 0),
-        ('B6:B6', 'วัน/เดือน/ปี', 12),
-        ('C6:C6', 'เลขที่', 15),
-        ('D5:D6', 'ชื่อผู้ซื้อสินค้า/ผู้รับบริการ', 30), # <--- CHANGED: Buyer Name
-        ('E5:E6', 'เลขประจำตัวผู้เสียภาษี\nของผู้ซื้อสินค้า', 20), # <--- CHANGED: Buyer Tax ID
-        ('F5:G5', 'สถานประกอบการ', 0),
-        ('F6:F6', 'สนญ.', 8),
-        ('G6:G6', 'สาขาที่', 8),
-        ('H5:H6', 'มูลค่าสินค้าหรือบริการ', 15),
-        ('I5:I6', 'จำนวนเงินภาษีมูลค่าเพิ่ม', 15),
+        ('A5:A6', 'ลำดับ', 5), ('B5:C5', 'ใบกำกับภาษี', 0), ('B6:B6', 'วัน/เดือน/ปี', 12), ('C6:C6', 'เลขที่', 15),
+        ('D5:D6', 'ชื่อผู้ซื้อสินค้า/ผู้รับบริการ', 30), ('E5:E6', 'เลขประจำตัวผู้เสียภาษี\nของผู้ซื้อสินค้า', 20),
+        ('F5:G5', 'สถานประกอบการ', 0), ('F6:F6', 'สนญ.', 8), ('G6:G6', 'สาขาที่', 8),
+        ('H5:H6', 'มูลค่าสินค้าหรือบริการ', 15), ('I5:I6', 'จำนวนเงินภาษีมูลค่าเพิ่ม', 15),
     ]
-
     for cell_range, text, width in headers:
         ws.merge_cells(cell_range)
-        top_left_cell = ws[cell_range.split(':')[0]]
-        top_left_cell.value = text
-        top_left_cell.font = font_bold
-        top_left_cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+        cell = ws[cell_range.split(':')[0]]
+        cell.value = text
+        cell.font = font_bold
+        cell.alignment = align_center
+        cell.border = border_thin
         for row in ws[cell_range]:
-            for cell in row:
-                cell.border = border_thin
-        
-        col_letter = cell_range.split(':')[0][0]
-        if width > 0:
-            ws.column_dimensions[col_letter].width = width
+            for c in row: c.border = border_thin
+        if width > 0: ws.column_dimensions[cell_range[0]].width = width
 
     ws.print_title_rows = '1:6'
 
-    # --- 3. DATA POPULATION ---
+    # ... (Data) ...
     current_row = 7
     seq = 1
     total_value = 0
     total_vat = 0
 
     for inv in queryset:
-        # Date
         inv_date = inv.invoice_date
         thai_date = f"{inv_date.day:02d}/{inv_date.month:02d}/{inv_date.year+543}"
         
-        # Customer Name Logic: Prioritize Recipient Name (Online), fallback to Customer FK
-        cust_name = inv.recipient_name if inv.recipient_name else (inv.customer.name if inv.customer else "เงินสด/ไม่ระบุ")
+        cust_name = inv.recipient_name if inv.recipient_name else (inv.vendor.name if inv.vendor else "เงินสด/ไม่ระบุ")
+        cust_tax = inv.vendor.tax_id if (inv.vendor and hasattr(inv.vendor, 'tax_id')) else ""
         
-        # Tax ID Logic: Try to get from Customer object
-        cust_tax = ""
-        if inv.customer and hasattr(inv.customer, 'tax_id'):
-            cust_tax = inv.customer.tax_id
-        
-        # Financials: invoice.subtotal is the taxable base (calculated in your model)
         val = inv.subtotal
         vat = inv.tax_amount
-        
         total_value += val
         total_vat += vat
 
-        # Row Data
         data = [
             (seq, 'center'),
             (thai_date, 'center'),
             (inv.invoice_number, 'left'),
             (cust_name, 'left'),
             (cust_tax, 'center'),
-            ('X', 'center'), # Assume HQ for now
-            ('', 'center'),
-            (val, 'number'),
-            (vat, 'number'),
+            ('X', 'center'), ('', 'center'),
+            (val, 'number'), (vat, 'number'),
         ]
 
+        # ... (Write Data Loop) ...
         col_indices = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I']
-        
         for i, (value, style_type) in enumerate(data):
             cell = ws[f"{col_indices[i]}{current_row}"]
             cell.value = value
             cell.font = font_sub
             cell.border = border_thin
-            
             if style_type == 'number':
                 cell.number_format = '#,##0.00'
                 cell.alignment = align_right
             elif style_type == 'center':
                 cell.alignment = align_center
             else:
-                cell.alignment = align_left
+                cell.alignment = Alignment(horizontal='left', vertical='center')
 
         current_row += 1
         seq += 1
 
-    # --- 4. TOTALS ---
+    # ... (Totals) ...
     ws.merge_cells(f'A{current_row}:G{current_row}')
-    cell = ws[f'A{current_row}']
-    cell.value = "รวมทั้งสิ้น"
-    cell.font = font_bold
-    cell.alignment = align_right
-    cell.border = border_thin
-    
-    for col in ['B','C','D','E','F','G']:
-        ws[f'{col}{current_row}'].border = border_thin
+    ws[f'A{current_row}'] = "รวมทั้งสิ้น"
+    ws[f'A{current_row}'].alignment = align_right
+    ws[f'A{current_row}'].font = font_bold
+    ws[f'A{current_row}'].border = border_thin
+    for col in ['B','C','D','E','F','G']: ws[f'{col}{current_row}'].border = border_thin
 
     for col, val in [('H', total_value), ('I', total_vat)]:
-        cell = ws[f'{col}{current_row}']
-        cell.value = val
-        cell.font = font_bold
-        cell.number_format = '#,##0.00'
-        cell.alignment = align_right
-        cell.border = border_thin
+        c = ws[f'{col}{current_row}']
+        c.value = val
+        c.font = font_bold
+        c.number_format = '#,##0.00'
+        c.alignment = align_right
+        c.border = border_thin
 
     response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-    response['Content-Disposition'] = f'attachment; filename="Sales_Tax_Report_{start_date}.xlsx"'
+    response['Content-Disposition'] = f'attachment; filename="Sales_Tax_{report_basis}_{start_date}.xlsx"'
     wb.save(response)
     return response
-
 
 def generate_stock_report(company, start_date, end_date):
     """
@@ -522,3 +441,208 @@ def generate_stock_report(company, start_date, end_date):
     wb.save(response)
     return response
 
+
+
+def generate_combined_tax_report(po_qs, inv_qs, company_name, start_date, end_date, report_basis='create_date'):
+    """
+    Combines Purchase and Sales into one chronological report.
+    Sorting Priority: 
+    1. Date (Create or Tax depending on mode)
+    2. Doc Type (Purchase comes before Sales)
+    """
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Combined VAT Report"
+
+    # --- Styles ---
+    font_header = Font(name='Sarabun', size=14, bold=True)
+    font_sub = Font(name='Sarabun', size=11)
+    font_bold = Font(name='Sarabun', size=11, bold=True)
+    border_thin = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
+    align_center = Alignment(horizontal='center', vertical='center')
+    align_right = Alignment(horizontal='right', vertical='center')
+
+    # --- 1. HEADER ---
+    ws.merge_cells('A1:B1'); ws['A1'] = get_thai_datetime()
+    ws.merge_cells('E1:G1'); ws['E1'] = str(company_name); ws['E1'].font = font_header; ws['E1'].alignment = align_center
+    ws.merge_cells('E2:G2')
+    basis_text = "(ยื่นตามวันที่เอกสาร)" if report_basis == 'create_date' else "(ยื่นตามวันที่จ่ายภาษี)"
+    ws['E2'] = f"รายงานสรุปภาษีซื้อ - ขาย {basis_text}"
+    ws['E2'].font = font_bold; ws['E2'].alignment = align_center
+    
+    ws.merge_cells('E3:G3')
+    ws['E3'] = f"เดือนภาษี {get_thai_month_year(start_date)}"
+    ws['E3'].alignment = align_center
+
+    # --- 2. TABLE HEADERS ---
+    # Structure: Date | Doc No | Type | Name | Tax ID | Buy Base | Buy VAT | Sell Base | Sell VAT
+    headers = [
+        ('A5:A6', 'ลำดับ', 5),
+        ('B5:B6', 'วัน/เดือน/ปี', 12),
+        ('C5:C6', 'เลขที่เอกสาร', 15),
+        ('D5:D6', 'ประเภท', 10),
+        ('E5:E6', 'ชื่อผู้ซื้อ / ผู้ขาย', 30),
+        ('F5:F6', 'เลขผู้เสียภาษี', 18),
+        ('G5:H5', 'ภาษีซื้อ (Purchase Tax)', 0),
+        ('G6:G6', 'มูลค่า', 15),
+        ('H6:H6', 'ภาษี', 12),
+        ('I5:J5', 'ภาษีขาย (Sales Tax)', 0),
+        ('I6:I6', 'มูลค่า', 15),
+        ('J6:J6', 'ภาษี', 12),
+    ]
+
+    for cell_range, text, width in headers:
+        if ':' in cell_range and cell_range.split(':')[0] != cell_range.split(':')[1]:
+            ws.merge_cells(cell_range)
+        
+        cell = ws[cell_range.split(':')[0]]
+        cell.value = text
+        cell.font = font_bold
+        cell.alignment = align_center
+        cell.border = border_thin
+        
+        # Apply borders to all cells in range
+        for row in ws[cell_range]:
+            for c in row: c.border = border_thin
+            
+        if width > 0: ws.column_dimensions[cell_range[0]].width = width
+
+    ws.print_title_rows = '1:6'
+
+    # --- 3. DATA PREPARATION & SORTING ---
+    combined_data = []
+
+    # Process Purchases (Priority 1)
+    for po in po_qs:
+        sort_date = po.order_date if report_basis == 'create_date' else po.tax_sender_date
+        
+        combined_data.append({
+            'sort_date': sort_date,
+            'priority': 1, # Purchase comes first
+            'doc_no': po.po_number,
+            'type': 'ซื้อ (Buy)',
+            'name': po.vendor.name if po.vendor else '-',
+            'tax_id': getattr(po.vendor, 'tax_id', '-'),
+            'buy_base': po.subtotal,
+            'buy_vat': po.tax_amount,
+            'sell_base': 0,
+            'sell_vat': 0
+        })
+
+    # Process Invoices (Priority 2)
+    for inv in inv_qs:
+        sort_date = inv.invoice_date if report_basis == 'create_date' else inv.tax_sender_date
+        
+        # Determine name logic
+        name = inv.recipient_name if inv.recipient_name else (inv.vendor.name if inv.vendor else "เงินสด")
+        # Determine Tax ID logic
+        tax_id = inv.vendor.tax_id if (inv.vendor and hasattr(inv.vendor, 'tax_id')) else ""
+
+        combined_data.append({
+            'sort_date': sort_date,
+            'priority': 2, # Invoice comes second
+            'doc_no': inv.invoice_number,
+            'type': 'ขาย (Sell)',
+            'name': name,
+            'tax_id': tax_id,
+            'buy_base': 0,
+            'buy_vat': 0,
+            'sell_base': inv.subtotal,
+            'sell_vat': inv.tax_amount
+        })
+
+    # SORTING: Date ASC -> Priority ASC -> Doc No ASC
+    combined_data.sort(key=lambda x: (x['sort_date'], x['priority'], x['doc_no']))
+
+    # --- 4. POPULATE EXCEL ---
+    current_row = 7
+    seq = 1
+    total_buy_base = 0
+    total_buy_vat = 0
+    total_sell_base = 0
+    total_sell_vat = 0
+
+    for item in combined_data:
+        # Format Date
+        d = item['sort_date']
+        thai_date = f"{d.day:02d}/{d.month:02d}/{d.year+543}" if d else "-"
+
+        # Accumulate Totals
+        total_buy_base += item['buy_base']
+        total_buy_vat += item['buy_vat']
+        total_sell_base += item['sell_base']
+        total_sell_vat += item['sell_vat']
+
+        row_cells = [
+            (seq, 'center'),
+            (thai_date, 'center'),
+            (item['doc_no'], 'left'),
+            (item['type'], 'center'),
+            (item['name'], 'left'),
+            (item['tax_id'], 'center'),
+            (item['buy_base'], 'number'),
+            (item['buy_vat'], 'number'),
+            (item['sell_base'], 'number'),
+            (item['sell_vat'], 'number'),
+        ]
+
+        col_indices = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J']
+        for i, (val, style) in enumerate(row_cells):
+            cell = ws[f"{col_indices[i]}{current_row}"]
+            cell.value = val
+            cell.border = border_thin
+            cell.font = font_sub
+
+            if style == 'number':
+                cell.number_format = '#,##0.00'
+                if val == 0: cell.font = Font(color="D3D3D3") # Gray out zeros
+                cell.alignment = align_right
+            elif style == 'center':
+                cell.alignment = align_center
+            else:
+                cell.alignment = Alignment(horizontal='left', vertical='center')
+
+        current_row += 1
+        seq += 1
+
+    # --- 5. TOTALS ROW ---
+    ws.merge_cells(f'A{current_row}:F{current_row}')
+    ws[f'A{current_row}'] = "รวมทั้งสิ้น"
+    ws[f'A{current_row}'].alignment = align_right
+    ws[f'A{current_row}'].font = font_bold
+    
+    totals = [total_buy_base, total_buy_vat, total_sell_base, total_sell_vat]
+    cols = ['G', 'H', 'I', 'J']
+    
+    # Border for "Total" Label
+    for c in ['A','B','C','D','E','F']: ws[f'{c}{current_row}'].border = border_thin
+
+    # Fill Total Values
+    for i, val in enumerate(totals):
+        cell = ws[f'{cols[i]}{current_row}']
+        cell.value = val
+        cell.number_format = '#,##0.00'
+        cell.font = font_bold
+        cell.alignment = align_right
+        cell.border = border_thin
+
+    # --- 6. NET VAT SUMMARY (Optional but helpful) ---
+    current_row += 2
+    ws[f'H{current_row}'] = "ภาษีขายสุทธิ:"
+    ws[f'I{current_row}'] = total_sell_vat
+    
+    ws[f'H{current_row+1}'] = "หัก ภาษีซื้อ:"
+    ws[f'I{current_row+1}'] = total_buy_vat
+    
+    ws[f'H{current_row+2}'] = "ภาษีที่ต้องชำระ:"
+    net_vat = total_sell_vat - total_buy_vat
+    cell = ws[f'I{current_row+2}']
+    cell.value = net_vat
+    cell.number_format = '#,##0.00'
+    cell.font = font_bold
+    if net_vat < 0: cell.font = Font(bold=True, color="FF0000") # Red if refund
+
+    response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    response['Content-Disposition'] = f'attachment; filename="Combined_VAT_{report_basis}_{start_date}.xlsx"'
+    wb.save(response)
+    return response

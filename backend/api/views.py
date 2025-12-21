@@ -23,7 +23,6 @@ from pybaht import bahttext
 # Local apps – models
 from .models import (
     Company,
-    Customer,
     Invoice,
     InvoiceItem,
     Note,
@@ -37,7 +36,6 @@ from .models import (
 
 # Local apps – forms
 from .forms import (
-    CustomerForm,
     ImportFileForm,
     InvoiceForm,
     InvoiceItemFormSet,
@@ -47,6 +45,7 @@ from .forms import (
     ReportFilterForm,
     TransactionForm,
     VendorForm,
+    CompanyForm,
 )
 
 # Local apps – serializers
@@ -64,6 +63,7 @@ from .utils_reports import (
     generate_purchase_tax_report,
     generate_sales_tax_report,
     generate_stock_report,
+    generate_combined_tax_report,
 )
 
 
@@ -122,143 +122,20 @@ def logout_view(request):
     logout(request)
     return redirect('login')
 
+@login_required
 def purchase_form(request):
     return render(request, 'purchase_form.html')
 
+@login_required
 def invoice_form(request):
     """Render the invoice form page."""
     return render(request, 'invoice_form.html')
 
+@login_required
 def transaction_form(request):
     return render(request, 'transaction_form.html')
 
-#@login_required
-def customer_list(request):
-    # ---------------------------------------------------------
-    # 1. Context Setup (Multi-company logic)
-    # ---------------------------------------------------------
-    # Assuming you have a way to get the current user's company. 
-    # For now, we'll just pick the first one or None if not set.
-    # In a real app, this might come from request.session['company_id']
-    current_company = Company.objects.first() 
-    
-    # ---------------------------------------------------------
-    # 2. Handle Form Submission (POST)
-    # ---------------------------------------------------------
-    if request.method == 'POST':
-        form = CustomerForm(request.POST)
-        if form.is_valid():
-            customer = form.save(commit=False)
-            if current_company:
-                customer.company = current_company
-            customer.save()
-            return redirect('customer_list')
-    else:
-        form = CustomerForm()
-
-    # ---------------------------------------------------------
-    # 3. Get Data & Filter (GET)
-    # ---------------------------------------------------------
-    customers = Customer.objects.all().order_by('-created_at')
-    
-    # Filter by Company (Multi-tenancy)
-    if current_company:
-        customers = customers.filter(company=current_company)
-
-    # Search Logic
-    search_query = request.GET.get('q')
-    if search_query:
-        customers = customers.filter(
-            Q(name__icontains=search_query) | 
-            Q(phone__icontains=search_query) | 
-            Q(tax_id__icontains=search_query) |
-            Q(email__icontains=search_query)
-        )
-
-    # Status Filter
-    status_filter = request.GET.get('status')
-    if status_filter == 'active':
-        customers = customers.filter(is_active=True)
-    elif status_filter == 'inactive':
-        customers = customers.filter(is_active=False)
-
-    context = {
-        'form': form,
-        'customers': customers,
-        'search_query': search_query
-    }
-    return render(request, 'customer_list.html', context)
-
-#@login_required
-def customer_view(request, pk=None):
-    # ---------------------------------------------------------
-    # 1. Determine Context (Create vs Edit)
-    # ---------------------------------------------------------
-    if pk:
-        customer_instance = get_object_or_404(Customer, pk=pk)
-        is_editing = True
-    else:
-        customer_instance = None
-        is_editing = False
-
-    # Get current company (logic placeholder)
-    current_company = Company.objects.first()
-
-    # ---------------------------------------------------------
-    # 2. Handle Form Submission (POST)
-    # ---------------------------------------------------------
-    if request.method == 'POST':
-        # Pass 'instance' to update existing record, otherwise creates new
-        form = CustomerForm(request.POST, instance=customer_instance)
-        
-        if form.is_valid():
-            customer = form.save(commit=False)
-            
-            # If creating a new customer, assign the company
-            if not is_editing and current_company:
-                customer.company = current_company
-            
-            customer.save()
-            return redirect('customer_list')
-    else:
-        # Load form with data (if editing) or blank (if creating)
-        form = CustomerForm(instance=customer_instance)
-
-    # ---------------------------------------------------------
-    # 3. Get Data & Filter (GET)
-    # ---------------------------------------------------------
-    customers = Customer.objects.all().order_by('-created_at')
-    
-    if current_company:
-        customers = customers.filter(company=current_company)
-
-    # Search Logic
-    search_query = request.GET.get('q')
-    if search_query:
-        customers = customers.filter(
-            Q(name__icontains=search_query) | 
-            Q(phone__icontains=search_query) | 
-            Q(tax_id__icontains=search_query) |
-            Q(email__icontains=search_query)
-        )
-
-    # Status Filter
-    status_filter = request.GET.get('status')
-    if status_filter == 'active':
-        customers = customers.filter(is_active=True)
-    elif status_filter == 'inactive':
-        customers = customers.filter(is_active=False)
-
-    context = {
-        'form': form,
-        'customers': customers,
-        'search_query': search_query,
-        'is_editing': is_editing,             # Flag for Template
-        'editing_customer': customer_instance # Object for Template
-    }
-    return render(request, 'customer_list.html', context)
-
-#@login_required
+@login_required
 def vendor_list(request):
     # 1. Handle Form Submission (POST)
     if request.method == 'POST':
@@ -314,7 +191,7 @@ def vendor_list(request):
     }
     return render(request, 'vendor_list.html', context)
 
-#@login_required
+@login_required
 def vendor_view(request, pk=None):
     # 1. Determine Context (Create vs Edit)
     if pk:
@@ -378,7 +255,7 @@ def vendor_view(request, pk=None):
     }
     return render(request, 'vendor_list.html', context)
 
-#@login_required
+@login_required
 def product_view(request, pk=None):
     # ---------------------------------------------------------
     # 1. Determine Context (Create vs Edit)
@@ -441,7 +318,7 @@ def product_view(request, pk=None):
     }
     return render(request, 'product_list.html', context)
 
-#@login_required
+@login_required
 def transaction_view(request, pk=None):
     # ---------------------------------------------------------
     # 1. Determine Context (Create vs Edit)
@@ -519,8 +396,7 @@ def transaction_view(request, pk=None):
     }
     return render(request, 'transaction_list.html', context)
 
-
-#@login_required
+@login_required
 def purchase_order_view(request, pk=None):
     # 1. Setup Context
     if pk:
@@ -562,7 +438,7 @@ def purchase_order_view(request, pk=None):
                         po = form.save(commit=False)
                         if not is_editing:
                             po.created_by = request.user
-                            po.company = Company.objects.first() # Placeholder logic
+                            #po.company = Company.objects.first() # Placeholder logic
                         po.save()
                         
                         # B. Save Items
@@ -596,123 +472,7 @@ def purchase_order_view(request, pk=None):
     }
     return render(request, 'purchase_form.html', context)
 
-
-#@login_required
-# def invoice_view(request, pk=None):
-#     if pk:
-#         invoice_instance = get_object_or_404(Invoice, pk=pk)
-#         is_editing = True
-#     else:
-#         invoice_instance = None
-#         is_editing = False
-
-#     if request.method == 'POST':
-#         form = InvoiceForm(request.POST, instance=invoice_instance)
-#         formset = InvoiceItemFormSet(request.POST, instance=invoice_instance)
-        
-#         if form.is_valid() and formset.is_valid():
-#             try:
-#                 with transaction.atomic():
-#                     # 1. Save Header
-#                     invoice = form.save(commit=False)
-#                     if not is_editing:
-#                         invoice.created_by = request.user
-#                         # Assign default company if not set
-#                         invoice.company = Company.objects.first() 
-#                     invoice.save()
-                    
-#                     # 2. Process Items
-#                     items = formset.save(commit=False)
-                    
-#                     # A. Handle Deletions (Restore Stock)
-#                     for obj in formset.deleted_objects:
-#                         if obj.purchase_item:
-#                             obj.purchase_item.remaining_quantity += obj.quantity
-#                             obj.purchase_item.save()
-#                         obj.delete()
-
-#                     # B. Handle Updates/Inserts
-#                     for item in items:
-#                         selected_batch = item.purchase_item # Might be None (if user left blank)
-#                         selected_product = item.product     # Always set (required by form)
-                        
-#                         # --- SCENARIO A: User left Batch BLANK (Auto-Assign FIFO) ---
-#                         if not selected_batch:
-#                             # Find oldest batch for this product with stock
-#                             stock_batch = PurchaseItem.objects.filter(
-#                                 product=selected_product, 
-#                                 remaining_quantity__gt=0
-#                             ).order_by('id').first()
-                            
-#                             if not stock_batch:
-#                                 raise Exception(f"No stock available for Product: {selected_product.name}")
-                            
-#                             # Check if that batch has enough for this requested amount
-#                             if item.quantity > stock_batch.remaining_quantity:
-#                                 raise Exception(f"Auto-assign failed. Batch {stock_batch} only has {stock_batch.remaining_quantity} left, but you requested {item.quantity}.")
-                                
-#                             item.purchase_item = stock_batch
-                            
-#                         # --- SCENARIO B: User SELECTED a specific Batch ---
-#                         else:
-#                             # Integrity check: Does batch match product?
-#                             if selected_batch.product != selected_product:
-#                                 raise Exception(f"Mismatch: Batch {selected_batch} does not belong to product {selected_product.name}")
-                            
-#                             # If editing, we need to revert the *original* quantity first to check math
-#                             # (Otherwise we might falsely flag "not enough stock")
-#                             if item.pk:
-#                                 original_item = InvoiceItem.objects.get(pk=item.pk)
-#                                 # Only restore if the batch hasn't changed
-#                                 if original_item.purchase_item == selected_batch:
-#                                     selected_batch.remaining_quantity += original_item.quantity
-
-#                             if item.quantity > selected_batch.remaining_quantity:
-#                                 raise Exception(f"Not enough stock in selected batch {selected_batch}. Available: {selected_batch.remaining_quantity}")
-
-#                             item.purchase_item = selected_batch
-
-#                         # Deduct Stock & Save
-#                         item.purchase_item.remaining_quantity -= item.quantity
-#                         item.purchase_item.save()
-                        
-#                         item.invoice = invoice
-#                         item.save()
-                    
-#                     # 3. Final Totals
-#                     invoice.calculate_totals()
-                    
-#                     messages.success(request, "Invoice saved successfully.")
-#                     return redirect('invoice_list')
-
-#             except Exception as e:
-#                 # If anything fails, transaction rolls back automatically
-#                 messages.error(request, f"Error: {str(e)}")
-#         else:
-#             messages.error(request, "Please check the form for errors.")
-#     else:
-#         form = InvoiceForm(instance=invoice_instance)
-#         formset = InvoiceItemFormSet(instance=invoice_instance)
-
-#     # List View Logic
-#     invoices = Invoice.objects.all().order_by('-invoice_date')
-    
-#     if request.GET.get('q'):
-#         q = request.GET.get('q')
-#         invoices = invoices.filter(
-#             Q(invoice_number__icontains=q) | 
-#             Q(customer__name__icontains=q)
-#         )
-
-#     context = {
-#         'form': form,
-#         'formset': formset,
-#         'invoices': invoices,
-#         'is_editing': is_editing,
-#         'editing_invoice': invoice_instance
-#     }
-#     return render(request, 'invoice_form.html', context)
-
+@login_required
 def invoice_view(request, pk=None):
     """
     Combined List + Create + Edit View.
@@ -820,14 +580,14 @@ def invoice_view(request, pk=None):
 
     # 4. Fetch Recent Data for the Table
     # Optimized with select_related to prevent N+1 queries on Customer
-    invoices = Invoice.objects.select_related('customer').order_by('-invoice_date', '-created_at')
+    invoices = Invoice.objects.select_related('vendor').order_by('-invoice_date', '-created_at')
     
     # Optional Server-Side Search (in addition to JS filter)
     if request.GET.get('q'):
         q = request.GET.get('q')
         invoices = invoices.filter(
             Q(invoice_number__icontains=q) | 
-            Q(customer__name__icontains=q)
+            Q(vendor__name__icontains=q)
         )
     
     # Limit to last 1000 for performance
@@ -845,152 +605,104 @@ def invoice_view(request, pk=None):
     }
     return render(request, 'invoice_form.html', context)
 
-
-# @login_required
-# def platform_import_view(request):
-#     """
-#     View for importing TikTok/Shopee data via CSV.
-#     """
-#     context = {
-#         'page_title': 'Platform Data Import',
-#         'form': ImportFileForm()
-#     }
-
-#     if request.method == 'POST':
-#         form = ImportFileForm(request.POST, request.FILES)
-        
-#         if form.is_valid():
-#             uploaded_file = request.FILES['import_file']
-#             platform = form.cleaned_data['platform']
-            
-#             if platform == 'tiktok':
-#                 try:
-#                     # Save temp file
-#                     fs = FileSystemStorage()
-#                     filename = fs.save(f"temp_{uploaded_file.name}", uploaded_file)
-#                     file_path = fs.path(filename)
-                    
-#                     # Process & Import
-#                     # 1. Parse CSV/Excel
-#                     header_df, items_df = process_tiktok_orders(file_path)
-                    
-#                     # 2. Save to DB
-#                     # TODO: Make company dynamic based on user profile
-#                     company_id = 1 
-#                     result = import_tiktok_invoices(header_df, items_df, company_id, request.user.id)
-                    
-#                     # Cleanup
-#                     os.remove(file_path)
-
-#                     if result['status'] == 'completed':
-#                         msg = f"Import Successful! Imported {result['imported']} orders. Failed: {result['failed']}."
-#                         if result['failed'] > 0:
-#                             msg += f" First error: {result['error_log'][0]}"
-#                         messages.success(request, msg)
-#                     else:
-#                         messages.error(request, f"Import Error: {result['message']}")
-
-#                 except Exception as e:
-#                     messages.error(request, f"Critical Error: {str(e)}")
-            
-#             else:
-#                 messages.warning(request, f"Import for {platform} is coming soon!")
-                
-#             return redirect('platform_import')
-            
-#         else:
-#             messages.error(request, "Invalid file format.")
-
-#     return render(request, 'platforms.html', context)
-
-#@login_required
+@login_required
 def platform_import_view(request):
+    # Standard Context for GET requests (Dropdowns etc.)
+    #companies = Company.objects.filter(is_active=True)
+    companies = Company.objects.all()
     context = {
         'page_title': 'Platform Data Import',
-        'form': ImportFileForm()
+        'form': ImportFileForm(),
+        'companies': companies
     }
 
     if request.method == 'POST':
-        form = ImportFileForm(request.POST, request.FILES)
+        # We manually check the request.FILES and POST data here for flexibility, 
+        # but you can also bind it to the form if preferred.
         
-        if form.is_valid():
-            uploaded_file = request.FILES['import_file']
-            platform = form.cleaned_data['platform']
-            
-            # --- 1. SAVE FILE TEMPORARILY ---
-            # We must save to disk first because pandas needs a file path
-            try:
-                fs = FileSystemStorage()
-                # Clean filename to avoid OS issues
-                clean_name = f"temp_{platform}_{uploaded_file.name.replace(' ', '_')}"
-                filename = fs.save(clean_name, uploaded_file)
-                file_path = fs.path(filename)
-            except Exception as e:
-                messages.error(request, f"File upload failed: {str(e)}")
-                return redirect('platform_import')
+        # 1. Validation: Check if file and company are present
+        uploaded_file = request.FILES.get('import_file')
+        platform = request.POST.get('platform')
+        company_id = request.POST.get('company_id')
 
-            # --- 2. PROCESS & IMPORT ---
-            try:
-                header_df = None
-                items_df = None
-                company_id = 1 # TODO: Make dynamic e.g. request.user.company_id
-
-                # A. Select Processor based on Platform
-                if platform == 'tiktok':
-                    header_df, items_df = process_tiktok_orders(file_path)
-                    target_platform_name = 'TikTok Shop'
-                    
-                elif platform == 'shopee':
-                    header_df, items_df = process_shopee_orders(file_path)
-                    target_platform_name = 'Shopee'
-                
-                elif platform == 'lazada':
-                    header_df, items_df = process_lazada_orders(file_path)
-                    target_platform_name = 'Lazada'
-
-                else:
-                    raise ValueError(f"Platform '{platform}' is not yet supported.")
-
-                # B. Run Universal Import
-                if header_df is not None and items_df is not None:
-                    result = universal_invoice_import(
-                        header_df, 
-                        items_df, 
-                        company_id, 
-                        request.user.id, 
-                        platform_name=target_platform_name
-                    )
-
-                    # C. Feedback
-                    if result['status'] == 'completed':
-                        msg = f"Import Successful! Imported {result['imported']} orders. Failed: {result['failed']}."
-                        if result['failed'] > 0:
-                            msg += f" First error: {result['error_log'][0]}"
-                        messages.success(request, msg)
-                    else:
-                        messages.error(request, f"Import Error: {result['message']}")
-                else:
-                    messages.error(request, "Data Processing returned empty results.")
-
-            except Exception as e:
-                # Catch processing errors (e.g. wrong columns in CSV)
-                messages.error(request, f"Processing Error: {str(e)}")
-
-            finally:
-                # --- 3. CLEANUP ---
-                # Always remove the temp file, even if import fails
-                if os.path.exists(file_path):
-                    os.remove(file_path)
-            
+        if not uploaded_file or not platform or not company_id:
+            messages.error(request, "Missing required data. Please select a file, platform, and company.")
             return redirect('platform_import')
 
-        else:
-            messages.error(request, "Invalid form submission. Please check your file type.")
+        file_path = None
 
+        try:
+            # --- 1. SAVE FILE TEMPORARILY ---
+            # Get the target company object (validates ID exists)
+            target_company = get_object_or_404(Company, pk=company_id)
+            
+            fs = FileSystemStorage()
+            # Clean filename to avoid OS issues
+            clean_name = f"temp_{platform}_{uploaded_file.name.replace(' ', '_')}"
+            filename = fs.save(clean_name, uploaded_file)
+            file_path = fs.path(filename)
+            
+            # --- 2. PROCESS & IMPORT ---
+            header_df = None
+            items_df = None
+            target_platform_name = ''
+
+            # A. Select Processor based on Platform
+            if platform == 'tiktok':
+                header_df, items_df = process_tiktok_orders(file_path)
+                target_platform_name = 'TikTok Shop'
+                
+            elif platform == 'shopee':
+                header_df, items_df = process_shopee_orders(file_path)
+                target_platform_name = 'Shopee'
+            
+            elif platform == 'lazada':
+                header_df, items_df = process_lazada_orders(file_path)
+                target_platform_name = 'Lazada'
+
+            else:
+                raise ValueError(f"Platform '{platform}' is not yet supported.")
+
+            # B. Run Universal Import
+            if header_df is not None and items_df is not None:
+                result = universal_invoice_import(
+                    header_df, 
+                    items_df, 
+                    target_company.id,  # Use the ID from the selected company
+                    request.user.id, 
+                    platform_name=target_platform_name
+                )
+
+                # C. Feedback
+                if result['status'] == 'completed':
+                    msg = f"Import Successful for {target_company.name}! Imported {result['imported']} orders. Failed: {result['failed']}."
+                    if result['failed'] > 0:
+                        msg += f" First error: {result['error_log'][0]}"
+                    messages.success(request, msg)
+                else:
+                    messages.error(request, f"Import Error: {result['message']}")
+            else:
+                messages.error(request, "Data Processing returned empty results.")
+
+        except Exception as e:
+            # Catch processing errors (e.g. wrong columns in CSV)
+            messages.error(request, f"Processing Error: {str(e)}")
+
+        finally:
+            # --- 3. CLEANUP ---
+            # Always remove the temp file, even if import fails
+            if file_path and os.path.exists(file_path):
+                try:
+                    os.remove(file_path)
+                except OSError:
+                    pass # Log failure to delete if necessary
+            
+        return redirect('platform_import')
+
+    # GET Request
     return render(request, 'platforms.html', context)
 
-
-#@login_required
+@login_required
 def product_mapping_view(request):
     """
     Dashboard to map Unknown External Keys to Internal Products.
@@ -1033,38 +745,77 @@ def product_mapping_view(request):
     }
     return render(request, 'product_mapping.html', context)
 
-
 def report_dashboard_view(request):
     form = ReportFilterForm(request.POST or None)
     
     if request.method == 'POST' and form.is_valid():
         report_type = request.POST.get('report_type')
-        company = form.cleaned_data['company']
+        company_id = form.cleaned_data['company']
         start_date = form.cleaned_data['start_date']
         end_date = form.cleaned_data['end_date']
+        report_basis = form.cleaned_data['report_basis']
+
+        # --- 1. Handle "All Companies" Logic ---
+        target_company = None
+        if company_id == 'all':
+            company_filter = {} # Empty dict means no filter (All)
+            company_name_for_report = "รวมทุกบริษัท (All Companies)"
+        else:
+            target_company = Company.objects.get(pk=company_id)
+            company_filter = {'company': target_company}
+            company_name_for_report = target_company.name
 
         # --- Report 1: Purchase Tax ---
         if report_type == 'purchase_tax':
-            queryset = PurchaseOrder.objects.filter(
-                company=company,
-                order_date__range=[start_date, end_date]
-            ).order_by('order_date')
-            return generate_purchase_tax_report(queryset, company, start_date, end_date)
+            queryset = PurchaseOrder.objects.filter(status='PAID', **company_filter)
+
+            if report_basis == 'create_date':
+                queryset = queryset.filter(order_date__range=[start_date, end_date]).order_by('order_date')
+            else:
+                queryset = queryset.filter(tax_sender_date__range=[start_date, end_date]) \
+                                   .exclude(tax_sender_date__isnull=True) \
+                                   .order_by('tax_sender_date')
+
+            return generate_purchase_tax_report(queryset, company_name_for_report, start_date, end_date, report_basis)
             
-        # --- Report 2: Sales Tax (NEW) ---
+        # --- Report 2: Sales Tax ---
         elif report_type == 'sales_tax':
-            # Filter invoices for specific company, date range, and ensure they are finalized (BILLED)
-            queryset = Invoice.objects.filter(
-                #company=company,
-                #status='BILLED',  # Only include finalized tax invoices
-                invoice_date__range=[start_date, end_date]
-            ).order_by('invoice_date', 'invoice_number')
+            queryset = Invoice.objects.filter(status='BILLED', **company_filter)
+
+            if report_basis == 'create_date':
+                queryset = queryset.filter(invoice_date__range=[start_date, end_date]).order_by('invoice_date', 'invoice_number')
+            else:
+                queryset = queryset.filter(tax_sender_date__range=[start_date, end_date]) \
+                                   .exclude(tax_sender_date__isnull=True) \
+                                   .order_by('tax_sender_date', 'invoice_number')
             
-            return generate_sales_tax_report(queryset, company, start_date, end_date)
-        
-        # --- NEW: Stock Report ---
+            return generate_sales_tax_report(queryset, company_name_for_report, start_date, end_date, report_basis)
+
+        # --- Report 3: Stock Report ---
         elif report_type == 'stock_report':
-            return generate_stock_report(company, start_date, end_date)
+            # Note: Stock report usually needs a specific company to make sense of 'Actual Stock'.
+            # If 'all', it aggregates everything.
+            return generate_stock_report(target_company, start_date, end_date) # target_company might be None
+
+        # --- Report 4: Combined Tax Report (NEW) ---
+        elif report_type == 'combined_tax':
+            # We fetch both lists here and pass them to the generator
+            
+            # A. Purchases
+            po_qs = PurchaseOrder.objects.filter(status='PAID', **company_filter)
+            
+            # B. Sales
+            inv_qs = Invoice.objects.filter(status='BILLED', **company_filter)
+
+            # Apply Date Filters
+            if report_basis == 'create_date':
+                po_qs = po_qs.filter(order_date__range=[start_date, end_date])
+                inv_qs = inv_qs.filter(invoice_date__range=[start_date, end_date])
+            else:
+                po_qs = po_qs.filter(tax_sender_date__range=[start_date, end_date]).exclude(tax_sender_date__isnull=True)
+                inv_qs = inv_qs.filter(tax_sender_date__range=[start_date, end_date]).exclude(tax_sender_date__isnull=True)
+
+            return generate_combined_tax_report(po_qs, inv_qs, company_name_for_report, start_date, end_date, report_basis)
 
     context = {
         'form': form,
@@ -1072,8 +823,7 @@ def report_dashboard_view(request):
     }
     return render(request, 'reports.html', context)
 
-
-#@login_required
+@login_required
 def invoice_pdf_view(request, pk):
     invoice = get_object_or_404(Invoice, pk=pk)
     
@@ -1099,3 +849,42 @@ def invoice_pdf_view(request, pk):
     filename = f"Invoice_{invoice.invoice_number}.pdf"
     response['Content-Disposition'] = f'attachment; filename="{filename}"'
     return response
+
+@login_required
+def company_list_view(request):
+    companies = Company.objects.all()
+    return render(request, 'company/company_list.html', {'companies': companies})
+
+@login_required
+def company_create_view(request):
+    if request.method == 'POST':
+        form = CompanyForm(request.POST)
+        if form.is_valid():
+            form.save()
+            messages.success(request, 'เพิ่มข้อมูลบริษัทเรียบร้อยแล้ว')
+            return redirect('company_list')
+    else:
+        form = CompanyForm()
+    
+    return render(request, 'company/company_form.html', {
+        'form': form,
+        'title': 'เพิ่มข้อมูลบริษัทใหม่'
+    })
+
+@login_required
+def company_edit_view(request, pk):
+    company = get_object_or_404(Company, pk=pk)
+    if request.method == 'POST':
+        form = CompanyForm(request.POST, instance=company)
+        if form.is_valid():
+            form.save()
+            messages.success(request, 'บันทึกข้อมูลเรียบร้อยแล้ว')
+            return redirect('company_list')
+    else:
+        form = CompanyForm(instance=company)
+    
+    return render(request, 'company/company_form.html', {
+        'form': form, 
+        'title': f'แก้ไขข้อมูล: {company.name}',
+        'is_editing': True
+    })

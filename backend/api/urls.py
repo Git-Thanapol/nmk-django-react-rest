@@ -4,7 +4,7 @@ from django.contrib import admin
 
 urlpatterns = [
 
-    path('admin/', admin.site.urls, name='admin_home'),
+    #path('admin/', admin.site.urls, name='admin_home'),
     #path('api/user/register/', CreateUserView.as_view(), name='create_user'),
     path('notes/', views.NoteListCreateView.as_view(), name='note_list_create'),
     path('notes/<int:pk>/', views.NoteDeleteView.as_view(), name='note_delete'),
@@ -21,9 +21,9 @@ urlpatterns = [
     path('purchases/edit/<int:pk>/', views.purchase_order_view, name='purchase_edit'),
 
     # Customer Management
-    path('customer_list/', views.customer_list, name='customer_list'),
-    path('customers/', views.customer_view, name='customer_list'),
-    path('customers/edit/<int:pk>/', views.customer_view, name='customer_edit'),
+    # path('customer_list/', views.customer_list, name='customer_list'),
+    # path('customers/', views.customer_view, name='customer_list'),
+    # path('customers/edit/<int:pk>/', views.customer_view, name='customer_edit'),
 
     # Invoice Management
     #path('invoice_form/', views.invoice_form, name='invoice_form'),
@@ -55,6 +55,11 @@ urlpatterns = [
     path('help/', views.help, name='help'),
 
     path('reports/', views.report_dashboard_view, name='reports'),
+
+    path('companies/', views.company_list_view, name='company_list'),
+    path('companies/add/', views.company_create_view, name='company_create'),
+    path('companies/<int:pk>/edit/', views.company_edit_view, name='company_edit'),
+
 ]
 
 

@@ -30,13 +30,23 @@
 
                 <div class="card-body p-4 d-flex flex-column">
                     <p class="text-muted small mb-4">
-                        นำเข้าคำสั่งขาย คำนวณค่าธรรมเนียม และอัปเดตสต็อกสินค้าโดยอัตโนมัติจากไฟล์ CSV/Excel ที่ส่งออกจาก TikTok Shop Seller Center
+                        นำเข้าคำสั่งขาย คำนวณค่าธรรมเนียม และอัปเดตสต็อกสินค้าโดยอัตโนมัติจากไฟล์ TikTok Shop
                     </p>
 
                     <form method="post" enctype="multipart/form-data" id="tiktokForm">
                         {% csrf_token %}
                         <input type="hidden" name="platform" value="tiktok">
                         
+                        <div class="mb-3">
+                            <label class="form-label small fw-bold text-secondary">Import to Company / นำเข้าบริษัท</label>
+                            <select name="company_id" class="form-select form-select-sm" required>
+                                <option value="" disabled selected>-- เลือกบริษัท --</option>
+                                {% for company in companies %}
+                                    <option value="{{ company.id }}">{{ company.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
                         <input type="file" name="import_file" id="tiktokFile" class="d-none" 
                                accept=".csv, .xlsx, .xls" onchange="handleFileSelect(this, 'tiktok')">
 
@@ -45,7 +55,6 @@
                              onclick="document.getElementById('tiktokFile').click();">
                             <i class="bi bi-cloud-arrow-up fs-1 text-secondary"></i>
                             <div class="mt-2 fw-medium text-secondary">คลิกเพื่อเลือกไฟล์</div>
-                            <small class="text-secondary">รองรับไฟล์ .csv, .xlsx, .xls</small>
                         </div>
 
                         <div id="tiktok-step-2" class="d-none mt-3">
@@ -75,18 +84,27 @@
                      style="background: linear-gradient(135deg, #EE4D2D, #FF7337);">
                     <div>
                         <h4 class="mb-0 fw-bold"><i class="bi bi-bag-fill me-2"></i>Shopee</h4>
-                        {% comment %} <small class="opacity-75">Status: <span class="badge bg-secondary">Coming Soon</span></small> {% endcomment %}
                         <small class="opacity-75">Status: <span class="badge bg-success">Active</span></small>
                     </div>
                 </div>
                 <div class="card-body p-4 d-flex flex-column">
                     <p class="text-muted small mb-4">
-                        เชื่อมต่อการนำเข้าข้อมูลจาก Shopee Seller Centre รองรับรายงานคำสั่งซื้อและรายงานรายได้
+                        เชื่อมต่อการนำเข้าข้อมูลจาก Shopee Seller Centre รองรับรายงานคำสั่งซื้อ
                     </p>
                     <form method="post" enctype="multipart/form-data" id="shopeeForm">
                         {% csrf_token %}
                         <input type="hidden" name="platform" value="shopee">
                         
+                        <div class="mb-3">
+                            <label class="form-label small fw-bold text-secondary">Import to Company / นำเข้าบริษัท</label>
+                            <select name="company_id" class="form-select form-select-sm" required>
+                                <option value="" disabled selected>-- Select Company --</option>
+                                {% for company in companies %}
+                                    <option value="{{ company.id }}">{{ company.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
                         <input type="file" name="import_file" id="shopeeFile" class="d-none" 
                                accept=".csv, .xlsx, .xls" onchange="handleFileSelect(this, 'shopee')">
 
@@ -95,7 +113,6 @@
                              onclick="document.getElementById('shopeeFile').click();">
                             <i class="bi bi-cloud-arrow-up fs-1 text-secondary"></i>
                             <div class="mt-2 fw-medium text-secondary">คลิกเพื่อเลือกไฟล์</div>
-                            <small class="text-secondary">รองรับไฟล์ .csv, .xlsx, .xls</small>
                         </div>
 
                         <div id="shopee-step-2" class="d-none mt-3">
@@ -125,18 +142,27 @@
                      style="background: linear-gradient(135deg, #0f146d, #f53d2d);">
                     <div>
                         <h4 class="mb-0 fw-bold"><i class="bi bi-shop me-2"></i>Lazada</h4>
-                        {% comment %} <small class="opacity-75">Status: <span class="badge bg-secondary">Coming Soon</span></small> {% endcomment %}
                         <small class="opacity-75">Status: <span class="badge bg-success">Active</span></small>
                     </div>
                 </div>
                 <div class="card-body p-4 d-flex flex-column">
                     <p class="text-muted small mb-4">
-                        เชื่อมต่อการนำเข้าข้อมูลจาก Lazada Seller Center รองรับรายงานคำสั่งซื้อและรายงานรายได้
+                        เชื่อมต่อการนำเข้าข้อมูลจาก Lazada Seller Center รองรับรายงานคำสั่งซื้อ
                     </p>
                     <form method="post" enctype="multipart/form-data" id="lazadaForm">
                         {% csrf_token %}
                         <input type="hidden" name="platform" value="lazada">
                         
+                        <div class="mb-3">
+                            <label class="form-label small fw-bold text-secondary">Import to Company / นำเข้าบริษัท</label>
+                            <select name="company_id" class="form-select form-select-sm" required>
+                                <option value="" disabled selected>-- Select Company --</option>
+                                {% for company in companies %}
+                                    <option value="{{ company.id }}">{{ company.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
                         <input type="file" name="import_file" id="lazadaFile" class="d-none" 
                                accept=".csv, .xlsx, .xls" onchange="handleFileSelect(this, 'lazada')">
 
@@ -145,7 +171,6 @@
                              onclick="document.getElementById('lazadaFile').click();">
                             <i class="bi bi-cloud-arrow-up fs-1 text-secondary"></i>
                             <div class="mt-2 fw-medium text-secondary">คลิกเพื่อเลือกไฟล์</div>
-                            <small class="text-secondary">รองรับไฟล์ .csv, .xlsx, .xls</small>
                         </div>
 
                         <div id="lazada-step-2" class="d-none mt-3">
@@ -173,25 +198,17 @@
 </div>
 
 <script>
-    /**
-     * Handles file selection logic
-     * 1. Checks file extension
-     * 2. Displays filename and size
-     * 3. Hides selector, shows confirm button
-     */
     function handleFileSelect(input, platform) {
         if (input.files && input.files[0]) {
             const file = input.files[0];
             const allowedExtensions = /(\.csv|\.xlsx|\.xls)$/i;
             
-            // Validate Extension
             if (!allowedExtensions.exec(file.name)) {
                 alert('Invalid file type. Please upload CSV or Excel only.');
                 input.value = '';
                 return;
             }
 
-            // Update UI
             document.getElementById(platform + '-step-1').classList.add('d-none');
             document.getElementById(platform + '-step-2').classList.remove('d-none');
             
@@ -200,12 +217,9 @@
         }
     }
 
-    /**
-     * Resets the form if user clicks 'X'
-     */
     function resetForm(platform) {
         const input = document.getElementById(platform + 'File');
-        input.value = ''; // Clear file input
+        input.value = ''; 
         
         document.getElementById(platform + '-step-1').classList.remove('d-none');
         document.getElementById(platform + '-step-2').classList.add('d-none');

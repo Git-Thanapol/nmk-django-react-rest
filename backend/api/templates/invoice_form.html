@@ -49,7 +49,7 @@
                 </div>
                  <div class="col-md-3">
                     <small class="text-secondary d-block">ที่อยู่</small>
-                    <span class="text-muted small">{{ form.instance.recipient_address|truncatechars:50 }}</span>
+                    <span class="text-muted small">{{ form.instance.recipient_address|truncatechars:100 }}</span>
                 </div>
             </div>
         </div>
@@ -91,7 +91,7 @@
                     </div>
                     <div class="col-md-3">
                         <label class="form-label text-secondary small">ลูกค้า</label>
-                        {{ form.customer }}
+                        {{ form.vendor }}
                     </div>
                     <div class="col-md-3">
                         <label class="form-label text-secondary small">วันที่</label>
@@ -121,6 +121,14 @@
                             {{ form.platform_name }}
                         </div>
                     {% comment %} {% endif %} {% endcomment %}
+                    <div class="col-md-6">
+                        <label class="form-label text-secondary small">หมายเหตุ</label>                            
+                        {{ form.notes }}
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label text-secondary small">นำเข้าสู่ยริษัท</label>                            
+                        {{ form.company }}
+                    </div>
                 </div>
 
                 <hr class="border-secondary">

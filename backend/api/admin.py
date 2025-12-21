@@ -5,7 +5,7 @@ from .models import (
     Company,
     SellingChannel,
     Vendor,
-    Customer,
+    #Customer,
     Product,
     PurchaseOrder,
     PurchaseItem,
@@ -40,11 +40,11 @@ class VendorAdmin(admin.ModelAdmin):
     search_fields = ['name', 'contact_person']
     list_filter = ['company', 'is_active']
 
-@admin.register(Customer)
-class CustomerAdmin(admin.ModelAdmin):
-    list_display = ['name', 'company', 'phone', 'email', 'is_active']
-    search_fields = ['name', 'phone', 'email']
-    list_filter = ['company', 'is_active']
+# @admin.register(Customer)
+# class CustomerAdmin(admin.ModelAdmin):
+#     list_display = ['name', 'company', 'phone', 'email', 'is_active']
+#     search_fields = ['name', 'phone', 'email']
+#     list_filter = ['company', 'is_active']
 
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
@@ -67,8 +67,8 @@ class PurchaseItemAdmin(admin.ModelAdmin):
 
 @admin.register(Invoice)
 class InvoiceAdmin(admin.ModelAdmin):
-    list_display = ['invoice_number', 'company', 'customer', 'invoice_date', 'platform_name', 'status', 'grand_total','tax_sequence_number','platform_tracking_number','platform_order_id','saleperson']
-    search_fields = ['tax_sequence_number','platform_tracking_number','platform_order_id','invoice_number', 'customer__name']
+    list_display = ['invoice_number', 'company', 'vendor', 'invoice_date', 'platform_name', 'status', 'grand_total','tax_sequence_number','platform_tracking_number','platform_order_id','saleperson']
+    search_fields = ['tax_sequence_number','platform_tracking_number','platform_order_id','invoice_number', 'vendor__name']
     list_filter = ['company', 'platform_name', 'status', 'invoice_date']
     date_hierarchy = 'invoice_date'
 

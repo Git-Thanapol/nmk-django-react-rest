@@ -23,18 +23,20 @@ class Note(models.Model):
         return self.title
     
 class Company(models.Model):
-    """Multi-company support"""
-    name = models.CharField(max_length=200)
-    tax_id = models.CharField(max_length=20, blank=True, null=True)
-    address = models.TextField(blank=True, null=True)
-    phone = models.CharField(max_length=20, blank=True,null=True)
-    email = models.EmailField(blank=True,null=True)
-    is_active = models.BooleanField(default=True)
+    """Multi-company support (Our Operating Companies)"""
+    name = models.CharField(max_length=200, verbose_name="ชื่อบริษัท")
+    nick_name = models.CharField(max_length=100, blank=True, verbose_name="ชื่อย่อ")
+    tax_id = models.CharField(max_length=20, blank=True, null=True, verbose_name="เลขผู้เสียภาษี")
+    address = models.TextField(blank=True, null=True, verbose_name="ที่อยู่")
+    phone = models.CharField(max_length=20, blank=True, null=True, verbose_name="เบอร์โทร")
+    email = models.EmailField(blank=True, null=True, verbose_name="อีเมล")
+    is_active = models.BooleanField(default=True, verbose_name="สถานะใช้งาน")
     created_at = models.DateTimeField(auto_now_add=True)
     
     class Meta:
         db_table = 'companies'
         verbose_name_plural = 'Companies'
+        ordering = ['-is_active', 'name']
     
     def __str__(self):
         return self.name
@@ -72,22 +74,22 @@ class Vendor(models.Model):
     def __str__(self):
         return f"{self.name} ({self.company})"
 
-class Customer(models.Model):
-    """Customer for invoices"""
-    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='customers', null=True, blank=True)
-    name = models.CharField(max_length=200)
-    phone = models.CharField(max_length=20, blank=True,null=True)
-    email = models.EmailField(blank=True,null=True)
-    address = models.TextField(blank=True,null=True)
-    tax_id = models.CharField(max_length=20, blank=True, null=True)
-    is_active = models.BooleanField(default=True)
-    created_at = models.DateTimeField(auto_now_add=True)
+# class Customer(models.Model):
+#     """Customer for invoices"""
+#     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='customers', null=True, blank=True)
+#     name = models.CharField(max_length=200)
+#     phone = models.CharField(max_length=20, blank=True,null=True)
+#     email = models.EmailField(blank=True,null=True)
+#     address = models.TextField(blank=True,null=True)
+#     tax_id = models.CharField(max_length=20, blank=True, null=True)
+#     is_active = models.BooleanField(default=True)
+#     created_at = models.DateTimeField(auto_now_add=True)
     
-    class Meta:
-        db_table = 'customers'
+#     class Meta:
+#         db_table = 'customers'
     
-    def __str__(self):
-        return f"{self.name} ({self.company})"
+#     def __str__(self):
+#         return f"{self.name} ({self.company})"
 
 class Product(models.Model):
     """Product/Item that can be purchased and sold (Your Master Data)"""
@@ -148,7 +150,7 @@ class PurchaseOrder(models.Model):
         ('Check', 'เงินเช็ค'),
     ]
     
-    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='purchase_orders', null=True, blank=True)
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='purchase_orders')
     po_number = models.CharField(max_length=50)
     vendor = models.ForeignKey(Vendor, on_delete=models.PROTECT, related_name='purchase_orders')
     purchase_type = models.CharField(max_length=20, choices=PURCHASE_TYPE_CHOICES, default='Cash')
@@ -244,10 +246,10 @@ class Invoice(models.Model):
     
     # Identifiers
     invoice_number = models.CharField(max_length=50) # Unique per company
-    company = models.ForeignKey('Company', on_delete=models.CASCADE, related_name='invoices', null=True, blank=True)    
+    company = models.ForeignKey('Company', on_delete=models.CASCADE, related_name='invoices')    
     
     # Customer - Nullable for high volume platform imports
-    customer = models.ForeignKey('Customer', on_delete=models.PROTECT, related_name='invoices', null=True, blank=True)
+    vendor = models.ForeignKey('Vendor', on_delete=models.PROTECT, related_name='invoices', null=True, blank=True)
     
     invoice_date = models.DateField(default=timezone.now)      
     
@@ -255,7 +257,7 @@ class Invoice(models.Model):
     tax_sequence_number = models.CharField(max_length=100, blank=True, null=True)
     saleperson = models.CharField(max_length=100, blank=True)
     #status = models.CharField(max_length=100, default='DRAFT') 
-    status = models.CharField(choices=STATUS_CHOICES, default='แบบร่าง')
+    status = models.CharField(choices=STATUS_CHOICES, default='DRAFT')
 
     # Financials
     tax_include = models.BooleanField(default=True)
@@ -424,7 +426,8 @@ class Transaction(models.Model):
         ('OTHER', 'อื่นๆ'),
     ]
     
-    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='transactions', null=True, blank=True)
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='transactions')
+    vendor = models.ForeignKey(Vendor, on_delete=models.PROTECT, related_name='transactions', null=True, blank=True) 
     transaction_number = models.CharField(max_length=50)
     transaction_date = models.DateField(default=timezone.now)
     type = models.CharField(max_length=10, choices=TRANSACTION_TYPES)
