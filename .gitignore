@@ -70,3 +70,4 @@ coverage/
 .links.txt
 .myGit.txt
 .texting.md
+data_processing/*
