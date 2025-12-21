@@ -48,7 +48,6 @@ pango==0.0.1
 pillow==12.0.0
 platformdirs==4.5.0
 psycopg2-binary==2.9.11
-PyAudio==0.2.14
 pybaht==0.2.0
 pycairo==1.29.0
 pycparser==2.23
@@ -87,9 +86,6 @@ tinycss2==1.5.1
 tinyhtml5==2.0.0
 tomli==2.3.0
 tomlkit==0.13.3
-torch==2.9.1
-torchaudio==2.9.1
-torchvision==0.24.1
 typing_extensions==4.15.0
 tzdata==2025.2
 tzlocal==5.3.1
