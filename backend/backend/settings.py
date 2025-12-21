@@ -44,13 +44,33 @@ ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='127.0.0.1,localhost', cast=lamb
 
 # 4. HTTPS SETTINGS (Warnings W004, W008, W012, W016)
 # Only enable these if not in Debug mode (i.e., on Production)
+# =========================================================
+# PRODUCTION SECURITY SETTINGS
+# These settings apply ONLY when DEBUG is False (Production)
+# =========================================================
 if not DEBUG:
+    # 3. HTTPS & SSL Redirect (W008)
+    # Redirect all non-HTTPS traffic to HTTPS
     SECURE_SSL_REDIRECT = True
+
+    # 4. Cookie Security (W012, W016)
+    # Ensure cookies are only sent over HTTPS
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
+
+    # 5. HSTS Settings (W004)
+    # Tells the browser to ONLY connect via HTTPS for the next year
     SECURE_HSTS_SECONDS = 31536000  # 1 year
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = True
+
+    # 6. Trust Nginx (Crucial for Nginx/Gunicorn setup)
+    # Without this, Django won't know the request is secure because Nginx handles the SSL
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
+    # 7. CSRF Trusted Origins (Prevents 403 Forbidden on Forms)
+    # Replace with your actual domain
+    CSRF_TRUSTED_ORIGINS = [config('DOMAIN_NAME', default='https://202.183.141.155.nip.io').split(',')]
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
@@ -169,6 +189,7 @@ STATIC_URL = '/static/'
 # 2. STATIC_ROOT: Where 'collectstatic' will put all files for Production (Nginx)
 # This directory is created automatically by the collectstatic command.
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+
 
 # 3. STATICFILES_DIRS: Where you put your custom CSS/Fonts during development
 # Django looks here for files to copy.

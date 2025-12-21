@@ -24,23 +24,28 @@
         {% csrf_token %}
         <div class="row g-3">
           
-          <div class="col-md-6">
+          <div class="col-md-4">
             <label class="form-label text-secondary small">ชื่อ</label>
             {{ form.name }}
           </div>
-          <div class="col-md-6">
+          <div class="col-md-4">
             <label class="form-label text-secondary small">ผู้ติดต่อ</label>
             {{ form.contact_person }}
           </div>
 
-          <div class="col-12">
-            <label class="form-label text-secondary small">Related Company</label>
+          <div class="col-4">
+            <label class="form-label text-secondary small">ลูกค้าบริษัท</label>
             {{ form.company_selection }}
             <datalist id="company_list">
                 {% for company in all_companies %}
                 <option value="{{ company.name }}">
                 {% endfor %}
             </datalist>
+          </div>
+
+          <div class="col-md-4">
+            <label class="form-label text-secondary small">เลขประจำตัวผู้เสียภาษีอากร</label>
+            {{ form.tax_id }}
           </div>
 
           <div class="col-md-4">
@@ -51,10 +56,7 @@
             <label class="form-label text-secondary small">Email</label>
             {{ form.email }}
           </div>
-          <div class="col-md-4">
-            <label class="form-label text-secondary small">เลขประจำตัวผู้เสียภาษีอากร</label>
-            {{ form.tax_id }}
-          </div>
+
 
           <div class="col-12">
             <label class="form-label text-secondary small">ที่อยู่</label>

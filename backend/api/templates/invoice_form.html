@@ -106,6 +106,13 @@
                         {% comment %} <input type="text" name="status" class="form-control" value="{{ form.instance.status|default:'' }}"> {% endcomment %}
                         {{ form.status }}
                     </div>
+                    {% comment %} {% if not is_editing %} {% endcomment %}
+                    <div class="col-md-3">
+                        <label class="form-label text-secondary small">ช่องทางการขาย</label>
+                            {% comment %} <input type="text" name="channel" class="form-control" value="{{ form.instance.platform_name|default:'' }}"> {% endcomment %}
+                        {{ form.platform_name }}
+                    </div>
+                    {% comment %} {% endif %} {% endcomment %}
                     <div class="col-md-3">
                         <label class="form-label text-secondary small">เลขที่ลำดับภาษี</label>
                         <input type="text" name="tax_sequence_number" class="form-control" value="{{ form.instance.tax_sequence_number|default:'' }}">
@@ -114,13 +121,7 @@
                         <label class="form-label text-secondary small">วันที่กำหนดส่งภาษี</label>
                         {{ form.tax_sender_date }}
                     </div>
-                    {% comment %} {% if not is_editing %} {% endcomment %}
-                        <div class="col-md-3">
-                            <label class="form-label text-secondary small">ช่องทางการขาย</label>
-                            {% comment %} <input type="text" name="channel" class="form-control" value="{{ form.instance.platform_name|default:'' }}"> {% endcomment %}
-                            {{ form.platform_name }}
-                        </div>
-                    {% comment %} {% endif %} {% endcomment %}
+
                     <div class="col-md-6">
                         <label class="form-label text-secondary small">หมายเหตุ</label>                            
                         {{ form.notes }}
@@ -160,7 +161,7 @@
                                     <select name="{{ item_form.purchase_item.html_name }}" 
                                             class="form-select form-select-sm batch-select" 
                                             id="{{ item_form.purchase_item.auto_id }}">
-                                        <option value="" data-cost="0">-- Auto-Assign --</option>
+                                        <option value="" data-cost="0">-- เลือกสต็อก --</option>
                                         
                                         {% for batch in item_form.fields.purchase_item.queryset %}
                                             <option value="{{ batch.id }}" 
@@ -205,8 +206,8 @@
 
                 <div class="row mt-4">
                     <div class="col-md-7">
-                        <label class="form-label text-secondary small">หมายเหตุ</label>
-                        {{ form.notes }}
+                        <label class="form-label text-secondary small"></label>
+                        {% comment %} {{ form.notes }} {% endcomment %}
                     </div>
                     <div class="col-md-5">
                         <div class="card bg-dark border-secondary p-3">

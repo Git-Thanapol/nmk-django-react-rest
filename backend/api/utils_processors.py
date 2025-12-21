@@ -81,7 +81,7 @@ def process_tiktok_orders(file_path):
         'Order ID': 'order_id',
         'Order Status': 'order_status',
         'SKU Subtotal Before Discount': 'subtotal',
-        'Total Order Amount': 'total_amount',
+        'Order Amount': 'total_amount',
         'Recipient': 'recipient',
         'Phone #': 'phone',
         'Tracking ID': 'tracking_no',

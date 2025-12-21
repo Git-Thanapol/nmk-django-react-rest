@@ -256,7 +256,6 @@ class Invoice(models.Model):
     tax_sender_date = models.DateField(null=True, blank=True)
     tax_sequence_number = models.CharField(max_length=100, blank=True, null=True)
     saleperson = models.CharField(max_length=100, blank=True)
-    #status = models.CharField(max_length=100, default='DRAFT') 
     status = models.CharField(choices=STATUS_CHOICES, default='DRAFT')
 
     # Financials
@@ -299,20 +298,26 @@ class Invoice(models.Model):
         Standard calculation logic for MANUAL inputs.
         Import logic bypasses this.
         """
-        from .models import InvoiceItem
+        from .models import InvoiceItem # Avoid circular import
+        # Using iterator to avoid loading all objects into memory if huge, though unlikely for invoice items
         items = InvoiceItem.objects.filter(invoice=self)
-        self.subtotal = sum(item.total_price for item in items)
+        
+        # FIX: Ensure we start with Decimal(0) to avoid type errors if list is empty or types mixed
+        self.subtotal = sum((item.total_price for item in items), Decimal(0))
+
+        # Helper to convert to Decimal for math safety
+        t_percent = Decimal(str(self.tax_percent))
+        divisor = Decimal(1) + (t_percent / Decimal(100))
 
         if self.tax_include:
             # Reverse Calc: Tax = Subtotal - (Subtotal / 1.07)
-            self.tax_amount = self.subtotal - (self.subtotal / (1 + self.tax_percent / 100))
+            # FIX: Use Decimal arithmetic
+            self.tax_amount = self.subtotal - (self.subtotal / divisor)
         else:
             # Forward Calc
-            self.tax_amount = self.subtotal * (self.tax_percent / 100)
+            self.tax_amount = self.subtotal * (t_percent / Decimal(100))
 
-        # Logic for manual input: Grand Total = Subtotal + Tax (if excluded) + Shipping
-        # If included, Subtotal already has tax, so we just add shipping? 
-        # Usually for manual entry:
+        # Logic for manual input
         if self.tax_include:
              # Subtotal acts as the base with tax, we just add shipping
             self.grand_total = self.subtotal + self.shipping_cost - self.discount_amount
@@ -332,7 +337,8 @@ class Invoice(models.Model):
         """Calculate profit margin for this invoice"""
         from .models import InvoiceItem
         items = InvoiceItem.objects.filter(invoice=self)
-        total_cost = sum(item.total_cost for item in items)
+        # FIX: Ensure initial value is Decimal
+        total_cost = sum((item.total_cost for item in items), Decimal(0))
         return self.subtotal - total_cost
     
     profit_margin = property(get_profit_margin)
@@ -340,8 +346,8 @@ class Invoice(models.Model):
 class InvoiceItem(models.Model):
     """Individual items in an invoice with purchase item tracking"""
     invoice = models.ForeignKey(Invoice, on_delete=models.CASCADE, related_name='invoice_items')
-    product = models.ForeignKey(Product, on_delete=models.PROTECT, null=True, blank=True, related_name='invoice_items')
-    purchase_item = models.ForeignKey(PurchaseItem, on_delete=models.PROTECT, related_name='invoice_items', null=True, blank=True)
+    product = models.ForeignKey('Product', on_delete=models.PROTECT, null=True, blank=True, related_name='invoice_items')
+    purchase_item = models.ForeignKey('PurchaseItem', on_delete=models.PROTECT, related_name='invoice_items', null=True, blank=True)
 
     sku = models.CharField(max_length=100, blank=True)  # Store platform SKU/name for reference
     item_name = models.TextField(blank=True)    
@@ -353,7 +359,9 @@ class InvoiceItem(models.Model):
         db_table = 'invoice_items'
     
     def __str__(self):
-        return f"{self.product.name} x {self.quantity}"
+        # FIX: Handle case where product is None
+        name = self.product.name if self.product else self.item_name or "Unknown Item"
+        return f"{name} x {self.quantity}"
     
     def clean(self):
         """Validate that purchase item has enough quantity"""
@@ -366,26 +374,18 @@ class InvoiceItem(models.Model):
     
     def save(self, *args, **kwargs):
         # 1. Ensure total_price is set (vital for manual saves)
-        self.total_price = self.quantity * self.unit_price
+        self.total_price = Decimal(self.quantity) * self.unit_price
         
         # 2. Validate
         self.clean()
         
         # 3. STOCK LOGIC WARNING: 
-        # Ideally, move stock deduction to a Signal or Service. 
-        # Kept here as requested, but added a check to prevent crash if purchase_item is None.
-
-        ##Temporarily disabled to prevent stock issues during testing
-        # if self.pk is None and self.purchase_item:
-        #     # Only deduct on CREATE (pk is None), not on every update.
-        #     # This prevents double-deduction on simple edits, though it prevents 
-        #     # adjusting stock if you change quantity later.
-        #     self.purchase_item.remaining_quantity -= self.quantity
-        #     self.purchase_item.save()
+        # (Kept disabled as per original code)
 
         super().save(*args, **kwargs)
         
         # 4. Trigger Parent Update
+        # This will save the parent invoice, updating subtotal/grand_total
         self.invoice.calculate_totals()
 
     # --- SAFE PROPERTIES ---
@@ -393,11 +393,11 @@ class InvoiceItem(models.Model):
     def unit_cost(self):
         if self.purchase_item:
             return self.purchase_item.unit_cost
-        return 0 # Or Decimal(0)
+        return Decimal(0)
 
     @property
     def total_cost(self):
-        return self.quantity * self.unit_cost
+        return Decimal(self.quantity) * self.unit_cost
 
     @property
     def profit(self):
@@ -407,8 +407,8 @@ class InvoiceItem(models.Model):
     def profit_margin_percentage(self):
         if self.total_price > 0:
             return (self.profit / self.total_price) * 100
-        return 0
-
+        return Decimal(0)
+    
 class Transaction(models.Model):
     """Other income/expense transactions"""
     TRANSACTION_TYPES = [
