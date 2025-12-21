@@ -71,3 +71,4 @@ coverage/
 .myGit.txt
 .texting.md
 data_processing/*
+*.pptx
