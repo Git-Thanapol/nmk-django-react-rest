@@ -187,24 +187,54 @@
                             <table class="inner-box-table">
                                 <tr>
                                     <td class="inner-label-col" style="width: 80px;">รหัสลูกค้า:</td>
-                                    <td>{{ invoice.recipient_name|default:invoice.recipient_name }}</td>
+                                    <td>
+                                        {% if  invoice.vendor.company %}
+                                            {{ invoice.vendor.company|default:"-" }}
+                                        {% else %}
+                                            {{ invoice.recipient_name|default:"-" }}
+                                        {% endif %}
+                                    </td>
                                 </tr>
                                 <tr>
                                     <td class="inner-label-col" style="width: 80px;">นามลูกค้า:</td>
-                                    <td>{{ invoice.recipient_name|default:invoice.recipient_name }}</td>
+                                    <td>
+                                        {% if  invoice.vendor.name %}
+                                            {{ invoice.vendor.name|default:"-" }}
+                                        {% else %}
+                                            {{ invoice.recipient_name|default:"-" }}
+                                        {% endif %}
+                                    </td>
                                 </tr>
                                 <tr>
                                     <td class="inner-label-col" style="width: 80px;">ที่อยู่:</td>
-                                    <td>{{ invoice.recipient_address|default:"-" }}</td>
+                                    <td>
+                                        {% if  invoice.vendor.address %}
+                                            {{ invoice.vendor.address|default:"-"|linebreaksbr }}
+                                        {% else %}
+                                            {{ invoice.recipient_address|default:"-"|linebreaksbr }}
+                                        {% endif %}
+                                    </td>
                                 </tr>
                                 <tr>
                                     <td class="inner-label-col" style="width: 80px;">เลขผู้เสียภาษี:</td>
-                                    <td>{{ invoice.customer.tax_id|default:"-" }}</td>
+                                    <td>
+                                        {% if  invoice.vendor.tax_id %}
+                                            {{ invoice.vendor.tax_id|default:"-" }}
+                                        {% else %}
+                                            {{ invoice.vendor.tax_id|default:"-" }}
+                                        {% endif %}
+                                    </td>
                                 </tr>
-                                <tr>
+                                {% comment %} <tr>
                                     <td class="inner-label-col" style="width: 80px;">ใบสั่งซื้อ:</td>
-                                    <td>-</td>
-                                </tr>
+                                    <td>
+                                        {% if  invoice.platform_order_id %}
+                                            {{ invoice.platform_order_id|default:"-" }}
+                                        {% else %}
+                                            {{ invoice.platform_order_id|default:"-" }}
+                                        {% endif %}
+                                    </td>
+                                </tr> {% endcomment %}
                             </table>
                         </div>
                     </td>
