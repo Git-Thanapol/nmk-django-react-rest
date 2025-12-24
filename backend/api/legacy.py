@@ -315,3 +315,178 @@ def customer_view(request, pk=None):
 #         labels = {
 #             'name': 'Customer / Company Name',
 #         } 
+
+@login_required
+def platform_import_view(request):
+    # Standard Context for GET requests (Dropdowns etc.)
+    companies = Company.objects.filter(is_active=True)
+    
+    context = {
+        'page_title': 'Platform Data Import',
+        'form': ImportFileForm(),
+        'companies': companies
+    }
+
+    if request.method == 'POST':
+        # 1. Validation: Check if file and company are present
+        uploaded_file = request.FILES.get('import_file')
+        platform = request.POST.get('platform')
+        company_id = request.POST.get('company_id')
+
+        if not uploaded_file or not platform or not company_id:
+            messages.error(request, "Missing required data. Please select a file, platform, and company.")
+            return redirect('platform_import')
+
+        file_path = None
+
+        try:
+            # --- 1. SAVE FILE TEMPORARILY ---
+            target_company = get_object_or_404(Company, pk=company_id)
+            
+            fs = FileSystemStorage()
+            # Clean filename to avoid OS issues
+            clean_name = f"temp_{platform}_{uploaded_file.name.replace(' ', '_')}"
+            filename = fs.save(clean_name, uploaded_file)
+            file_path = fs.path(filename)
+            
+            # --- 2. PROCESS & IMPORT ---
+            header_df = None
+            items_df = None
+            target_platform_name = ''
+
+            # A. Select Processor based on Platform
+            if platform == 'tiktok':
+                header_df, items_df = process_tiktok_orders(file_path)
+                target_platform_name = 'TikTok Shop'
+                
+            elif platform == 'shopee':
+                header_df, items_df = process_shopee_orders(file_path)
+                target_platform_name = 'Shopee'
+            
+            elif platform == 'lazada':
+                header_df, items_df = process_lazada_orders(file_path)
+                target_platform_name = 'Lazada'
+
+            else:
+                raise ValueError(f"Platform '{platform}' is not yet supported.")
+
+            # B. Run Universal Import
+            if header_df is not None and items_df is not None:
+                result = universal_invoice_import(
+                    header_df, 
+                    items_df, 
+                    target_company.id, 
+                    request.user.id, 
+                    platform_name=target_platform_name
+                )
+
+                # =========================================================
+                # C. Check Results & Generate Error Report if needed
+                # =========================================================
+                if result['failed'] > 0:
+                    # 1. Create Excel Workbook
+                    wb = openpyxl.Workbook()
+                    ws = wb.active
+                    ws.title = "Import Errors"
+                    
+                    # 2. Styling
+                    header_font = Font(bold=True, color="FFFFFF")
+                    header_fill = PatternFill(start_color="DC3545", end_color="DC3545", fill_type="solid") # Red background
+                    
+                    # 3. Add Headers
+                    headers = ["Excel Row", "Order ID", "Error Message", "Suggestion"]
+                    ws.append(headers)
+                    for cell in ws[1]:
+                        cell.font = header_font
+                        cell.fill = header_fill
+
+                    # 4. Fill Data from error_log
+                    for err in result['error_log']:
+                        # Handle structured dict from updated utils
+                        if isinstance(err, dict):
+                            row_idx = err.get('row_index', '-')
+                            order_id = err.get('order_id', '-')
+                            reason = err.get('reason', '-')
+                        else:
+                            # Fallback if utils return string
+                            row_idx = "-"
+                            order_id = "Unknown"
+                            reason = str(err)
+
+                        # Simple Suggestions
+                        suggestion = ""
+                        if "numeric field overflow" in reason:
+                            suggestion = "Amount too large (> 10 Billion). Check columns."
+                        elif "unique constraint" in reason:
+                            suggestion = "Order ID already exists."
+                        elif "matches query" in reason:
+                            suggestion = "Missing related data."
+
+                        ws.append([row_idx, order_id, reason, suggestion])
+
+                    # 5. Adjust Column Widths
+                    ws.column_dimensions['A'].width = 15
+                    ws.column_dimensions['B'].width = 25
+                    ws.column_dimensions['C'].width = 50
+                    ws.column_dimensions['D'].width = 40
+
+                    # 6. Prepare Response (Download)
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+                    filename = f"error_import_{platform}_{timestamp}.xlsx"
+                    
+                    response = HttpResponse(
+                        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                    )
+                    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+                    
+                    wb.save(response)
+                    
+                    # Add a warning message (might show on next page load)
+                    messages.warning(request, f"Import finished with errors. Downloading report... (Success: {result['imported']}, Failed: {result['failed']})")
+                    
+                    # IMPORTANT: We return 'response' here to trigger download, redirect stops happening.
+                    return response
+
+                elif result['status'] == 'completed':
+                    messages.success(request, f"Import Successful for {target_company.name}! Imported {result['imported']} orders.")
+                
+                else:
+                    messages.error(request, f"Import Error: {result['message']}")
+
+            else:
+                messages.error(request, "Data Processing returned empty results.")
+
+        except Exception as e:
+            # Catch processing errors (e.g. wrong columns in CSV)
+            messages.error(request, f"Processing Error: {str(e)}")
+
+        finally:
+            # --- 3. CLEANUP ---
+            # Always remove the temp file, even if import fails
+            if file_path and os.path.exists(file_path):
+                try:
+                    os.remove(file_path)
+                except OSError:
+                    pass 
+            
+        return redirect('platform_import')
+
+    # GET Request
+    return render(request, 'platforms.html', context)
+
+# class Customer(models.Model):
+#     """Customer for invoices"""
+#     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='customers', null=True, blank=True)
+#     name = models.CharField(max_length=200)
+#     phone = models.CharField(max_length=20, blank=True,null=True)
+#     email = models.EmailField(blank=True,null=True)
+#     address = models.TextField(blank=True,null=True)
+#     tax_id = models.CharField(max_length=20, blank=True, null=True)
+#     is_active = models.BooleanField(default=True)
+#     created_at = models.DateTimeField(auto_now_add=True)
+    
+#     class Meta:
+#         db_table = 'customers'
+    
+#     def __str__(self):
+#         return f"{self.name} ({self.company})"

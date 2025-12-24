@@ -16,6 +16,21 @@
         {% endfor %}
     {% endif %}
 
+    <div class="toast-container position-fixed bottom-0 end-0 p-3" style="z-index: 1050">
+    
+        <div id="processingToast" class="toast align-items-center text-white bg-primary border-0" role="alert" aria-live="assertive" aria-atomic="true">
+            <div class="d-flex">
+                <div class="toast-body">
+                    <i class="bi bi-cloud-upload me-2"></i>
+                    <strong>Uploading & Processing...</strong>
+                    <div class="small mt-1">Please wait, do not close this page.</div>
+                </div>
+                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+            </div>
+        </div>
+
+    </div>
+
     <div class="row g-4">
         
         <div class="col-md-4">
@@ -69,8 +84,11 @@
                                 </button>
                             </div>
 
-                            <button type="submit" class="btn btn-dark w-100 py-2 fw-bold">
+                            {% comment %} <button type="submit" class="btn btn-dark w-100 py-2 fw-bold">
                                 <i class="bi bi-cloud-upload-fill me-2"></i>Confirm & Import
+                            </button> {% endcomment %}
+                            <button type="submit" class="btn btn-primary w-100 py-2 fw-bold">
+                                <i class="bi bi-cloud-upload-fill me-2"></i> นำเข้าข้อมูล 
                             </button>
                         </div>
                     </form>
@@ -98,7 +116,7 @@
                         <div class="mb-3">
                             <label class="form-label small fw-bold text-secondary">Import to Company / นำเข้าบริษัท</label>
                             <select name="company_id" class="form-select form-select-sm" required>
-                                <option value="" disabled selected>-- Select Company --</option>
+                                <option value="" disabled selected>-- เลือกบริษัท --</option>
                                 {% for company in companies %}
                                     <option value="{{ company.id }}">{{ company.name }}</option>
                                 {% endfor %}
@@ -127,8 +145,11 @@
                                 </button>
                             </div>
 
-                            <button type="submit" class="btn btn-dark w-100 py-2 fw-bold">
+                            {% comment %} <button type="submit" class="btn btn-dark w-100 py-2 fw-bold">
                                 <i class="bi bi-cloud-upload-fill me-2"></i>Confirm & Import
+                            </button> {% endcomment %}
+                            <button type="submit" class="btn btn-primary w-100 py-2 fw-bold">
+                                <i class="bi bi-cloud-upload-fill me-2"></i> นำเข้าข้อมูล 
                             </button>
                         </div>
                     </form>
@@ -156,7 +177,7 @@
                         <div class="mb-3">
                             <label class="form-label small fw-bold text-secondary">Import to Company / นำเข้าบริษัท</label>
                             <select name="company_id" class="form-select form-select-sm" required>
-                                <option value="" disabled selected>-- Select Company --</option>
+                                <option value="" disabled selected>-- เลือกบริษัท --</option>
                                 {% for company in companies %}
                                     <option value="{{ company.id }}">{{ company.name }}</option>
                                 {% endfor %}
@@ -185,8 +206,11 @@
                                 </button>
                             </div>
 
-                            <button type="submit" class="btn btn-dark w-100 py-2 fw-bold">
+                            {% comment %} <button type="submit" class="btn btn-dark w-100 py-2 fw-bold">
                                 <i class="bi bi-cloud-upload-fill me-2"></i>Confirm & Import
+                            </button> {% endcomment %}
+                            <button type="submit" class="btn btn-primary w-100 py-2 fw-bold">
+                                <i class="bi bi-cloud-upload-fill me-2"></i> นำเข้าข้อมูล 
                             </button>
                         </div>
                     </form>
@@ -194,6 +218,73 @@
             </div>
         </div>
 
+    </div>
+</div>
+
+<hr class="my-5">
+
+<div class="card shadow-sm">
+    <div class="card-header bg-dark d-flex justify-content-between align-items-center">
+        <h5 class="mb-0">Import History</h5>
+        <a href="{% url 'platform_import' %}" class="btn btn-sm btn-outline-primary">
+            <i class="bi bi-arrow-clockwise"></i> Refresh Status
+        </a>
+    </div>
+    <div class="card-body p-0">
+        <table class="table table-striped mb-0">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Platform</th>
+                    <th>File</th>
+                    <th>Status</th>
+                    <th>Result</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for log in import_history %}
+                <tr>
+                    <td>{{ log.created_at|date:"d/m/Y H:i" }}</td>
+                    <td><span class="badge bg-secondary">{{ log.platform }}</span></td>
+                    <td>{{ log.filename }}</td>
+                    <td>
+                        {% if log.status == 'PENDING' or log.status == 'PROCESSING' %}
+                            <span class="badge bg-warning text-dark">
+                                <span class="spinner-border spinner-border-sm" style="width: 0.7rem; height: 0.7rem;"></span>
+                                {{ log.get_status_display }}
+                            </span>
+                        {% elif log.status == 'COMPLETED' %}
+                            <span class="badge bg-success">Success</span>
+                        {% elif log.status == 'COMPLETED_WITH_ERRORS' %}
+                            <span class="badge bg-danger">Has Errors</span>
+                        {% else %}
+                            <span class="badge bg-dark">Failed</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <small>
+                            Success: {{ log.success_count }} <br>
+                            Failed: {{ log.failed_count }}
+                        </small>
+                    </td>
+                    <td>
+                        {% if log.error_file %}
+                            <a href="{{ log.error_file.url }}" class="btn btn-sm btn-danger">
+                                <i class="bi bi-download"></i> Error Report
+                            </a>
+                        {% elif log.status == 'COMPLETED' %}
+                            <i class="bi bi-check-circle-fill text-success fs-5"></i>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="6" class="text-center py-4 text-muted">No import history found.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </div>
 </div>
 
@@ -224,6 +315,47 @@
         document.getElementById(platform + '-step-1').classList.remove('d-none');
         document.getElementById(platform + '-step-2').classList.add('d-none');
     }
+</script>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const importForm = document.querySelector('form[enctype="multipart/form-data"]'); // Select your import form
+        
+        if (importForm) {
+            importForm.addEventListener('submit', function(e) {
+                // 1. Check if form is valid (let browser handle 'required' fields first)
+                if (!importForm.checkValidity()) {
+                    return; // Stop if validation fails
+                }
+
+                const submitBtn = importForm.querySelector('button[type="submit"]');
+                
+                // 2. Disable Button & Show Spinner
+                if (submitBtn) {
+                    submitBtn.disabled = true;
+                    // Save original text to restore if needed (though page usually reloads)
+                    submitBtn.dataset.originalText = submitBtn.innerHTML; 
+                    submitBtn.innerHTML = `
+                        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                        Processing...
+                    `;
+                }
+
+                // 3. Show "Processing" Toast
+                const toastEl = document.getElementById('processingToast');
+                if (toastEl) {
+                    const toast = new bootstrap.Toast(toastEl, { delay: 10000 }); // Show for 10s or until reload
+                    toast.show();
+                }
+
+                // NOTE: 
+                // If the server returns a SUCCESS redirect, the page reloads, and this state resets automatically.
+                // If the server returns an ERROR FILE (download), the page DOES NOT reload.
+                // The button will remain disabled to prevent double-clicking while the file downloads.
+                // The user must refresh the page to try again, which is good practice (they need to fix the file first).
+            });
+        }
+    });
 </script>
 
 {% endblock %}

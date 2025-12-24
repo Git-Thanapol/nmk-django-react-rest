@@ -7,6 +7,7 @@ from decimal import Decimal
 from django.db import migrations, models
 from django.db.models import Sum
 from django.db.models.functions import Coalesce
+from pybaht import bahttext
 
 
 DATE_INPUT_FORMATS = ['%d-%m-%Y']
@@ -73,23 +74,6 @@ class Vendor(models.Model):
     
     def __str__(self):
         return f"{self.name} ({self.company})"
-
-# class Customer(models.Model):
-#     """Customer for invoices"""
-#     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='customers', null=True, blank=True)
-#     name = models.CharField(max_length=200)
-#     phone = models.CharField(max_length=20, blank=True,null=True)
-#     email = models.EmailField(blank=True,null=True)
-#     address = models.TextField(blank=True,null=True)
-#     tax_id = models.CharField(max_length=20, blank=True, null=True)
-#     is_active = models.BooleanField(default=True)
-#     created_at = models.DateTimeField(auto_now_add=True)
-    
-#     class Meta:
-#         db_table = 'customers'
-    
-#     def __str__(self):
-#         return f"{self.name} ({self.company})"
 
 class Product(models.Model):
     """Product/Item that can be purchased and sold (Your Master Data)"""
@@ -265,7 +249,7 @@ class Invoice(models.Model):
 
     subtotal = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     discount_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)    
-    shipping_cost = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    shipping_cost = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     
     # Renamed from total_amount
     grand_total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
@@ -281,7 +265,7 @@ class Invoice(models.Model):
     platform_order_status = models.CharField(max_length=100, blank=True) 
     platform_tracking_number = models.CharField(max_length=100, blank=True) 
     recipient_name = models.CharField(max_length=200, blank=True)
-    recipient_phone = models.CharField(max_length=20, blank=True)
+    recipient_phone = models.CharField(max_length=30, blank=True)
     recipient_address = models.TextField(blank=True)
     warehouse_name = models.CharField(max_length=100, blank=True) 
     
@@ -349,7 +333,7 @@ class InvoiceItem(models.Model):
     product = models.ForeignKey('Product', on_delete=models.PROTECT, null=True, blank=True, related_name='invoice_items')
     purchase_item = models.ForeignKey('PurchaseItem', on_delete=models.PROTECT, related_name='invoice_items', null=True, blank=True)
 
-    sku = models.CharField(max_length=100, blank=True)  # Store platform SKU/name for reference
+    sku = models.CharField(max_length=255, blank=True)  # Store platform SKU/name for reference
     item_name = models.TextField(blank=True)    
     quantity = models.PositiveIntegerField(validators=[MinValueValidator(1)])
     unit_price = models.DecimalField(max_digits=10, decimal_places=2)
@@ -522,3 +506,109 @@ class ProductAlias(models.Model):
 
     def __str__(self):
         return f"{self.external_key} -> {self.product.name}"
+
+class ImportLog(models.Model):
+    STATUS_CHOICES = [
+        ('PENDING', 'Pending'),
+        ('PROCESSING', 'Processing'),
+        ('COMPLETED', 'Completed'),
+        ('FAILED', 'Failed'), # General script failure
+        ('COMPLETED_WITH_ERRORS', 'Finished (With Errors)'), # Import ran, but some rows failed
+    ]
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    platform = models.CharField(max_length=50)
+    filename = models.CharField(max_length=255)
+    
+    status = models.CharField(max_length=30, choices=STATUS_CHOICES, default='PENDING')
+    total_records = models.IntegerField(default=0)
+    success_count = models.IntegerField(default=0)
+    failed_count = models.IntegerField(default=0)
+    
+    # We will save the generated Error Excel here
+    error_file = models.FileField(upload_to='import_errors/', null=True, blank=True)
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.platform} - {self.created_at}"
+    
+class WithholdingTaxCert(models.Model):
+    INCOME_TYPE_CHOICES = [
+        ('1', 'เงินเดือน ค่าจ้าง ฯลฯ (40(1))'),
+        ('2', 'ค่าธรรมเนียม ค่านายหน้า ฯลฯ (40(2))'),
+        ('3', 'ค่าแห่งลิขสิทธิ์ ฯลฯ (40(3))'),
+        ('4a', 'ดอกเบี้ย ฯลฯ (40(4)(ก))'),
+        ('4b', 'เงินปันผล ฯลฯ (40(4)(ข))'),
+        ('5', 'ค่าเช่า (40(5))'),
+        ('6', 'ค่าวิชาชีพอิสระ (40(6))'),
+        ('7', 'ค่ารับเหมา (40(7))'),
+        ('8', 'อื่นๆ (40(8)) - โปรดระบุ'),
+    ]
+
+    STATUS_CHOICES = [
+        ('DRAFT', 'แบบร่าง'),
+        ('ISSUED', 'ออกใบรับแล้ว'),
+    ]
+
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='wht_certs')
+    vendor = models.ForeignKey(Vendor, on_delete=models.PROTECT, related_name='wht_certs')
+    
+    # Link Sources (Nullable: เลือกอย่างใดอย่างหนึ่ง)
+    purchase_order = models.OneToOneField(PurchaseOrder, on_delete=models.SET_NULL, null=True, blank=True, related_name='wht_cert')
+    transaction = models.OneToOneField(Transaction, on_delete=models.SET_NULL, null=True, blank=True, related_name='wht_cert')
+    
+    # Running Numbers
+    book_number = models.CharField(max_length=20, default='1', verbose_name='เล่มที่') 
+    cert_number = models.CharField(max_length=50, verbose_name='เลขที่') 
+    
+    date_issued = models.DateField(default=timezone.now)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='DRAFT')
+    
+    # Tax Details
+    income_type = models.CharField(max_length=5, choices=INCOME_TYPE_CHOICES, default='8')
+    income_description = models.CharField(max_length=200, blank=True, verbose_name="ระบุ (ถ้าเลือกอื่นๆ)")
+    tax_rate = models.DecimalField(max_digits=5, decimal_places=2, default=3.00)
+    
+    # Amounts
+    amount_before_tax = models.DecimalField(max_digits=12, decimal_places=2)
+    tax_amount = models.DecimalField(max_digits=12, decimal_places=2)
+    
+    pdf_file = models.FileField(upload_to='wht_certs/%Y/', null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'withholding_tax_certs'
+        ordering = ['-date_issued', '-cert_number']
+
+    @property
+    def total_text_thai(self):
+        """แปลงยอดภาษีเป็นตัวอักษรไทย"""
+        return bahttext(self.tax_amount)
+    
+    def save(self, *args, **kwargs):
+        # Auto-generate running number if empty
+        if not self.cert_number:
+            current_year = self.date_issued.year
+            
+            # Find the last number for THIS company and THIS year
+            last_cert = WithholdingTaxCert.objects.filter(
+                company=self.company,
+                date_issued__year=current_year
+            ).exclude(cert_number='').order_by('cert_number').last()
+            
+            if last_cert and '/' in last_cert.cert_number:
+                try:
+                    # Example: 2025/0001 -> split -> 0001 -> int -> +1
+                    last_seq = int(last_cert.cert_number.split('/')[-1])
+                    new_seq = last_seq + 1
+                except ValueError:
+                    new_seq = 1
+            else:
+                new_seq = 1
+            
+            # Format: 2025/0001
+            self.cert_number = f"{current_year}/{new_seq:04d}"
+            
+        super().save(*args, **kwargs)

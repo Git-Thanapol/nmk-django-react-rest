@@ -12,6 +12,8 @@ from django.db.models import Count, Q
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string,get_template
+from django.http import JsonResponse,HttpResponseRedirect
+from django.utils import timezone
 
 # Third-party
 import weasyprint
@@ -19,6 +21,10 @@ from xhtml2pdf import pisa
 from rest_framework import generics
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from pybaht import bahttext
+import openpyxl
+from openpyxl.styles import Font, PatternFill
+from datetime import datetime
+import threading
 
 # Local apps – models
 from .models import (
@@ -32,6 +38,8 @@ from .models import (
     PurchaseOrder,
     Transaction,
     Vendor,
+    ImportLog,
+    WithholdingTaxCert
 )
 
 # Local apps – forms
@@ -52,8 +60,8 @@ from .forms import (
 from .serializers import NoteSerializer, UserSerializer
 
 # Local apps – utilities
-from .utils_import_core import universal_invoice_import
-from .utils_pdf import link_callback
+from .legacy_files.utils_import_core import universal_invoice_import
+from .utils_pdf import link_callback, generate_wht_pdf_4_copies
 from .utils_processors import (
     process_lazada_orders,
     process_shopee_orders,
@@ -65,6 +73,7 @@ from .utils_reports import (
     generate_stock_report,
     generate_combined_tax_report,
 )
+from .tasks import run_import_background # Import the function from step 2
 
 
 
@@ -607,99 +616,52 @@ def invoice_view(request, pk=None):
 
 @login_required
 def platform_import_view(request):
-    # Standard Context for GET requests (Dropdowns etc.)
-    #companies = Company.objects.filter(is_active=True)
-    companies = Company.objects.all()
+    # Fetch History for the table
+    import_history = ImportLog.objects.filter(user=request.user).order_by('-created_at')[:10]
+    companies = Company.objects.filter(is_active=True)
+
     context = {
         'page_title': 'Platform Data Import',
-        'form': ImportFileForm(),
-        'companies': companies
+        'companies': companies,
+        'import_history': import_history # Pass history to template
     }
 
     if request.method == 'POST':
-        # We manually check the request.FILES and POST data here for flexibility, 
-        # but you can also bind it to the form if preferred.
-        
-        # 1. Validation: Check if file and company are present
         uploaded_file = request.FILES.get('import_file')
         platform = request.POST.get('platform')
         company_id = request.POST.get('company_id')
 
         if not uploaded_file or not platform or not company_id:
-            messages.error(request, "Missing required data. Please select a file, platform, and company.")
+            messages.error(request, "Missing data.")
             return redirect('platform_import')
 
-        file_path = None
+        # 1. Save file temporarily
+        fs = FileSystemStorage()
+        clean_name = f"bg_{platform}_{uploaded_file.name.replace(' ', '_')}"
+        filename = fs.save(clean_name, uploaded_file)
+        file_path = fs.path(filename)
 
-        try:
-            # --- 1. SAVE FILE TEMPORARILY ---
-            # Get the target company object (validates ID exists)
-            target_company = get_object_or_404(Company, pk=company_id)
-            
-            fs = FileSystemStorage()
-            # Clean filename to avoid OS issues
-            clean_name = f"temp_{platform}_{uploaded_file.name.replace(' ', '_')}"
-            filename = fs.save(clean_name, uploaded_file)
-            file_path = fs.path(filename)
-            
-            # --- 2. PROCESS & IMPORT ---
-            header_df = None
-            items_df = None
-            target_platform_name = ''
+        # 2. Create Log Entry (PENDING)
+        log = ImportLog.objects.create(
+            user=request.user,
+            platform=platform,
+            filename=uploaded_file.name,
+            status='PENDING'
+        )
 
-            # A. Select Processor based on Platform
-            if platform == 'tiktok':
-                header_df, items_df = process_tiktok_orders(file_path)
-                target_platform_name = 'TikTok Shop'
-                
-            elif platform == 'shopee':
-                header_df, items_df = process_shopee_orders(file_path)
-                target_platform_name = 'Shopee'
-            
-            elif platform == 'lazada':
-                header_df, items_df = process_lazada_orders(file_path)
-                target_platform_name = 'Lazada'
+        # 3. Start Background Thread
+        # We pass arguments so the thread can work independently
+        thread = threading.Thread(
+            target=run_import_background,
+            args=(log.id, file_path, company_id, request.user.id, platform)
+        )
+        thread.daemon = True # Ensures thread dies if main process dies
+        thread.start()
 
-            else:
-                raise ValueError(f"Platform '{platform}' is not yet supported.")
-
-            # B. Run Universal Import
-            if header_df is not None and items_df is not None:
-                result = universal_invoice_import(
-                    header_df, 
-                    items_df, 
-                    target_company.id,  # Use the ID from the selected company
-                    request.user.id, 
-                    platform_name=target_platform_name
-                )
-
-                # C. Feedback
-                if result['status'] == 'completed':
-                    msg = f"Import Successful for {target_company.name}! Imported {result['imported']} orders. Failed: {result['failed']}."
-                    if result['failed'] > 0:
-                        msg += f" First error: {result['error_log'][0]}"
-                    messages.success(request, msg)
-                else:
-                    messages.error(request, f"Import Error: {result['message']}")
-            else:
-                messages.error(request, "Data Processing returned empty results.")
-
-        except Exception as e:
-            # Catch processing errors (e.g. wrong columns in CSV)
-            messages.error(request, f"Processing Error: {str(e)}")
-
-        finally:
-            # --- 3. CLEANUP ---
-            # Always remove the temp file, even if import fails
-            if file_path and os.path.exists(file_path):
-                try:
-                    os.remove(file_path)
-                except OSError:
-                    pass # Log failure to delete if necessary
-            
+        # 4. Immediate Response
+        messages.info(request, "Import started in background! Check the history table below for status.")
         return redirect('platform_import')
 
-    # GET Request
     return render(request, 'platforms.html', context)
 
 @login_required
@@ -888,3 +850,122 @@ def company_edit_view(request, pk):
         'title': f'แก้ไขข้อมูล: {company.name}',
         'is_editing': True
     })
+
+def wht_cert_list_view(request):
+    # ... (Keep your Fetch Lists code same as before) ...
+    companies = Company.objects.filter(is_active=True)
+    vendors = Vendor.objects.filter(is_active=True)
+    transactions = Transaction.objects.filter(type='EXPENSE', wht_cert__isnull=True).order_by('-transaction_date')
+    purchase_orders = PurchaseOrder.objects.filter(status='PAID', wht_cert__isnull=True).order_by('-order_date')
+    certs = WithholdingTaxCert.objects.all().order_by('-created_at')[:20]
+    
+    context = {
+        'companies': companies,
+        'vendors': vendors,
+        'transactions': transactions, # Ensure this is passed
+        'purchase_orders': purchase_orders,
+        'certs': certs,
+        'income_choices': WithholdingTaxCert.INCOME_TYPE_CHOICES,
+    }
+
+    if request.method == 'POST':
+        # --- DEBUG: Remove try/except block to see the REAL error on screen ---
+        # try:
+        
+        # 1. Get Basic Data
+        company_id = request.POST.get('company_id')
+        source_type = request.POST.get('source_type') # 'manual', 'po', 'trans'
+        source_id = request.POST.get('source_id')
+        user_cert_number = request.POST.get('cert_number', '').strip()
+        
+        # 2. Parse Date Correctly (Fixes Bug #3)
+        date_str = request.POST.get('date_issued')
+        date_obj = timezone.now().date()
+        if date_str:
+            date_obj = datetime.strptime(date_str, '%Y-%m-%d').date()
+
+        # 3. Initialize Object
+        cert = WithholdingTaxCert()
+        cert.company_id = company_id
+        cert.date_issued = date_obj 
+        
+        # Fix Bug #3: Force None if empty string so Model logic triggers
+        if user_cert_number:
+            cert.cert_number = user_cert_number
+        else:
+            cert.cert_number = None 
+            
+        cert.income_type = request.POST.get('income_type')
+        cert.income_description = request.POST.get('income_description', '')
+        
+        # 4. Handle Amounts
+        cert.amount_before_tax = float(request.POST.get('amount_before_tax', 0).replace(',', ''))
+        cert.tax_rate = float(request.POST.get('tax_rate', 3))
+        cert.tax_amount = float(request.POST.get('tax_amount', 0).replace(',', ''))
+        
+        # 5. Fix Bug: Robust Linking Logic
+        if source_type == 'po' and source_id:
+            po = PurchaseOrder.objects.get(id=source_id)
+            cert.purchase_order = po
+            # PO always has a vendor, so this is safe
+            cert.vendor = po.vendor 
+            
+        elif source_type == 'trans' and source_id:
+            trans = Transaction.objects.get(id=source_id)
+            cert.transaction = trans
+            
+            # --- FIX HERE: Handle Transactions without Vendor ---
+            if trans.vendor:
+                cert.vendor = trans.vendor
+            else:
+                # If Transaction has no vendor, grab from the form dropdown
+                vendor_id = request.POST.get('vendor_id')
+                if not vendor_id:
+                    raise ValueError("รายการจ่ายนี้ไม่มี Vendor ในระบบ กรุณาเลือก Vendor ในแบบฟอร์ม")
+                cert.vendor_id = vendor_id
+                
+        else:
+            # Manual Mode
+            vendor_id = request.POST.get('vendor_id')
+            if not vendor_id:
+                    raise ValueError("กรุณาเลือกผู้ถูกหักภาษี (Vendor)")
+            cert.vendor_id = vendor_id
+
+        # 6. Save & Generate
+        is_issue = 'btn_issue' in request.POST
+        cert.status = 'ISSUED' if is_issue else 'DRAFT'
+        cert.save()
+
+        if is_issue:
+            pdf_url = generate_wht_pdf_4_copies(cert)
+            messages.success(request, f"Issued Successfully: {cert.cert_number}")
+            return HttpResponseRedirect(pdf_url)
+        else:
+            messages.info(request, "Draft Saved.")
+            return redirect('wht_list')
+
+        # except Exception as e:
+        #     messages.error(request, f"Error: {str(e)}")
+        #     return redirect('wht_list')
+
+    return render(request, 'wht_form.html', context)
+
+# API เพื่อดึงข้อมูลเมื่อผู้ใช้เลือก PO หรือ Transaction ใน Dropdown
+def get_source_details(request):
+    source_type = request.GET.get('type')
+    source_id = request.GET.get('id')
+    
+    data = {'amount': 0, 'vendor_id': None, 'vendor_name': ''}
+    
+    if source_type == 'po':
+        obj = PurchaseOrder.objects.get(id=source_id)
+        data['amount'] = obj.subtotal # ยอดก่อนภาษี
+        data['vendor_id'] = obj.vendor.id
+        data['vendor_name'] = obj.vendor.name
+    elif source_type == 'trans':
+        obj = Transaction.objects.get(id=source_id)
+        data['amount'] = obj.amount
+        data['vendor_id'] = obj.vendor.id if obj.vendor else None
+        data['vendor_name'] = obj.vendor.name if obj.vendor else ''
+        
+    return JsonResponse(data)

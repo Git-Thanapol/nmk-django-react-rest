@@ -1,5 +1,5 @@
 import pandas as pd
-from .utils_import_core import load_data
+from .legacy_files.utils_import_core import load_data, clean_decimal
 
 def process_shopee_orders(file_path):
     df = load_data(file_path)
@@ -73,7 +73,7 @@ def process_tiktok_orders(file_path):
     df = load_data(file_path)
 
     # 1. Address Logic (Specific to TikTok)
-    cols = ['Detail Address', 'District', 'Province', 'Country', 'Zipcode']
+    cols = ['Detail Address', 'District', 'Province', 'Country']
     df['FullAddress'] = df[cols].fillna('').astype(str).agg(' '.join, axis=1)
 
     # 2. Rename to Standard
@@ -94,6 +94,7 @@ def process_tiktok_orders(file_path):
     }
     df = df.rename(columns=col_map)
     df['address'] = df['FullAddress']
+    df['subtotal'] = pd.to_numeric(df['subtotal'])
 
     # 3. Headers
     bill_header = df.groupby('order_id').agg({

@@ -118,6 +118,12 @@
           >
             <i class="bi bi-receipt me-2"></i>รายงานต่างๆ
           </a>
+          <a 
+            class="nav-link {% if request.path == '/wht_list/' %}active{% endif %}"
+            href="{% url 'wht_list' %}"
+          >
+            <i class="bi bi-record-circle me-2"></i>ทวิ 50
+          </a>
 
           <a 
             class="nav-link {% if request.path == '/import/platforms/' %}active{% endif %}"

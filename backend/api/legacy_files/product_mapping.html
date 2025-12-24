@@ -1,0 +1,67 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load humanize %}
+{% block title %}Product Mapping{% endblock %}
+{% block page_title %}Product Mapping{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2><i class="bi bi-link-45deg"></i>สินค้าที่ต้องจับคู่</h2>
+    <p class="text-muted">รายการต่อไปนี้จากไฟล์ที่นำเข้า ไม่ตรงกับสินค้าใด ๆ ในระบบภายใน</p>
+
+    <div class="card shadow-sm">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th style="width: 20%"  class="text-center">รหัสสินค้า / คีย์ภายนอก</th>
+                        <th style="width: 20%"  class="text-center">ชื่อตัวอย่างสินค้า</th>
+                        <th style="width: 10%"  class="text-center">จำนวนที่ค้างอยู่</th>
+                        <th style="width: 20%"  class="text-center">จับคู่กับสินค้าในระบบ</th>
+                        <th style="width: 3%"  class="text-center">บันทึก</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in unmapped_items %}
+                    <tr>
+                        <form method="POST">
+                            {% csrf_token %}
+                            <td>
+                                <input type="hidden" name="external_key" value="{{ item.sku }}">
+                                <span class="fw-bold text-danger">{{ item.sku }}</span>
+                            </td>
+                            
+                            <td>{{ item.item_name }}</td>
+                            
+                            <td class="text-center"><span class="badge bg-secondary">{{ item.count }} orders</span></td>
+                            
+                            <td>
+                                <select name="product_id" class="form-select select2" required>
+                                    <option value="">-- เลือกจับคู่สินค้าในระบบ --</option>
+                                    {% for p in products %}
+                                        <option value="{{ p.id }}">{{ p.name }} ({{ p.sku }})</option>
+                                    {% endfor %}
+                                </select>
+                            </td>
+                            
+                            <td>
+                                <button type="submit" class="btn btn-primary btn-sm">
+                                    <i class="bi bi-check-lg"></i> บันทึก
+                                </button>
+                            </td>
+                        </form>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="5" class="text-center py-5 text-success">
+                            <i class="bi bi-check-circle-fill fs-1"></i>
+                            <br>จับคู่กับสินค้าในระบบครบถ้วนแล้ว!
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

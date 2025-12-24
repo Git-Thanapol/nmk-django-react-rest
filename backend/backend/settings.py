@@ -205,3 +205,9 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # CORS settings
 CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOWS_CREDENTIALS = True
+
+# URL ที่ใช้เรียกไฟล์ (เช่น http://localhost:8000/media/...)
+MEDIA_URL = '/media/'
+
+# โฟลเดอร์จริงในเครื่องที่จะเก็บไฟล์
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')

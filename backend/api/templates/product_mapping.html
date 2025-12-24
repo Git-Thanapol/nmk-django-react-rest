@@ -1,67 +1,192 @@
 {% extends 'base.html' %}
-{% load static %}
-{% load humanize %}
-{% block title %}Product Mapping{% endblock %}
-{% block page_title %}Product Mapping{% endblock %}
+
+{% block title %}การจับคู่สินค้า{% endblock %}
+{% block page_title %}แดชบอร์ดการจับคู่สินค้า{% endblock %}
 
 {% block content %}
-<div class="container mt-4">
-    <h2><i class="bi bi-link-45deg"></i>สินค้าที่ต้องจับคู่</h2>
-    <p class="text-muted">รายการต่อไปนี้จากไฟล์ที่นำเข้า ไม่ตรงกับสินค้าใด ๆ ในระบบภายใน</p>
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 
-    <div class="card shadow-sm">
-        <div class="table-responsive">
-            <table class="table table-hover align-middle">
-                <thead class="table-light">
-                    <tr>
-                        <th style="width: 20%"  class="text-center">รหัสสินค้า / คีย์ภายนอก</th>
-                        <th style="width: 20%"  class="text-center">ชื่อตัวอย่างสินค้า</th>
-                        <th style="width: 10%"  class="text-center">จำนวนที่ค้างอยู่</th>
-                        <th style="width: 20%"  class="text-center">จับคู่กับสินค้าในระบบ</th>
-                        <th style="width: 3%"  class="text-center">บันทึก</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for item in unmapped_items %}
-                    <tr>
-                        <form method="POST">
-                            {% csrf_token %}
-                            <td>
-                                <input type="hidden" name="external_key" value="{{ item.sku }}">
-                                <span class="fw-bold text-danger">{{ item.sku }}</span>
+<style>
+    /* 1. The main dropdown container */
+    .select2-dropdown {
+        background-color: #212529 !important; /* Dark background */
+        color: #ffffff !important;
+        border: 1px solid #495057;
+    }
+
+    /* 2. The individual options */
+    .select2-container--default .select2-results__option {
+        background-color: #212529;
+        color: #ffffff;
+    }
+
+    /* 3. The Hover/Highlighted state */
+    .select2-container--default .select2-results__option--highlighted[aria-selected] {
+        background-color: #0d6efd !important; /* Bootstrap Primary Blue */
+        color: #ffffff !important;
+    }
+
+    /* 4. The Search Box inside the dropdown */
+    .select2-search__field {
+        background-color: #343a40 !important; /* Slightly lighter dark */
+        color: #ffffff !important;
+        border: 1px solid #495057 !important;
+    }
+
+    /* 5. The Selection Box (Closed state) - Optional, if you want that dark too */
+    .select2-container--default .select2-selection--single {
+        background-color: #212529;
+        color: #ffffff;
+        border: 1px solid #495057;
+    }
+    .select2-container--default .select2-selection--single .select2-selection__rendered {
+        color: #ffffff !important;
+    }
+</style>
+
+<div class="container-fluid p-4">
+
+    <div class="alert alert-info d-flex align-items-center mb-4" role="alert">
+        <i class="bi bi-info-circle-fill fs-4 me-3"></i>
+        <div>
+            <strong>วิธีการทำงาน:</strong> 
+            รายการที่นำเข้าโดยไม่มีสินค้าที่ตรงกันจะแสดงอยู่ด้านล่าง 
+            คลิก <b>"จับคู่สินค้า"</b> เพื่อเชื่อมโยง ระบบจะทำการแก้ไขคำสั่งซื้อย้อนหลังโดยอัตโนมัติ และจดจำรายการนี้ในการนำเข้าครั้งถัดไป
+        </div>
+    </div>
+
+    <div class="card shadow-sm border-0">
+        <div class="card-header bg-gradient py-3">
+            <h5 class="mb-0 text-warning fw-bold">รายการภายนอกที่ยังไม่ได้จับคู่ (20 อันดับแรก)</h5>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="bg-light">
+                        <tr>
+                            <th style="width: 30%;">รหัสสินค้าแพลตฟอร์ม (SKU/ชื่อ)</th>
+                            <th style="width: 40%;">ชื่อสินค้า (จากการนำเข้า)</th>
+                            <th class="text-center" style="width: 15%;">จำนวนครั้ง</th>
+                            <th class="text-end" style="width: 15%;">การดำเนินการ</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in unmapped_items %}
+                        <tr>
+                            <td class="fw-bold text-secondary-emphasis">
+                                <i class="bi bi-key text-muted me-1"></i>
+                                <span id="key-text-{{ forloop.counter }}">{{ item.sku }}</span>
                             </td>
                             
-                            <td>{{ item.item_name }}</td>
-                            
-                            <td class="text-center"><span class="badge bg-secondary">{{ item.count }} orders</span></td>
-                            
-                            <td>
-                                <select name="product_id" class="form-select select2" required>
-                                    <option value="">-- เลือกจับคู่สินค้าในระบบ --</option>
-                                    {% for p in products %}
-                                        <option value="{{ p.id }}">{{ p.name }} ({{ p.sku }})</option>
-                                    {% endfor %}
-                                </select>
+                            <td class="text-secondary small">
+                                {{ item.item_name }}
                             </td>
-                            
-                            <td>
-                                <button type="submit" class="btn btn-primary btn-sm">
-                                    <i class="bi bi-check-lg"></i> บันทึก
+
+                            <td class="text-center">
+                                <span class="badge bg-warning text-dark rounded-pill">
+                                    {{ item.count }} คำสั่งซื้อ
+                                </span>
+                            </td>
+
+                            <td class="text-end">
+                                <button type="button" 
+                                        class="btn btn-sm btn-primary map-btn" 
+                                        data-bs-toggle="modal" 
+                                        data-bs-target="#mappingModal"
+                                        data-external-key="{{ item.sku }}"
+                                        data-item-name="{{ item.item_name }}">
+                                    <i class="bi bi-link-45deg"></i> จับคู่สินค้า
                                 </button>
                             </td>
-                        </form>
-                    </tr>
-                    {% empty %}
-                    <tr>
-                        <td colspan="5" class="text-center py-5 text-success">
-                            <i class="bi bi-check-circle-fill fs-1"></i>
-                            <br>จับคู่กับสินค้าในระบบครบถ้วนแล้ว!
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="4" class="text-center py-5">
+                                <i class="bi bi-check-circle text-success fs-1 mb-3 d-block"></i>
+                                <h5 class="text-muted">สินค้าทั้งหมดถูกจับคู่แล้ว!</h5>
+                                <p class="small text-secondary">เยี่ยมมาก ฐานข้อมูลสินค้าของคุณเรียบร้อยแล้ว</p>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
 </div>
+
+<div class="modal fade" id="mappingModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-gradient">
+                <h5 class="modal-title">จับคู่สินค้าภายนอก</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="ปิด"></button>
+            </div>
+            <form method="POST" action="{% url 'product_mapping' %}">
+                {% csrf_token %}
+                <div class="modal-body">
+                    
+                    <input type="hidden" name="external_key" id="modalExternalKey">
+
+                    <div class="mb-3">
+                        <label class="form-label text-muted small">รายการภายนอก (ข้อมูลจากแพลตฟอร์ม)</label>
+                        <input type="text" class="form-control bg-dark" id="modalDisplayKey" readonly>
+                        <div class="form-text small text-truncate" id="modalDisplayName"></div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">เลือกสินค้าของระบบ</label>
+                        <select name="product_id" id="systemProductSelect" class="form-select" required>
+                            <option class=" bg-dark" value="">ค้นหาสินค้า...</option>
+                            {% for prod in products %}
+                                <option class="text-dark" value="{{ prod.id }}">
+                                    {{ prod.sku }} | {{ prod.name }}
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-ghost" data-bs-dismiss="modal">ยกเลิก</button>
+                    <button type="submit" class="btn btn-primary">บันทึกการจับคู่</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    $(document.ready).ready(function() {
+        // 1. Initialize Select2 on the dropdown
+        $('#systemProductSelect').select2({
+            dropdownParent: $('#mappingModal'), // Critical for use inside Bootstrap Modal
+            placeholder: "พิมพ์ SKU หรือชื่อเพื่อค้นหา...",
+            allowClear: true,
+            width: '100%'
+        });
+
+        // 2. Pass Data to Modal when "Map" button is clicked
+        $('.map-btn').on('click', function() {
+            var key = $(this).data('external-key');
+            var name = $(this).data('item-name');
+
+            // Set values in the modal
+            $('#modalExternalKey').val(key);
+            $('#modalDisplayKey').val(key);
+            $('#modalDisplayName').text(name);
+
+            // Reset selection
+            $('#systemProductSelect').val(null).trigger('change');
+        });
+        
+        // Focus search box when select2 is opened
+        $(document).on('select2:open', () => {
+            document.querySelector('.select2-search__field').focus();
+        });
+    });
+</script>
+
 {% endblock %}

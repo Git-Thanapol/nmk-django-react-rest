@@ -1,0 +1,266 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block content %}
+<div class="container mt-4">
+    <h3 class="mb-3"><i class="bi bi-file-earmark-text"></i> ออกหนังสือรับรอง 50 ทวิ</h3>
+    
+    <div class="card shadow-sm mb-4">
+        <div class="card-body">
+            <form method="POST" id="whtForm">
+                {% csrf_token %}
+                
+                <div class="row g-3">
+                    <div class="col-md-5">
+                        <label class="form-label">ผู้มีหน้าที่หักภาษี (บริษัทเรา)</label>
+                        <select name="company_id" class="form-select" required>
+                            {% for c in companies %}
+                                <option value="{{ c.id }}">{{ c.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="col-md-4">
+                        <label class="form-label">วันที่ออกเอกสาร</label>
+                        <input type="date" name="date_issued" class="form-control" value="{% now 'Y-m-d' %}" required>
+                    </div>
+                    
+                    <div class="col-md-3">
+                        <label class="form-label">เลขที่เอกสาร (ถ้ามี)</label>
+                        <input type="text" name="cert_number" class="form-control" placeholder="ว่างไว้เพื่อรันอัตโนมัติ">
+                    </div>
+
+                    <div class="col-12">
+                        <label class="form-label fw-bold">แหล่งข้อมูล (Data Source)</label>
+                        <div class="btn-group w-100" role="group">
+                            <input type="radio" class="btn-check" name="source_type" id="src_manual" value="manual" autocomplete="off">
+                            <label class="btn btn-outline-secondary" for="src_manual">เลือกเอง (Manual)</label>
+
+                            <input type="radio" class="btn-check" name="source_type" id="src_po" value="po" autocomplete="off">
+                            <label class="btn btn-outline-primary" for="src_po">จากใบสั่งซื้อ (PO)</label>
+
+                            <input type="radio" class="btn-check" name="source_type" id="src_trans" value="trans" checked autocomplete="off">
+                            <label class="btn btn-outline-success" for="src_trans">จากรายจ่าย (Expense)</label>
+                        </div>
+                    </div>
+
+                    <div class="col-md-12 source-box" id="box_po" style="display:none;">
+                        <select name="source_id" id="select_po" class="form-select source-select">
+                            <option value="">-- เลือก PO (Paid) --</option>
+                            {% for po in purchase_orders %}
+                                <option value="{{ po.id }}">
+                                    {{ po.po_number }} | {{ po.vendor.name }} | {{ po.subtotal|intcomma }}
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="col-md-12 source-box" id="box_trans">
+                        <label class="form-label text-success">เลือกรายการรายจ่าย (Transaction)</label>
+                        <select name="source_id" id="select_trans" class="form-select source-select">
+                            <option value="">-- เลือกรายการจ่าย --</option>
+                            {% for t in transactions %}
+                                <option value="{{ t.id }}">
+                                    {{ t.transaction_date|date:"d/m/Y" }} | {{ t.description }} | {{ t.amount|intcomma }} บาท
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="col-md-6">
+                        <label class="form-label">ผู้ถูกหักภาษี (Vendor)</label>
+                        <select name="vendor_id" id="select_vendor" class="form-select" required>
+                            <option value="">-- เลือก Vendor --</option>
+                            {% for v in vendors %}
+                                <option value="{{ v.id }}">{{ v.name }} ({{ v.tax_id }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="col-md-2">
+                        <label class="form-label">เงินที่จ่าย</label>
+                        <input type="number" step="0.01" name="amount_before_tax" id="input_amount" class="form-control" required>
+                    </div>
+
+                    <div class="col-md-2">
+                        <label class="form-label">อัตรา (%)</label>
+                        <div class="input-group">
+                            <input type="number" step="0.01" name="tax_rate" id="input_rate" class="form-control" value="3.00">
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-2">
+                        <label class="form-label">ภาษีที่หักไว้</label>
+                        <input type="number" step="0.01" name="tax_amount" id="input_tax" class="form-control" readonly>
+                    </div>
+
+                    <div class="col-md-12">
+                         <div class="p-3 bg-dark border rounded">
+                            <label class="form-label fw-bold">ประเภทเงินได้</label>
+                            {% for code, label in income_choices %}
+                            <div class="form-check">
+                                <input class="form-check-input income-radio" type="radio" name="income_type" id="inc_{{ code }}" value="{{ code }}" {% if code == '8' %}checked{% endif %}>
+                                <label class="form-check-label" for="inc_{{ code }}">{{ label }}</label>
+                            </div>
+                            {% endfor %}
+                            <input type="text" name="income_description" id="other_desc" class="form-control mt-2" placeholder="ระบุประเภทเงินได้ (กรณีเลือก อื่นๆ)">
+                         </div>
+                    </div>
+
+                    <div class="col-12 text-end mt-4">
+                        <button type="submit" name="btn_save" value="1" class="btn btn-secondary">
+                            บันทึกแบบร่าง
+                        </button>
+                        <button type="submit" name="btn_issue" value="1" class="btn btn-primary">
+                            <i class="bi bi-printer"></i> ออกใบรับ (Generate PDF)
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="card shadow-sm">
+        <div class="card-header bg-gradient fw-bold">ประวัติการออกเอกสาร</div>
+        <table class="table table-hover mb-0">
+            <thead>
+                <tr>
+                    <th>เลขที่</th>
+                    <th>วันที่</th>
+                    <th>ผู้ถูกหักภาษี</th>
+                    <th>ยอดเงิน</th>
+                    <th>ภาษี</th>
+                    <th>PDF</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for c in certs %}
+                <tr>
+                    <td>{{ c.cert_number }}</td>
+                    <td>{{ c.date_issued|date:"d/m/Y" }}</td>
+                    <td>{{ c.vendor.name }}</td>
+                    <td>{{ c.amount_before_tax|intcomma }}</td>
+                    <td>{{ c.tax_amount|intcomma }}</td>
+                    <td>
+                        {% if c.pdf_file %}
+                            <a href="{{ c.pdf_file.url }}" target="_blank" class="btn btn-sm btn-danger"><i class="bi bi-file-pdf"></i> PDF</a>
+                        {% else %}
+                            <span class="badge bg-warning text-dark">ร่าง</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="6" class="text-center text-muted">ไม่มีข้อมูล</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Elements
+        const radios = document.getElementsByName('source_type');
+        const boxPo = document.getElementById('box_po');
+        const boxTrans = document.getElementById('box_trans');
+        
+        const inputAmount = document.getElementById('input_amount');
+        const inputRate = document.getElementById('input_rate');
+        const inputTax = document.getElementById('input_tax');
+        const selectVendor = document.getElementById('select_vendor');
+
+        // 1. Calculate Tax Function
+        function calculateTax() {
+            const amount = parseFloat(inputAmount.value) || 0;
+            const rate = parseFloat(inputRate.value) || 0;
+            // Round to 2 decimal places
+            const tax = (amount * rate / 100).toFixed(2);
+            inputTax.value = tax;
+        }
+
+        inputAmount.addEventListener('input', calculateTax);
+        inputRate.addEventListener('input', calculateTax);
+
+        // 2. Toggle Source Logic
+        radios.forEach(radio => {
+            radio.addEventListener('change', function() {
+                boxPo.style.display = 'none';
+                boxTrans.style.display = 'none';
+                
+                // Clear selections when switching
+                document.getElementById('select_po').value = "";
+                document.getElementById('select_trans').value = "";
+                
+                if (this.value === 'po') boxPo.style.display = 'block';
+                if (this.value === 'trans') boxTrans.style.display = 'block';
+                
+                // If Manual, allow user to pick vendor freely. 
+                // If Source selected, we might want to lock vendor or just auto-select.
+            });
+        });
+
+        // 3. Fetch Data from API
+        document.querySelectorAll('.source-select').forEach(select => {
+            select.addEventListener('change', function() {
+                const type = this.id === 'select_po' ? 'po' : 'trans';
+                const id = this.value;
+                
+                if (id) {
+                    fetch(`/api/get-source-details?type=${type}&id=${id}`)
+                        .then(res => res.json())
+                        .then(data => {
+                            // Auto-fill Amount
+                            inputAmount.value = data.amount;
+                            
+                            // Auto-select Vendor
+                            if (data.vendor_id) {
+                                selectVendor.value = data.vendor_id;
+                            }
+                            
+                            // Recalculate Tax
+                            calculateTax();
+                        });
+                }
+            });
+        });
+
+        // 4. Income Description Toggle
+        document.querySelectorAll('.income-radio').forEach(radio => {
+            radio.addEventListener('change', function() {
+                const input = document.getElementById('other_desc');
+                input.disabled = (this.value !== '8');
+                if (this.value !== '8') input.value = '';
+            });
+        });
+    });
+</script>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // ... (Keep your existing code for calculations & toggle source) ...
+
+        // --- NEW CODE: Handle New Tab for PDF ---
+        const form = document.getElementById('whtForm');
+        const btnIssue = document.querySelector('button[name="btn_issue"]');
+        const btnDraft = document.querySelector('button[name="btn_save"]');
+
+        if (btnIssue && btnDraft) {
+            // If "Issue PDF" is clicked -> Open in New Tab
+            btnIssue.addEventListener('click', function() {
+                form.target = '_blank';
+                
+                // Optional: Refresh the main page after 1 second 
+                // so the new record appears in the "History" table
+                setTimeout(function() {
+                    window.location.reload();
+                }, 1500);
+            });
+
+            // If "Save Draft" is clicked -> Stay on Same Page
+            btnDraft.addEventListener('click', function() {
+                form.target = '_self';
+            });
+        }
+    });
+</script>
+{% endblock %}
