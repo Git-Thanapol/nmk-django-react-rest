@@ -7,6 +7,8 @@ from django.contrib import messages
 from django.conf import settings
 from django.utils.html import format_html
 from django.db.models import Sum
+import subprocess
+import sys
 
 # Import your models
 from .models import (
@@ -109,32 +111,48 @@ class ProductAdmin(admin.ModelAdmin):
             self.message_user(request, f"ไม่พบไฟล์: {file_path}", level=messages.ERROR)
             return HttpResponseRedirect("../")
 
+        # 2. สั่งรันคำสั่ง Management Command แบบ Subprocess (ไม่รอให้เสร็จ)
+        # sys.executable คือ path ของ python ที่กำลังรันอยู่ (ใน venv)
         try:
-            df = pd.read_csv(file_path, encoding='utf-8-sig', dtype=str)
-            if 'รหัสรุ่น' not in df.columns or 'รหัสชื่อสินค้า' not in df.columns:
-                 self.message_user(request, "ไฟล์ CSV ต้องมีคอลัมน์ 'รหัสรุ่น' และ 'รหัสชื่อสินค้า'", level=messages.ERROR)
-                 return HttpResponseRedirect("../")
-
-            count = 0
-            for _, row in df.iterrows():
-                sku = str(row['รหัสรุ่น']).strip()
-                name = str(row['รหัสชื่อสินค้า']).strip()
-                if not sku: continue
-                
-                cat = 'OTHER'
-                if 'IPHONE' in name.upper() or 'SAMSUNG' in name.upper(): cat = 'SMARTPHONE'
-                elif 'IPAD' in name.upper(): cat = 'TABLET'
-
-                Product.objects.update_or_create(
-                    sku=sku,
-                    company=None, 
-                    defaults={'name': name, 'category': cat, 'is_active': True}
-                )
-                count += 1
-            self.message_user(request, f"นำเข้าข้อมูลสำเร็จ {count} รายการ", level=messages.SUCCESS)
+            # ใช้ Popen เพื่อรันแบบแยก Process (Background)
+            subprocess.Popen([sys.executable, 'manage.py', 'import_products'])
+            
+            # 3. แจ้งผู้ใช้ทันที
+            self.message_user(
+                request, 
+                "ระบบกำลังเริ่มนำเข้าข้อมูลอยู่เบื้องหลัง (Background Process)... คุณสามารถใช้งานเมนูอื่นต่อได้ทันที โดยไม่ต้องรอ", 
+                level=messages.INFO
+            )
         except Exception as e:
-            self.message_user(request, f"เกิดข้อผิดพลาด: {str(e)}", level=messages.ERROR)
+            self.message_user(request, f"ไม่สามารถสั่งรันคำสั่งได้: {str(e)}", level=messages.ERROR)
+
         return HttpResponseRedirect("../")
+        # try:
+        #     df = pd.read_csv(file_path, encoding='utf-8-sig', dtype=str)
+        #     if 'รหัสรุ่น' not in df.columns or 'รหัสชื่อสินค้า' not in df.columns:
+        #          self.message_user(request, "ไฟล์ CSV ต้องมีคอลัมน์ 'รหัสรุ่น' และ 'รหัสชื่อสินค้า'", level=messages.ERROR)
+        #          return HttpResponseRedirect("../")
+
+        #     count = 0
+        #     for _, row in df.iterrows():
+        #         sku = str(row['รหัสรุ่น']).strip()
+        #         name = str(row['รหัสชื่อสินค้า']).strip()
+        #         if not sku: continue
+                
+        #         cat = 'OTHER'
+        #         if 'IPHONE' in name.upper() or 'SAMSUNG' in name.upper(): cat = 'SMARTPHONE'
+        #         elif 'IPAD' in name.upper(): cat = 'TABLET'
+
+        #         Product.objects.update_or_create(
+        #             sku=sku,
+        #             company=None, 
+        #             defaults={'name': name, 'category': cat, 'is_active': True}
+        #         )
+        #         count += 1
+        #     self.message_user(request, f"นำเข้าข้อมูลสำเร็จ {count} รายการ", level=messages.SUCCESS)
+        # except Exception as e:
+        #     self.message_user(request, f"เกิดข้อผิดพลาด: {str(e)}", level=messages.ERROR)
+        # return HttpResponseRedirect("../")
 
 @admin.register(PurchaseOrder)
 class PurchaseOrderAdmin(admin.ModelAdmin):
@@ -237,36 +255,50 @@ class ProductAliasAdmin(admin.ModelAdmin):
             self.message_user(request, f"ไม่พบไฟล์: {file_path}", level=messages.ERROR)
             return HttpResponseRedirect("../")
 
+        # 2. สั่งรันคำสั่ง Background Process
         try:
-            df = pd.read_csv(file_path, encoding='utf-8-sig', dtype=str)
-            req_cols = ['external_key', 'platform', 'product_sku']
-            if not all(col in df.columns for col in req_cols):
-                 self.message_user(request, f"CSV ต้องมีคอลัมน์ {req_cols}", level=messages.ERROR)
-                 return HttpResponseRedirect("../")
-
-            success, skipped = 0, 0
-            for _, row in df.iterrows():
-                ext_key = str(row['external_key']).strip()
-                p_sku = str(row['product_sku']).strip()
-                platform = str(row['platform']).strip().upper()
-
-                if not ext_key or not p_sku: continue
-
-                try:
-                    product_obj = Product.objects.get(sku=p_sku)
-                    ProductAlias.objects.update_or_create(
-                        external_key=ext_key,
-                        defaults={'product': product_obj, 'platform': platform}
-                    )
-                    success += 1
-                except Product.DoesNotExist:
-                    skipped += 1
-
-            self.message_user(request, f"นำเข้าสำเร็จ {success} รายการ (ข้าม {skipped} เนื่องจากไม่พบ SKU)", level=messages.SUCCESS)
+            # เรียกใช้ management command ชื่อ 'import_mapping' ที่เราเพิ่งสร้าง
+            subprocess.Popen([sys.executable, 'manage.py', 'import_mapping'])
+            
+            self.message_user(
+                request, 
+                "ระบบกำลังนำเข้าข้อมูล Mapping เบื้องหลัง (Background)... คุณสามารถใช้งานต่อได้ทันที", 
+                level=messages.INFO
+            )
         except Exception as e:
-            self.message_user(request, f"เกิดข้อผิดพลาด: {str(e)}", level=messages.ERROR)
+            self.message_user(request, f"ไม่สามารถสั่งรันได้: {str(e)}", level=messages.ERROR)
 
         return HttpResponseRedirect("../")
+        # try:
+        #     df = pd.read_csv(file_path, encoding='utf-8-sig', dtype=str)
+        #     req_cols = ['external_key', 'platform', 'product_sku']
+        #     if not all(col in df.columns for col in req_cols):
+        #          self.message_user(request, f"CSV ต้องมีคอลัมน์ {req_cols}", level=messages.ERROR)
+        #          return HttpResponseRedirect("../")
+
+        #     success, skipped = 0, 0
+        #     for _, row in df.iterrows():
+        #         ext_key = str(row['external_key']).strip()
+        #         p_sku = str(row['product_sku']).strip()
+        #         platform = str(row['platform']).strip().upper()
+
+        #         if not ext_key or not p_sku: continue
+
+        #         try:
+        #             product_obj = Product.objects.get(sku=p_sku)
+        #             ProductAlias.objects.update_or_create(
+        #                 external_key=ext_key,
+        #                 defaults={'product': product_obj, 'platform': platform}
+        #             )
+        #             success += 1
+        #         except Product.DoesNotExist:
+        #             skipped += 1
+
+        #     self.message_user(request, f"นำเข้าสำเร็จ {success} รายการ (ข้าม {skipped} เนื่องจากไม่พบ SKU)", level=messages.SUCCESS)
+        # except Exception as e:
+        #     self.message_user(request, f"เกิดข้อผิดพลาด: {str(e)}", level=messages.ERROR)
+
+        # return HttpResponseRedirect("../")
 
 @admin.register(ImportLog)
 class ImportLogAdmin(admin.ModelAdmin):
