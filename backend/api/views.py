@@ -453,6 +453,12 @@ def purchase_order_view(request, pk=None):
                         # B. Save Items
                         formset.instance = po
                         formset.save()
+
+                        # B2. Save Attachments
+                        if request.FILES.getlist('attachments'):
+                            for f in request.FILES.getlist('attachments'):
+                                PurchaseAttachment.objects.create(purchase_order=po, file=f)
+                        
                         
                         # C. Recalculate Totals (The model method we wrote earlier)
                         po.calculate_totals()
@@ -477,7 +483,8 @@ def purchase_order_view(request, pk=None):
         'formset': formset,
         'orders': orders,
         'is_editing': is_editing,
-        'editing_po': po_instance
+        'editing_po': po_instance,
+        'attachments': po_instance.attachments.all() if po_instance else []
     }
     return render(request, 'purchase_form.html', context)
 
@@ -525,8 +532,14 @@ def invoice_view(request, pk=None):
                     # B2. Handle Updates/Inserts
                     for item in items:
                         selected_batch = item.purchase_item # Might be None (if user left blank)
-                        selected_product = item.product     # Always set (required by form)
+                        selected_product = item.product     # Might be None (for imported items)
                         
+                        # --- SKIP STOCK LOGIC FOR IMPORTED ITEMS WITHOUT PRODUCT ---
+                        if not selected_product:
+                            item.invoice = invoice
+                            item.save()
+                            continue
+
                         # --- SCENARIO 1: User left Batch BLANK (Auto-Assign FIFO) ---
                         if not selected_batch:
                             # Find oldest batch for this product with stock
@@ -789,6 +802,12 @@ def report_dashboard_view(request):
 def invoice_pdf_view(request, pk):
     invoice = get_object_or_404(Invoice, pk=pk)
     
+    if not invoice.is_printed:
+        invoice.is_printed = True
+        invoice.status = 'BILLED'
+    invoice.print_datetime = timezone.now()
+    invoice.save(update_fields=['is_printed', 'print_datetime', 'status'])
+    
     context = {
         'invoice': invoice,
         'items': invoice.invoice_items.all(),
@@ -851,6 +870,40 @@ def company_edit_view(request, pk):
         'is_editing': True
     })
 
+from django.http import JsonResponse
+from django.db.models import Q
+from django.contrib.auth.decorators import login_required
+
+@login_required
+def check_duplicate_po_fields(request):
+    """
+    API endpoint to check if po_number or tax_sequence_number already exists,
+    excluding the current purchase order (if editing).
+    """
+    po_number = request.GET.get('po_number')
+    tax_sequence_number = request.GET.get('tax_sequence_number')
+    current_po_id = request.GET.get('current_po_id')
+    company_id = request.GET.get('company_id')
+
+    queryset = PurchaseOrder.objects.all()
+    if current_po_id:
+        queryset = queryset.exclude(id=current_po_id)
+    if company_id:
+        queryset = queryset.filter(company_id=company_id)
+
+    duplicate_po = False
+    duplicate_tax = False
+
+    if po_number:
+        duplicate_po = queryset.filter(po_number=po_number).exists()
+    if tax_sequence_number:
+        duplicate_tax = queryset.filter(tax_sequence_number=tax_sequence_number).exists()
+
+    return JsonResponse({
+        'duplicate_po_number': duplicate_po,
+        'duplicate_tax_sequence': duplicate_tax
+    })
+
 def wht_cert_list_view(request):
     # ... (Keep your Fetch Lists code same as before) ...
     companies = Company.objects.filter(is_active=True)
@@ -873,6 +926,7 @@ def wht_cert_list_view(request):
         # try:
         
         # 1. Get Basic Data
+
         company_id = request.POST.get('company_id')
         source_type = request.POST.get('source_type') # 'manual', 'po', 'trans'
         source_id = request.POST.get('source_id')
@@ -969,3 +1023,329 @@ def get_source_details(request):
         data['vendor_name'] = obj.vendor.name if obj.vendor else ''
         
     return JsonResponse(data)
+
+
+# ---------------------------------------------------------------------------
+# VAT Orders Tracking APIs (Standalone)
+# ---------------------------------------------------------------------------
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from rest_framework.authentication import SessionAuthentication
+from rest_framework_simplejwt.authentication import JWTAuthentication
+from django.db.models import Q, Sum, Count
+from .models import VatOrderBuy, VatOrderBuyItem, VatOrderSaleItem
+from .serializers import VatOrderBuyItemSerializer, VatOrderSaleItemSerializer
+from .utils_vat_import import process_vat_buy_import, process_vat_sale_import
+
+
+class VatImportDataView(APIView):
+    authentication_classes = [SessionAuthentication, JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, format=None):
+        file_obj = request.FILES.get('file')
+        import_type = request.data.get('type')
+
+        if not file_obj:
+            return Response({'error': 'No file uploaded'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if import_type == 'buy':
+            result = process_vat_buy_import(file_obj)
+        elif import_type == 'sale':
+            result = process_vat_sale_import(file_obj)
+        else:
+            return Response({'error': 'Invalid import type'}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(result, status=status.HTTP_200_OK)
+
+
+class VatReportView(APIView):
+    authentication_classes = [SessionAuthentication, JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, format=None):
+        start_date = request.query_params.get('start_date')
+        end_date = request.query_params.get('end_date')
+        vat_company = request.query_params.get('vat_company')
+        product_query = request.query_params.get('q')
+
+        queryset = VatOrderBuyItem.objects.select_related('vat_order').all()
+
+        if start_date:
+            queryset = queryset.filter(vat_order__date__gte=start_date)
+        if end_date:
+            queryset = queryset.filter(vat_order__date__lte=end_date)
+        if vat_company and vat_company.lower() != 'all':
+            queryset = queryset.filter(vat_order__supplier_name__icontains=vat_company)
+        if product_query:
+            queryset = queryset.filter(
+                Q(product_name__icontains=product_query) |
+                Q(serial_no__icontains=product_query)
+            )
+
+        queryset = queryset.order_by('vat_order__date', 'vat_order__document_no')
+        serializer = VatOrderBuyItemSerializer(queryset, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def put(self, request, format=None):
+        item_type = request.data.get('item_type')
+        item_id = request.data.get('id')
+
+        if item_type == 'buy':
+            try:
+                item = VatOrderBuyItem.objects.get(id=item_id)
+            except VatOrderBuyItem.DoesNotExist:
+                return Response({'error': 'Item not found'}, status=status.HTTP_404_NOT_FOUND)
+
+            if 'vat_company' in request.data:
+                item.vat_company = request.data['vat_company']
+            if 'payment_method_in' in request.data:
+                item.payment_method_in = request.data['payment_method_in']
+            if 'bank_in' in request.data:
+                item.bank_in = request.data['bank_in']
+            item.save()
+
+        elif item_type == 'sale':
+            try:
+                item = VatOrderSaleItem.objects.get(id=item_id)
+            except VatOrderSaleItem.DoesNotExist:
+                return Response({'error': 'Item not found'}, status=status.HTTP_404_NOT_FOUND)
+
+            if 'payment_method_out' in request.data:
+                item.payment_method_out = request.data['payment_method_out']
+            if 'company_out' in request.data:
+                item.company_out = request.data['company_out']
+            item.save()
+        else:
+            return Response({'error': 'Invalid item type'}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response({'status': 'ok'}, status=status.HTTP_200_OK)
+
+
+class VatExportExcelView(APIView):
+    authentication_classes = [SessionAuthentication, JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, format=None):
+        from django.http import HttpResponse
+        from api.utils_vat_export import export_vat_report
+
+        start_date = request.query_params.get('start_date')
+        end_date = request.query_params.get('end_date')
+        vat_company = request.query_params.get('vat_company')
+        product_query = request.query_params.get('q')
+
+        queryset = VatOrderBuyItem.objects.select_related('vat_order').all()
+
+        if start_date:
+            queryset = queryset.filter(vat_order__date__gte=start_date)
+        if end_date:
+            queryset = queryset.filter(vat_order__date__lte=end_date)
+        if vat_company and vat_company.lower() != 'all':
+            queryset = queryset.filter(vat_order__supplier_name__icontains=vat_company)
+        if product_query:
+            queryset = queryset.filter(
+                Q(product_name__icontains=product_query) |
+                Q(serial_no__icontains=product_query)
+            )
+
+        queryset = queryset.order_by('vat_order__date', 'vat_order__document_no')
+
+        return export_vat_report(queryset)
+
+
+@login_required
+def vat_tracking_view(request):
+    return render(request, 'vat_tracking.html')
+
+
+@login_required
+def vat_buy_summary_view(request):
+    return render(request, 'vat_buy_summary.html')
+
+
+class VatBuyOrderSummaryView(APIView):
+    """Returns VatOrderBuy headers with aggregated totals for the document-level summary view."""
+    authentication_classes = [SessionAuthentication, JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, format=None):
+        filter_date = request.query_params.get('date')
+        vat_status = request.query_params.get('vat_status')
+        product_query = request.query_params.get('q')
+
+        queryset = VatOrderBuy.objects.annotate(
+            total_buy_amount=Sum('items__purchase_price'),
+            item_count=Count('items')
+        )
+
+        if vat_status == 'vat_only':
+            queryset = queryset.filter(Q(supplier_name__iendswith='/kit') | Q(supplier_name__iendswith='/s16'))
+        elif vat_status == 'non_vat':
+            queryset = queryset.exclude(Q(supplier_name__iendswith='/kit') | Q(supplier_name__iendswith='/s16'))
+
+        if filter_date:
+            queryset = queryset.filter(date=filter_date)
+        if product_query:
+            queryset = queryset.filter(items__product_name__icontains=product_query).distinct()
+
+        queryset = queryset.order_by('-date', '-document_no')
+
+        data = []
+        for order in queryset:
+            supplier = order.supplier_name or ''
+            supplier_lower = supplier.lower().rstrip()
+            is_vat = supplier_lower.endswith('/kit') or supplier_lower.endswith('/s16')
+
+            data.append({
+                'id': order.id,
+                'document_no': order.document_no,
+                'date': order.date.isoformat() if order.date else None,
+                'supplier_name': supplier,
+                'is_vat_company': is_vat,
+                'total_buy_amount': float(order.total_buy_amount or 0),
+                'item_count': order.item_count or 0,
+            })
+
+        return Response(data, status=status.HTTP_200_OK)
+
+
+class VatBuySummaryExportExcelView(APIView):
+    """Exports Document-level VAT Buy Summaries to Excel."""
+    authentication_classes = [SessionAuthentication, JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, format=None):
+        from api.utils_vat_export import export_vat_buy_summary_report
+        from django.http import HttpResponse
+
+        filter_date = request.query_params.get('date')
+        vat_status = request.query_params.get('vat_status')
+        product_query = request.query_params.get('q')
+
+        queryset = VatOrderBuy.objects.annotate(
+            total_buy_amount=Sum('items__purchase_price'),
+            item_count=Count('items')
+        )
+
+        if vat_status == 'vat_only':
+            queryset = queryset.filter(Q(supplier_name__iendswith='/kit') | Q(supplier_name__iendswith='/s16'))
+        elif vat_status == 'non_vat':
+            queryset = queryset.exclude(Q(supplier_name__iendswith='/kit') | Q(supplier_name__iendswith='/s16'))
+
+        if filter_date:
+            queryset = queryset.filter(date=filter_date)
+        if product_query:
+            queryset = queryset.filter(items__product_name__icontains=product_query).distinct()
+
+        queryset = queryset.order_by('-date', '-document_no')
+
+        filepath, filename = export_vat_buy_summary_report(queryset)
+
+        if os.path.exists(filepath):
+            with open(filepath, 'rb') as f:
+                response = HttpResponse(f.read(), content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+                response['Content-Disposition'] = f'attachment; filename={filename}'
+                return response
+        else:
+            return Response({'error': 'Export failed'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class VatBuyOrderDetailView(APIView):
+    """Returns items for a specific VatOrderBuy by its pk."""
+    authentication_classes = [SessionAuthentication, JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk, format=None):
+        try:
+            order = VatOrderBuy.objects.get(pk=pk)
+        except VatOrderBuy.DoesNotExist:
+            return Response({'error': 'Order not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        items = VatOrderBuyItem.objects.filter(vat_order=order)
+        serializer = VatOrderBuyItemSerializer(items, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+import csv
+import urllib.request
+
+@login_required
+def invoice_excel_view(request, pk):
+    invoice = get_object_or_404(Invoice, pk=pk)
+    
+    # Create workbook
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = f"Invoice_{invoice.invoice_number}"
+    
+    # Header format
+    ws.append(["Company", "Invoice Number", "Date", "Customer", "Subtotal", "Tax", "Grand Total", "Status"])
+    ws.append([
+        invoice.company.name if invoice.company else "",
+        invoice.invoice_number,
+        invoice.invoice_date.strftime('%Y-%m-%d') if invoice.invoice_date else "",
+        invoice.vendor.name if invoice.vendor else invoice.recipient_name,
+        float(invoice.subtotal),
+        float(invoice.tax_amount),
+        float(invoice.grand_total),
+        invoice.status
+    ])
+
+    ws.append([]) # empty row
+    ws.append(["SKU", "Item Name", "Quantity", "Unit Price", "Total Price"])
+    for item in invoice.invoice_items.all():
+        ws.append([
+            item.product.sku if item.product else item.sku,
+            item.product.name if item.product else item.item_name,
+            item.quantity,
+            float(item.unit_price),
+            float(item.total_price)
+        ])
+    
+    response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    response['Content-Disposition'] = f'attachment; filename="Invoice_{invoice.invoice_number}.xlsx"'
+    wb.save(response)
+    return response
+
+@login_required
+def sync_google_sheet_requests(request):
+    SHEET_URL = "https://docs.google.com/spreadsheets/d/10vSZIeyigc74uTkXmAO3AxaG6TNFA6uGSb39udH7JgI/export?format=csv&id=10vSZIeyigc74uTkXmAO3AxaG6TNFA6uGSb39udH7JgI&gid=0"
+    try:
+        req = urllib.request.Request(SHEET_URL, headers={'User-Agent': 'Mozilla/5.0'})
+        response = urllib.request.urlopen(req)
+        lines = [l.decode('utf-8') for l in response.readlines()]
+        reader = csv.reader(lines)
+        
+        # skip headers / empty rows until data (start at row 3, index 2)
+        for _ in range(2):
+            next(reader, None)
+            
+        sync_count = 0
+        for row in reader:
+            if len(row) < 8:
+                continue
+            # "ลำดับ หมายเลขคำสั่งซื้อ วันที่ ชื่อ สกุล ที่อยุ่ปัจจุบัน หมายเลขประจำตัวผู้เสียภาษี เบอร์โทร Email ช่องทางการสั่งซื้อ สถานะ"
+            # 0: ลำดับ, 1: order id, 2: date, 3: name, 4: address, 5: tax_id, 6: phone
+            order_id = row[1].strip()
+            if not order_id:
+                continue
+                
+            invoices = Invoice.objects.filter(platform_order_id=order_id)
+            for inv in invoices:
+                if not inv.tax_invoice_requested:
+                    inv.tax_invoice_requested = True
+                    inv.recipient_name = row[3].strip() if len(row) > 3 else inv.recipient_name
+                    inv.recipient_address = row[4].strip() if len(row) > 4 else inv.recipient_address
+                    inv.recipient_phone = row[6].strip() if len(row) > 6 else inv.recipient_phone
+                    
+                    if inv.vendor and len(row) > 5:
+                        inv.vendor.tax_id = row[5].strip()
+                        inv.vendor.save()
+                    inv.save()
+                    sync_count += 1
+                    
+        return JsonResponse({'success': True, 'count': sync_count, 'message': f'พบคำขอและซิงค์ข้อมูลแล้ว {sync_count} รายการ'})
+    except Exception as e:
+        return JsonResponse({'success': False, 'message': str(e)})

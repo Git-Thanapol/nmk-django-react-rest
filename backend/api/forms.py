@@ -222,11 +222,11 @@ class InvoiceItemCustomChoiceField(forms.ModelChoiceField):
         return f"{obj.product.name} | PO: {obj.purchase_order.po_number} | Stock: {obj.remaining_quantity} | Cost: {obj.unit_cost}"
 
 class InvoiceItemForm(forms.ModelForm):
-    # 1. Product Field (User selects this first)
+    # 1. Product Field (User selects this first when adding manually)
     product = forms.ModelChoiceField(
         queryset=Product.objects.filter(is_active=True),
         widget=forms.Select(attrs={'class': 'form-select product-select'}),
-        required=True
+        required=False
     )
 
     # 2. Batch Field (Optional - filtered by JS on frontend)

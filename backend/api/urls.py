@@ -18,11 +18,14 @@ urlpatterns = [
     # --- Purchases ---
     path('purchases/', views.purchase_order_view, name='purchase_list'),
     path('purchases/edit/<int:pk>/', views.purchase_order_view, name='purchase_edit'),
+    path('api/purchases/check-duplicate/', views.check_duplicate_po_fields, name='api_check_duplicate_po'),
 
     # --- Invoices ---
     path('invoices/', views.invoice_view, name='invoice_list'),
     path('invoices/edit/<int:pk>/', views.invoice_view, name='invoice_edit'),
     path('invoice/<int:pk>/pdf/', views.invoice_pdf_view, name='invoice_pdf'),
+    path('invoice/<int:pk>/excel/', views.invoice_excel_view, name='invoice_excel'),
+    path('invoice/sync-google-sheet/', views.sync_google_sheet_requests, name='invoice_sync_google_sheet'),
 
     # --- Vendors ---
     path('vendors/', views.vendor_view, name='vendor_list'),
@@ -57,6 +60,16 @@ urlpatterns = [
 
     # --- API ---
     path('api/get-source-details/', views.get_source_details, name='api_get_source_details'),
+    
+    # --- VAT Tracking (Django View + API) ---
+    path('vat-tracking/', views.vat_tracking_view, name='vat_tracking'),
+    path('vat-buy-summary/', views.vat_buy_summary_view, name='vat_buy_summary'),
+    path('api/vat/import/', views.VatImportDataView.as_view(), name='api_vat_import'),
+    path('api/vat/report/', views.VatReportView.as_view(), name='api_vat_report'),
+    path('api/vat/export/', views.VatExportExcelView.as_view(), name='api_vat_export'),
+    path('api/vat/buy-orders/export/', views.VatBuySummaryExportExcelView.as_view(), name='api_vat_buy_orders_export'),
+    path('api/vat/buy-orders/', views.VatBuyOrderSummaryView.as_view(), name='api_vat_buy_orders'),
+    path('api/vat/buy-orders/<int:pk>/items/', views.VatBuyOrderDetailView.as_view(), name='api_vat_buy_order_items'),
 ]
 
 # --- Media Files Configuration (For serving PDF in DEBUG mode) ---

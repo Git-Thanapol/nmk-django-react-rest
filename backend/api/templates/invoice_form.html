@@ -76,6 +76,19 @@
                         <div class="alert alert-{{ message.tags }} py-2 small">{{ message }}</div>
                     {% endfor %}
                 {% endif %}
+
+                {% if is_editing %}
+                    {% if editing_invoice.is_printed %}
+                        <div class="alert alert-secondary py-2 small mb-3">
+                            <i class="bi bi-printer-fill me-2"></i> ใบกำกับภาษีนี้เคยพิมพ์แล้วเมื่อ {{ editing_invoice.print_datetime|date:"d/m/Y H:i" }}
+                        </div>
+                    {% endif %}
+                    {% if editing_invoice.tax_invoice_requested %}
+                        <div class="alert alert-info py-2 small mb-3">
+                            <i class="bi bi-info-circle-fill me-2"></i> ลูกค้าร้องขอใบกำกับภาษีจากระบบ (Google Sheets)
+                        </div>
+                    {% endif %}
+                {% endif %}
                 
                 {% if form.errors or formset.total_error_count %}
                     <div class="alert alert-danger small">
@@ -249,8 +262,11 @@
 
                 <div class="d-flex justify-content-end gap-2 mt-4">
                     {% if is_editing %}
-                        <a href="{% url 'invoice_pdf' editing_invoice.id %}" class="btn btn-outline-danger px-4">
-                            <i class="bi bi-printer me-2"></i>Print / PDF
+                        <a href="{% url 'invoice_pdf' editing_invoice.id %}" class="btn btn-outline-danger px-4" target="_blank">
+                            <i class="bi bi-file-earmark-pdf me-2"></i>Print/PDF
+                        </a>
+                        <a href="{% url 'invoice_excel' editing_invoice.id %}" class="btn btn-outline-success px-4" target="_blank">
+                            <i class="bi bi-file-earmark-excel me-2"></i>Excel
                         </a>
 
                         <a href="{% url 'invoice_list' %}" class="btn btn-ghost px-4">ย้อนกลับ</a>
@@ -268,9 +284,14 @@
             <div>
                 <h5 class="mb-0 text-white"><i class="bi bi-clock-history me-2"></i>ใบแจ้งหนี้ล่าสุด (Last 1000)</h5>
             </div>
-            <div class="input-group input-group-sm w-auto">
-                <span class="input-group-text bg-secondary border-secondary text-light"><i class="bi bi-search"></i></span>
-                <input type="text" id="globalSearch" class="form-control bg-dark border-secondary text-light" placeholder="ค้นหา ...">
+            <div class="d-flex gap-2">
+                <button type="button" class="btn btn-sm btn-outline-info" onclick="syncGoogleSheet()">
+                    <i class="bi bi-cloud-download me-1"></i> ดึงคำขอใบกำกับ
+                </button>
+                <div class="input-group input-group-sm w-auto">
+                    <span class="input-group-text bg-secondary border-secondary text-light"><i class="bi bi-search"></i></span>
+                    <input type="text" id="globalSearch" class="form-control bg-dark border-secondary text-light" placeholder="ค้นหา ...">
+                </div>
             </div>
         </div>
 
@@ -317,8 +338,13 @@
                 </thead>
                 <tbody>
                     {% for inv in invoices %}
-                    <tr>
-                        <td class="ps-4 text-secondary">{{ inv.invoice_date|date:"Y-m-d" }}</td>
+                    <tr class="{% if inv.is_printed %}opacity-75 bg-secondary bg-opacity-10{% endif %}">
+                        <td class="ps-4 text-secondary">
+                            {{ inv.invoice_date|date:"Y-m-d" }}
+                            {% if inv.tax_invoice_requested %}
+                                <br><span class="badge bg-info mt-1"><i class="bi bi-person-lines-fill"></i> ขอใบกำกับฯ</span>
+                            {% endif %}
+                        </td>
                         
                         <td>
                             {% if inv.status == 'BILLED' %}
@@ -358,9 +384,15 @@
                             </a>
                         </td>
                         <td class="text-end pe-4">
-                            <a href="{% url 'invoice_pdf' inv.id %}" class="btn btn-sm btn-outline-danger me-1" title="Download PDF">
-                                <i class="bi bi-file-earmark-pdf"></i>
-                            </a>
+                            {% if inv.is_printed %}
+                                <a href="{% url 'invoice_pdf' inv.id %}" class="btn btn-sm btn-secondary me-1" title="Printed: {{ inv.print_datetime|date:'d/m/Y H:i' }}">
+                                    <i class="bi bi-printer-fill"></i>
+                                </a>
+                            {% else %}
+                                <a href="{% url 'invoice_pdf' inv.id %}" class="btn btn-sm btn-outline-danger me-1" title="Download PDF">
+                                    <i class="bi bi-file-earmark-pdf"></i>
+                                </a>
+                            {% endif %}
                         </td>
                     </tr>
                     {% empty %}
@@ -409,6 +441,22 @@
 </table>
 
 <script>
+function syncGoogleSheet() {
+    if(!confirm('ยืนยันดึงคำขอใบกำกับภาษีจาก Google Sheet?')) return;
+    
+    fetch('{% url "invoice_sync_google_sheet" %}')
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                alert(data.message);
+                if (data.count > 0) window.location.reload();
+            } else {
+                alert('เกิดข้อผิดพลาด: ' + data.message);
+            }
+        })
+        .catch(err => alert('เกิดข้อผิดพลาดในการเชื่อมต่อ'));
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     
     // --- PART 1: INVOICE FORM CALCULATIONS ---

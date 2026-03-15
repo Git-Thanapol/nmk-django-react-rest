@@ -220,6 +220,19 @@ class PurchaseItem(models.Model):
         """Get available quantity for selling"""
         return self.remaining_quantity
 
+class PurchaseAttachment(models.Model):
+    """File attachments for a purchase order"""
+    purchase_order = models.ForeignKey(PurchaseOrder, on_delete=models.CASCADE, related_name='attachments')
+    file = models.FileField(upload_to='purchase_attachments/%Y/%m/')
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'purchase_attachments'
+        ordering = ['-uploaded_at']
+
+    def __str__(self):
+        return f"Attachment for {self.purchase_order} - {self.file.name}"
+
 class Invoice(models.Model):
     """Sales Invoice with platform integration fields"""
     STATUS_CHOICES = [
@@ -258,6 +271,11 @@ class Invoice(models.Model):
     created_by = models.ForeignKey('auth.User', on_delete=models.PROTECT)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    # Print / Request Tracking
+    is_printed = models.BooleanField(default=False, verbose_name="เคยพิมพ์ใบกำกับแล้ว")
+    print_datetime = models.DateTimeField(null=True, blank=True, verbose_name="เวลาพิมพ์ล่าสุด")
+    tax_invoice_requested = models.BooleanField(default=False, verbose_name="ลูกค้าร้องขอใบกำกับภาษี")
 
     # Platform Fields
     platform_name = models.CharField(max_length=100, blank=True) 
@@ -612,3 +630,92 @@ class WithholdingTaxCert(models.Model):
             self.cert_number = f"{current_year}/{new_seq:04d}"
             
         super().save(*args, **kwargs)
+
+# ---------------------------------------------------------------------------
+# VAT Orders Tracking (Standalone Section)
+# ---------------------------------------------------------------------------
+
+class VatOrderBuy(models.Model):
+    """Header for imported POS Buy-in data"""
+    document_no = models.CharField(max_length=100, unique=True, verbose_name="เลขที่เอกสาร")
+    date = models.DateField(default=timezone.now, verbose_name="วันที่ซื้อ")
+    supplier_name = models.CharField(max_length=200, blank=True, verbose_name="ชื่อผู้จำหน่าย")
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'vat_order_buy'
+        ordering = ['-date', '-document_no']
+
+    def __str__(self):
+        return f"{self.document_no} - {self.supplier_name}"
+
+
+class VatOrderBuyItem(models.Model):
+    """Item for imported POS Buy-in data, keyed by Serial No"""
+    vat_order = models.ForeignKey(VatOrderBuy, on_delete=models.CASCADE, related_name='items')
+    serial_no = models.CharField(max_length=100, unique=True, db_index=True, verbose_name="Serial No")
+    product_name = models.CharField(max_length=500, verbose_name="ชื่อสินค้า")
+    unit = models.CharField(max_length=50, blank=True, verbose_name="หน่วย")
+    purchase_price = models.DecimalField(max_digits=12, decimal_places=2, default=0, verbose_name="ราคาซื้อ")
+    
+    # User editable fields inline in the report
+    vat_company = models.CharField(max_length=100, blank=True, default="NONE", verbose_name="บริษัท VAT")
+    payment_method_in = models.CharField(max_length=100, blank=True, verbose_name="วิธีชำระ(เข้า)")
+    bank_in = models.CharField(max_length=100, blank=True, verbose_name="ธนาคาร(เข้า)")
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'vat_order_buy_items'
+        ordering = ['-vat_order__date', 'serial_no']
+
+    def __str__(self):
+        return f"{self.serial_no} - {self.product_name}"
+
+
+class VatOrderSale(models.Model):
+    """Header for imported POS Sales data"""
+    document_no = models.CharField(max_length=100, unique=True, verbose_name="เลขที่เอกสาร")
+    date = models.DateField(default=timezone.now, verbose_name="วันที่ขาย")
+    customer_name = models.CharField(max_length=200, blank=True, verbose_name="ชื่อลูกค้า")
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'vat_order_sale'
+        ordering = ['-date', '-document_no']
+
+    def __str__(self):
+        return f"{self.document_no} - {self.customer_name}"
+
+
+class VatOrderSaleItem(models.Model):
+    """Item for imported POS Sales data, keyed by Serial No to match with Buy"""
+    vat_order = models.ForeignKey(VatOrderSale, on_delete=models.CASCADE, related_name='items')
+    # Use OneToOneField ideally or ForeignKey if a serial can somehow be sold multiple times (e.g. returns/refurbs)
+    # Using ForeignKey for safety, but typically 1:1 matching in ERP.
+    serial_no = models.CharField(max_length=100, db_index=True, verbose_name="Serial No")
+    product_name = models.CharField(max_length=500, verbose_name="ชื่อสินค้า")
+    unit = models.CharField(max_length=50, blank=True, verbose_name="หน่วย")
+    sale_price = models.DecimalField(max_digits=12, decimal_places=2, default=0, verbose_name="ราคาขาย")
+
+    # User editable fields inline in the report
+    payment_method_out = models.CharField(max_length=100, blank=True, verbose_name="วิธีชำระ(ออก)")
+    company_out = models.CharField(max_length=100, blank=True, verbose_name="บริษัท(ออก)")
+    tax_invoice_request = models.BooleanField(default=False, verbose_name="ขอใบกำกับภาษี") # Example boolean field for mapping later?
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'vat_order_sale_items'
+        # In a real POS, a serial is sold once. Unique together prevents double import issues.
+        unique_together = ['vat_order', 'serial_no']
+        ordering = ['-vat_order__date', 'serial_no']
+
+    def __str__(self):
+        return f"{self.serial_no} - {self.product_name}"
