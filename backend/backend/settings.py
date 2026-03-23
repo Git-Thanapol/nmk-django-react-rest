@@ -70,7 +70,7 @@ if not DEBUG:
 
     # 7. CSRF Trusted Origins (Prevents 403 Forbidden on Forms)
     # Replace with your actual domain
-    CSRF_TRUSTED_ORIGINS = ['https://202.183.141.155.nip.io']
+    CSRF_TRUSTED_ORIGINS = config('CSRF_TRUSTED_ORIGINS', default='https://localhost', cast=lambda v: [s.strip() for s in v.split(',')])
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (

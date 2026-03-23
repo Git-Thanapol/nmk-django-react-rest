@@ -1,0 +1,44 @@
+# /etc/nginx/sites-available/nmk
+
+server {
+    listen 80;
+    server_name your-domain.com your-ip-address;
+
+    # Frontend build files (React)
+    root /var/www/nmk/frontend/dist;
+    index index.html;
+
+    # Static files for Django (Admin/API)
+    location /static/ {
+        alias /var/www/nmk/backend/staticfiles/;
+    }
+
+    # Media files for Django
+    location /media/ {
+        alias /var/www/nmk/backend/media/;
+    }
+
+    # React App: Serve index.html for all non-file/folder routes (SPA)
+    location / {
+        try_files $uri /index.html;
+    }
+
+    # Proxy API and Admin requests to Django/Gunicorn
+    location ~ ^/(api|admin|token) {
+        include proxy_params;
+        proxy_pass http://unix:/tmp/gunicorn.nmk.sock;
+    }
+
+    # Proxy any other Django-handled paths if necessary
+    # location /api-auth/ {
+    #     include proxy_params;
+    #     proxy_pass http://unix:/tmp/gunicorn.nmk.sock;
+    # }
+
+    # Security
+    client_max_body_size 50M;
+
+    # Logs
+    access_log /var/log/nginx/nmk_access.log;
+    error_log /var/log/nginx/nmk_error.log;
+}
