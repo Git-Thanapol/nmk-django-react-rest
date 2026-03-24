@@ -51,12 +51,12 @@ ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='127.0.0.1,localhost,45.136.255.
 if not DEBUG:
     # 3. HTTPS & SSL Redirect (W008)
     # Redirect all non-HTTPS traffic to HTTPS
-    SECURE_SSL_REDIRECT = True
+    SECURE_SSL_REDIRECT = config('SECURE_SSL_REDIRECT', default=True, cast=bool)
 
     # 4. Cookie Security (W012, W016)
     # Ensure cookies are only sent over HTTPS
-    SESSION_COOKIE_SECURE = True
-    CSRF_COOKIE_SECURE = True
+    SESSION_COOKIE_SECURE = config('SESSION_COOKIE_SECURE', default=True, cast=bool)
+    CSRF_COOKIE_SECURE = config('CSRF_COOKIE_SECURE', default=True, cast=bool)
 
     # 5. HSTS Settings (W004)
     # Tells the browser to ONLY connect via HTTPS for the next year

@@ -102,7 +102,7 @@ class TransactionForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # Set default date to today if not editing
-        self.fields['company'].queryset = Company.objects.filter(is_active=True)
+        self.fields['company'].queryset = Company.objects.filter(is_active=True).only('id', 'name')
         self.fields['vendor'].queryset = Vendor.objects.filter(is_active=True)
         if not self.instance.pk:
 
@@ -138,7 +138,7 @@ class PurchaseOrderForm(forms.ModelForm):
         # 1. Filter Company Dropdown (Only Active Companies)
         # This overrides the default "All Companies" list
         self.fields['vendor'].queryset = Vendor.objects.filter(is_active=True)
-        self.fields['company'].queryset = Company.objects.filter(is_active=True)
+        self.fields['company'].queryset = Company.objects.filter(is_active=True).only('id', 'name')
 
         # 2. Set default date (Your existing logic)
         if not self.instance.pk:
@@ -208,7 +208,7 @@ class InvoiceForm(forms.ModelForm):
 
         # Filter active companies and vendors
         self.fields['vendor'].queryset = Vendor.objects.filter(is_active=True)
-        self.fields['company'].queryset = Company.objects.filter(is_active=True)
+        self.fields['company'].queryset = Company.objects.filter(is_active=True).only('id', 'name')
 
         # Set Initial Defaults
         if not self.instance.pk:
