@@ -39,7 +39,7 @@ DEBUG = config('DEBUG', default=True, cast=bool)
 
 # 3. ALLOWED_HOSTS
 # Add your domain or IP here.
-ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='127.0.0.1,localhost', cast=lambda v: [s.strip() for s in v.split(',')])
+ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='127.0.0.1,localhost,45.136.255.175.nip.io', cast=lambda v: [s.strip() for s in v.split(',')])
 
 
 # 4. HTTPS SETTINGS (Warnings W004, W008, W012, W016)
