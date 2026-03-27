@@ -249,15 +249,6 @@
                     <p>ใส่รหัสเพื่อเข้าสู่ระบบ</p>
                 </div>
                 
-                <!-- Django Messages/Errors -->
-                {% if messages %}
-                    {% for message in messages %}
-                        <div class="alert alert-{{ message.tags }}">
-                            {{ message }}
-                        </div>
-                    {% endfor %}
-                {% endif %}
-                
                 {% if form.errors %}
                     <div class="alert alert-error">
                         Your username and password didn't match. Please try again.

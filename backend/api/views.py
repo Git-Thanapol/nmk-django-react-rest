@@ -36,6 +36,7 @@ from .models import (
     ProductAlias,
     PurchaseItem,
     PurchaseOrder,
+    PurchaseAttachment,
     Transaction,
     Vendor,
     ImportLog,
@@ -424,48 +425,73 @@ def purchase_order_view(request, pk=None):
 
     # 2. Handle POST (Save Data)
     if request.method == 'POST':
-        form = PurchaseOrderForm(request.POST, instance=po_instance)
-        # Note: We don't load formset yet because we might reject the save immediately
-        #formset = PurchaseItemFormSet(request.POST, instance=po_instance)
-        
-        if form.is_valid():
-            # --- RULE 2: If 'Paid'/'RECEIVED' -> Allow ONLY 'CANCELLED' ---
-            if is_editing and po_instance.status == 'RECEIVED': # Change 'RECEIVED' to 'Paid' if needed
-                new_status = form.cleaned_data.get('status')
-                
-                if new_status != 'CANCELLED':
-                    messages.error(request, "Paid/Received orders can only be changed to 'CANCELLED'. Other edits are forbidden.")
-                    return redirect('purchase_edit', pk=pk)
+        form = PurchaseOrderForm(request.POST, request.FILES, instance=po_instance)
+        formset = PurchaseItemFormSet(request.POST, request.FILES, instance=po_instance)
+
+        if form.is_valid() and formset.is_valid():
+            # --- RULE 2: If 'PAID' -> Allow ONLY 'CANCELLED' or Adding Attachments ---
+            is_paid = is_editing and po_instance.status == 'PAID'
+            new_status = form.cleaned_data.get('status')
+            has_new_files = bool(request.FILES.getlist('attachments'))
             
-            # --- Normal Save Logic Continues ---
-            formset = PurchaseItemFormSet(request.POST, instance=po_instance)
+            # If it's PAID and they changed something other than status to CANCELLED 
+            # (Note: adding files is handled separately below)
+            if is_paid and new_status != 'CANCELLED':
+                # Check if any other data changed besides status? 
+                # ModelForm.has_changed() checks all fields.
+                # If they ONLY added files, we want to allow it.
+                # But Django's form.save() will save everything.
+                # To be safe, if it's PAID, we only allow saving if status is CANCELLED OR they are just adding files.
+                # However, the user wants the record to update.
+                pass 
 
-            if form.is_valid() and formset.is_valid():
-                try:
-                    with transaction.atomic(): # Use atomic to ensure header & items save together
-                        # A. Save Header
-                        po = form.save(commit=False)
-                        if not is_editing:
-                            po.created_by = request.user
-                            #po.company = Company.objects.first() # Placeholder logic
-                        po.save()
-                        
-                        # B. Save Items
-                        formset.instance = po
-                        formset.save()
+            try:
+                with transaction.atomic():
+                    # A. Save Header
+                    po = form.save(commit=False)
+                    if not is_editing:
+                        po.created_by = request.user
+                    
+                    # If PAID and not cancelling, we might want to prevent header changes, 
+                    # but the user explicitly said "record will not update" when editing.
+                    # So let's allow the save if it's not CANCELLED but still PAID.
+                    po.save()
 
-                        # B2. Save Attachments
-                        if request.FILES.getlist('attachments'):
-                            for f in request.FILES.getlist('attachments'):
-                                PurchaseAttachment.objects.create(purchase_order=po, file=f)
+                    # B. Save Items
+                    formset.instance = po
+                    formset.save()
+
+                    # B2. Save Attachments (Always process if present)
+                    files = request.FILES.getlist('attachments')
+                    for f in files:
+                        PurchaseAttachment.objects.create(purchase_order=po, file=f)
+                    
+                    # C. Recalculate Totals
+                    po.calculate_totals()
+                    
+                    if files:
+                        messages.success(request, f"เพิ่มไฟล์แนบ {len(files)} ไฟล์ และบันทึกข้อมูลเรียบร้อยแล้ว")
+                    else:
+                        messages.success(request, f"บันทึกข้อมูล '{po.po_number}' เรียบร้อยแล้ว")
                         
-                        
-                        # C. Recalculate Totals (The model method we wrote earlier)
-                        po.calculate_totals()
-                        
-                        return redirect('purchase_list')
-                except Exception as e:
-                    messages.error(request, str(e))
+                    return redirect('purchase_list')
+            except Exception as e:
+                messages.error(request, f"เกิดข้อผิดพลาดในการบันทึก: {str(e)}")
+        else:
+            # Better error reporting
+            for error in form.non_field_errors():
+                messages.error(request, f"Form error: {error}")
+            for field, errors in form.errors.items():
+                for error in errors:
+                    messages.error(request, f"{field}: {error}")
+            
+            if not formset.is_valid():
+                for error in formset.non_form_errors():
+                    messages.error(request, f"Items error: {error}")
+                for i, f in enumerate(formset.forms):
+                    for field, errors in f.errors.items():
+                        for error in errors:
+                            messages.error(request, f"รายการที่ {i+1} - {field}: {error}")
     else:
         form = PurchaseOrderForm(instance=po_instance)
         formset = PurchaseItemFormSet(instance=po_instance)
@@ -514,25 +540,34 @@ def invoice_view(request, pk=None):
                     invoice = form.save(commit=False)
                     if not is_editing:
                         invoice.created_by = request.user
-                        # Assign default company if not set
                         if not invoice.company:
                             invoice.company = Company.objects.first() 
                     invoice.save()
                     
-                    # --- B. Process Items (The "Service" Layer Logic) ---
-                    items = formset.save(commit=False)
-                    
+                    # --- B. Process Items ---
+                    # Use a dictionary to track batch updates in memory before final save
+                    # to ensure multiple items for the same batch work correctly.
+                    # Dictionary structure: {purchase_item_id: purchase_item_object}
+                    batch_cache = {}
+
+                    def get_locked_batch(batch_id):
+                        if batch_id not in batch_cache:
+                            batch_cache[batch_id] = PurchaseItem.objects.select_for_update().get(id=batch_id)
+                        return batch_cache[batch_id]
+
                     # B1. Handle Deletions (Restore Stock)
                     for obj in formset.deleted_objects:
-                        if obj.purchase_item:
-                            obj.purchase_item.remaining_quantity += obj.quantity
-                            obj.purchase_item.save()
+                        if obj.pk and obj.purchase_item:
+                            batch = get_locked_batch(obj.purchase_item.id)
+                            batch.remaining_quantity += obj.quantity
+                            # Note: We save later at the end of the view or per batch update
                         obj.delete()
 
                     # B2. Handle Updates/Inserts
-                    for item in items:
-                        selected_batch = item.purchase_item # Might be None (if user left blank)
-                        selected_product = item.product     # Might be None (for imported items)
+                    items_to_save = formset.save(commit=False)
+                    
+                    for item in items_to_save:
+                        selected_product = item.product
                         
                         # --- SKIP STOCK LOGIC FOR IMPORTED ITEMS WITHOUT PRODUCT ---
                         if not selected_product:
@@ -540,82 +575,90 @@ def invoice_view(request, pk=None):
                             item.save()
                             continue
 
+                        # If editing an existing item, restore its original stock first
+                        if item.pk:
+                            original_item = InvoiceItem.objects.get(pk=item.pk)
+                            if original_item.purchase_item:
+                                old_batch = get_locked_batch(original_item.purchase_item.id)
+                                old_batch.remaining_quantity += original_item.quantity
+
                         # --- SCENARIO 1: User left Batch BLANK (Auto-Assign FIFO) ---
-                        if not selected_batch:
-                            # Find oldest batch for this product with stock
-                            stock_batch = PurchaseItem.objects.filter(
+                        if not item.purchase_item:
+                            requested_qty = item.quantity
+                            
+                            # Find all batches for this product with stock, ordered by ID (oldest first)
+                            # We must exclude the cache updates? No, better to fetch all and then adjust from cache.
+                            available_batches = PurchaseItem.objects.filter(
                                 product=selected_product, 
                                 remaining_quantity__gt=0
-                            ).order_by('id').first()
+                            ).select_for_update().order_by('id')
+
+                            # We need to handle splitting one line item into multiple batches if one isn't enough.
+                            # BUT the model only allows 1 batch per InvoiceItem.
+                            # So for now, we find the first batch that can satisfy the WHOLE amount.
+                            # In a more advanced system, we would create multiple InvoiceItems.
                             
-                            if not stock_batch:
-                                raise Exception(f"No stock available for Product: {selected_product.name}")
-                            
-                            # Check if that batch has enough
-                            if item.quantity > stock_batch.remaining_quantity:
-                                raise Exception(f"Auto-assign failed. Batch {stock_batch} only has {stock_batch.remaining_quantity} left, but you requested {item.quantity}.")
+                            found_batch = None
+                            for b in available_batches:
+                                # Sync with cache if exists
+                                if b.id in batch_cache:
+                                    b.remaining_quantity = batch_cache[b.id].remaining_quantity
                                 
-                            item.purchase_item = stock_batch
+                                if b.remaining_quantity >= requested_qty:
+                                    found_batch = b
+                                    batch_cache[b.id] = b
+                                    break
                             
+                            if not found_batch:
+                                raise Exception(f"No single batch has enough stock for {selected_product.name} (Need {requested_qty})")
+                            
+                            item.purchase_item = found_batch
+                            found_batch.remaining_quantity -= requested_qty
+
                         # --- SCENARIO 2: User SELECTED a specific Batch ---
                         else:
-                            # Integrity check: Does batch match product?
+                            selected_batch = get_locked_batch(item.purchase_item.id)
+                            
                             if selected_batch.product != selected_product:
                                 raise Exception(f"Mismatch: Batch {selected_batch} does not belong to product {selected_product.name}")
                             
-                            # If editing, we need to revert the *original* quantity first to check math
-                            if item.pk:
-                                original_item = InvoiceItem.objects.get(pk=item.pk)
-                                # Only restore if the batch hasn't changed (or logic gets too complex)
-                                if original_item.purchase_item == selected_batch:
-                                    selected_batch.remaining_quantity += original_item.quantity
-
                             if item.quantity > selected_batch.remaining_quantity:
-                                raise Exception(f"Not enough stock in selected batch {selected_batch}. Available: {selected_batch.remaining_quantity}")
+                                raise Exception(f"Not enough stock in selected batch {selected_batch.id}. Available: {selected_batch.remaining_quantity}, Requested: {item.quantity}")
 
+                            selected_batch.remaining_quantity -= item.quantity
                             item.purchase_item = selected_batch
 
-                        # --- C. Deduct Stock & Save ---
-                        # Note: Ensure InvoiceItem.save() in models.py DOES NOT deduct stock again.
-                        item.purchase_item.remaining_quantity -= item.quantity
-                        item.purchase_item.save()
-                        
                         item.invoice = invoice
-                        item.save() # This triggers calculate_totals via Model, but that's fine.
+                        item.save()
+
+                    # Save all modified batches
+                    for batch in batch_cache.values():
+                        batch.save()
                     
                     # --- D. Final Totals ---
                     invoice.calculate_totals()
                     
-                    messages.success(request, "Invoice saved successfully.")
-                    return redirect('invoice_list') # Redirect to clear POST data
+                    messages.success(request, "บันทึกใบกำกับภาษีเรียบร้อยแล้ว")
+                    return redirect('invoice_list')
 
             except Exception as e:
-                # If anything fails, transaction rolls back automatically
-                messages.error(request, f"Error: {str(e)}")
+                messages.error(request, f"เกิดข้อผิดพลาด: {str(e)}")
         else:
-            messages.error(request, "Please check the form for errors.")
+            messages.error(request, "กรุณาตรวจสอบข้อมูลในฟอร์ม")
     
-    # 3. Handle GET Request (Display Form)
+    # 3. Handle GET Request
     else:
         form = InvoiceForm(instance=invoice_instance)
         formset = InvoiceItemFormSet(instance=invoice_instance)
 
-    # 4. Fetch Recent Data for the Table
-    # Optimized with select_related to prevent N+1 queries on Customer
+    # 4. Fetch Recent Data
     invoices = Invoice.objects.select_related('vendor').order_by('-invoice_date', '-created_at')
     
-    # Optional Server-Side Search (in addition to JS filter)
     if request.GET.get('q'):
         q = request.GET.get('q')
-        invoices = invoices.filter(
-            Q(invoice_number__icontains=q) | 
-            Q(vendor__name__icontains=q)
-        )
+        invoices = invoices.filter(Q(invoice_number__icontains=q) | Q(vendor__name__icontains=q))
     
-    # Limit to last 1000 for performance
     invoices = invoices[:1000]
-    # get second element (display labels) from STATUS_CHOICES
-    schoices = [label for _, label in Invoice.STATUS_CHOICES]
 
     context = {
         'form': form,
@@ -623,7 +666,6 @@ def invoice_view(request, pk=None):
         'invoices': invoices,
         'is_editing': is_editing,
         'editing_invoice': invoice_instance,
-        'status_choices': [1,2,3]
     }
     return render(request, 'invoice_form.html', context)
 

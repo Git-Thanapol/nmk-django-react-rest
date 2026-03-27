@@ -184,7 +184,7 @@
                     <button type="button" class="btn btn-secondary px-4" disabled>
                         <i class="bi bi-lock-fill me-2"></i>Locked
                     </button>
-                    {% elif editing_po.status == 'RECEIVED' %}
+                    {% elif editing_po.status == 'PAID' %}
                     <button type="submit" class="btn btn-danger px-4 fw-bold">
                         <i class="bi bi-x-circle me-2"></i>Cancel Order
                     </button>
@@ -250,8 +250,7 @@
                             data-col="3">
                             <option value="">ทั้งหมด</option>
                             <option value="DRAFT">Draft</option>
-                            <option value="ORDERED">Ordered</option>
-                            <option value="RECEIVED">Received</option>
+                            <option value="PAID">Paid</option>
                             <option value="CANCELLED">Cancelled</option>
                         </select>
                     </th>
@@ -268,15 +267,25 @@
                 <tr>
                     <td class="ps-4 text-secondary">{{ order.order_date|date:"d/m/Y" }}</td>
 
-                    <td class="font-monospace text-white">{{ order.po_number }}</td>
+                    <td class="font-monospace text-white">
+                        {{ order.po_number }}
+                        {% if order.attachments.exists %}
+                        <i class="bi bi-paperclip text-info ms-1" title="{{ order.attachments.count }} files attached"></i>
+                        {% endif %}
+                    </td>
 
                     <td>{{ order.vendor.name }}</td>
 
                     <td>
-                        <span
-                            class="badge bg-secondary bg-opacity-25 text-light border border-secondary border-opacity-50">
-                            {{ order.status }}
-                        </span>
+                        {% if order.status == 'DRAFT' %}
+                            <span class="badge bg-secondary bg-opacity-25 text-light border border-secondary border-opacity-50">DRAFT</span>
+                        {% elif order.status == 'PAID' %}
+                            <span class="badge bg-success bg-opacity-25 text-success border border-success border-opacity-50">PAID</span>
+                        {% elif order.status == 'CANCELLED' %}
+                            <span class="badge bg-danger bg-opacity-25 text-danger border border-danger border-opacity-50">CANCELLED</span>
+                        {% else %}
+                            <span class="badge bg-secondary bg-opacity-25 text-light border border-secondary border-opacity-50">{{ order.status }}</span>
+                        {% endif %}
                     </td>
 
                     <td class="text-end font-monospace text-info">{{ order.total_amount|floatformat:2|intcomma }}</td>
