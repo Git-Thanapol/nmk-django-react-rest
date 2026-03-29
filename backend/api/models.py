@@ -171,12 +171,18 @@ class PurchaseOrder(models.Model):
         """Calculate order totals from items"""
         from .models import PurchaseItem
         items = PurchaseItem.objects.filter(purchase_order=self)
-        self.subtotal = sum(item.total_price for item in items)
-        # Assuming 7% VAT for Thailand
+        self.subtotal = sum((item.total_price for item in items), Decimal('0'))
+        
+        # Helper to convert to Decimal for math safety
+        t_percent = Decimal(str(self.tax_percent))
+        divisor = Decimal('1') + (t_percent / Decimal('100'))
+
         if self.tax_include:
-            self.tax_amount = self.subtotal - (self.subtotal / (1 + self.tax_percent / 100))
+            # Reverse Calc: Tax = Subtotal - (Subtotal / 1.07)
+            self.tax_amount = self.subtotal - (self.subtotal / divisor)
         else:
-            self.tax_amount = self.subtotal * (self.tax_percent / 100)
+            # Forward Calc
+            self.tax_amount = self.subtotal * (t_percent / Decimal('100'))
         
         self.total_amount = self.subtotal + self.tax_amount
         self.save()
