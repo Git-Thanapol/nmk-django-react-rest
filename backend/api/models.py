@@ -259,7 +259,7 @@ class Invoice(models.Model):
     tax_sender_date = models.DateField(null=True, blank=True)
     tax_sequence_number = models.CharField(max_length=100, blank=True, null=True)
     saleperson = models.CharField(max_length=100, blank=True)
-    status = models.CharField(choices=STATUS_CHOICES, default='DRAFT')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='DRAFT')
 
     # Financials
     tax_include = models.BooleanField(default=True)
@@ -702,26 +702,70 @@ class VatOrderSale(models.Model):
 class VatOrderSaleItem(models.Model):
     """Item for imported POS Sales data, keyed by Serial No to match with Buy"""
     vat_order = models.ForeignKey(VatOrderSale, on_delete=models.CASCADE, related_name='items')
-    # Use OneToOneField ideally or ForeignKey if a serial can somehow be sold multiple times (e.g. returns/refurbs)
-    # Using ForeignKey for safety, but typically 1:1 matching in ERP.
     serial_no = models.CharField(max_length=100, db_index=True, verbose_name="Serial No")
     product_name = models.CharField(max_length=500, verbose_name="ชื่อสินค้า")
     unit = models.CharField(max_length=50, blank=True, verbose_name="หน่วย")
     sale_price = models.DecimalField(max_digits=12, decimal_places=2, default=0, verbose_name="ราคาขาย")
 
-    # User editable fields inline in the report
     payment_method_out = models.CharField(max_length=100, blank=True, verbose_name="วิธีชำระ(ออก)")
     company_out = models.CharField(max_length=100, blank=True, verbose_name="บริษัท(ออก)")
-    tax_invoice_request = models.BooleanField(default=False, verbose_name="ขอใบกำกับภาษี") # Example boolean field for mapping later?
-    
+    tax_invoice_request = models.BooleanField(default=False, verbose_name="ขอใบกำกับภาษี")
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         db_table = 'vat_order_sale_items'
-        # In a real POS, a serial is sold once. Unique together prevents double import issues.
         unique_together = ['vat_order', 'serial_no']
         ordering = ['-vat_order__date', 'serial_no']
 
     def __str__(self):
         return f"{self.serial_no} - {self.product_name}"
+
+
+# ---------------------------------------------------------------------------
+# Bug / Feature Request System
+# ---------------------------------------------------------------------------
+
+class BugReport(models.Model):
+    TYPE_CHOICES = [('BUG', 'รายงานบั๊ก'), ('FEATURE', 'ขอฟีเจอร์ใหม่')]
+    STATUS_CHOICES = [
+        ('NEW', 'ใหม่'),
+        ('IN_PROGRESS', 'กำลังดำเนินการ'),
+        ('RESOLVED', 'แก้ไขแล้ว'),
+        ('REJECTED', 'ปฏิเสธ'),
+    ]
+
+    title = models.CharField(max_length=200, verbose_name='หัวเรื่อง')
+    report_type = models.CharField(max_length=10, choices=TYPE_CHOICES, default='BUG')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='NEW')
+    summary = models.TextField(verbose_name='รายละเอียด')
+    conversation = models.JSONField(default=list, blank=True)
+    degraded = models.BooleanField(default=False)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='bug_reports')
+    created_at = models.DateTimeField(auto_now_add=True)
+    resolved_at = models.DateTimeField(null=True, blank=True)
+    admin_notes = models.TextField(blank=True)
+
+    class Meta:
+        db_table = 'bug_reports'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"[{self.report_type}] {self.title}"
+
+
+class BugReportImage(models.Model):
+    bug_report = models.ForeignKey(
+        BugReport, on_delete=models.CASCADE, null=True, blank=True, related_name='images'
+    )
+    image = models.ImageField(upload_to='bug_reports/%Y/%m/')
+    session_key = models.CharField(max_length=40, blank=True, db_index=True)
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'bug_report_images'
+        ordering = ['uploaded_at']
+
+    def __str__(self):
+        return f"Image for {self.bug_report_id or 'draft'}"

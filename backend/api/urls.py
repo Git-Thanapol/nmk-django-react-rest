@@ -44,9 +44,30 @@ urlpatterns = [
     path('import/platforms/', views.platform_import_view, name='platform_import'),
     path('product_mapping/', views.product_mapping_view, name='product_mapping'),
     path('product_mapping/edit/<int:pk>/', views.product_mapping_view, name='product_mapping_edit'),
+    path('api/product-mapping/suggest/', views.product_mapping_suggest_view, name='product_mapping_suggest'),
+
+    # --- Global Search ---
+    path('api/search/', views.global_search_view, name='global_search'),
+
+    # --- Bug / Feature Reports ---
+    path('bug-reports/', views.bug_report_list, name='bug_report_list'),
+    path('bug-reports/<int:pk>/', views.bug_report_detail, name='bug_report_detail'),
+    path('bug-reports/<int:pk>/status/', views.bug_report_update_status, name='bug_report_status'),
+    path('bug-reports/chat/', views.bug_report_chat, name='bug_report_chat'),
+    path('bug-reports/upload-image/', views.bug_report_upload_image, name='bug_report_upload_image'),
+    path('bug-reports/submit/', views.bug_report_submit, name='bug_report_submit'),
+
+    # --- Dashboard ---
+    path('dashboard/', views.dashboard_view, name='dashboard'),
+    path('dashboard/api/kpi-summary/', views.dashboard_kpi_summary, name='dashboard_kpi_summary'),
+    path('dashboard/api/sales-trend/', views.dashboard_sales_trend, name='dashboard_sales_trend'),
+    path('dashboard/api/top-skus/', views.dashboard_top_skus, name='dashboard_top_skus'),
+    path('dashboard/api/purchase-vs-sales/', views.dashboard_purchase_vs_sales, name='dashboard_purchase_vs_sales'),
+    path('dashboard/api/stock-alerts/', views.dashboard_stock_alerts, name='dashboard_stock_alerts'),
 
     # --- Help & Reports ---
     path('help/', views.help, name='help'),
+    path('api/help/ask/', views.help_ask_view, name='help_ask'),
     path('reports/', views.report_dashboard_view, name='reports'),
 
     # --- Companies ---

@@ -13,6 +13,6 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name='invoice',
             name='status',
-            field=models.CharField(choices=[('DRAFT', 'แบบร่าง'), ('BILLED', 'ออกใบกำกับภาษีแล้ว'), ('CANCELLED', 'ยกเลิก')], default='DRAFT'),
+            field=models.CharField(max_length=20, choices=[('DRAFT', 'แบบร่าง'), ('BILLED', 'ออกใบกำกับภาษีแล้ว'), ('CANCELLED', 'ยกเลิก')], default='DRAFT'),
         ),
     ]

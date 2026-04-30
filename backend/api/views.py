@@ -40,7 +40,9 @@ from .models import (
     Transaction,
     Vendor,
     ImportLog,
-    WithholdingTaxCert
+    WithholdingTaxCert,
+    BugReport,
+    BugReportImage,
 )
 
 # Local apps – forms
@@ -75,6 +77,15 @@ from .utils_reports import (
     generate_combined_tax_report,
 )
 from .tasks import run_import_background # Import the function from step 2
+from .utils_llm import chat as llm_chat, help_ask as llm_help_ask, suggest_product_matches, LLMUnavailable
+from .utils_dashboard import (
+    resolve_date_range,
+    get_kpi_summary,
+    get_sales_trend,
+    get_top_skus,
+    get_purchase_vs_sales,
+    get_stock_alerts,
+)
 
 
 
@@ -112,9 +123,252 @@ def home(request):
     return render(request, 'base.html')
 
 def help(request):
-    # Get all Posts
-    # Render app template with context
     return render(request, 'help.html')
+
+
+@login_required
+def help_ask_view(request):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+    import json as _json
+    try:
+        body = _json.loads(request.body)
+    except _json.JSONDecodeError:
+        return JsonResponse({'error': 'invalid JSON'}, status=400)
+    question = body.get('question', '').strip()
+    if not question:
+        return JsonResponse({'error': 'question required'}, status=400)
+    try:
+        result = llm_help_ask(question)
+        return JsonResponse(result)
+    except LLMUnavailable as e:
+        from django.conf import settings as dj_settings
+        resp = {'degraded': True, 'answer': 'ขออภัย ระบบ AI ไม่พร้อมใช้งานตอนนี้ กรุณาดูคำตอบในคู่มือด้านบนได้เลย'}
+        if dj_settings.DEBUG:
+            resp['debug_reason'] = str(e)
+        return JsonResponse(resp)
+
+
+# ─── Dashboard ──────────────────────────────────────────────────────────────
+
+@login_required
+def dashboard_view(request):
+    companies = Company.objects.filter(is_active=True).order_by('name')
+    return render(request, 'api/dashboard.html', {'companies': companies})
+
+
+@login_required
+def dashboard_kpi_summary(request):
+    company_id = request.GET.get('company') or None
+    period = request.GET.get('period', 'this_month')
+    from_date_str = request.GET.get('from')
+    to_date_str = request.GET.get('to')
+    from_date_obj = None
+    to_date_obj = None
+    if from_date_str:
+        try:
+            from datetime import date
+            from_date_obj = date.fromisoformat(from_date_str)
+        except ValueError:
+            pass
+    if to_date_str:
+        try:
+            from datetime import date
+            to_date_obj = date.fromisoformat(to_date_str)
+        except ValueError:
+            pass
+    start, end = resolve_date_range(period, from_date_obj, to_date_obj)
+    data = get_kpi_summary(company_id=company_id, from_date=start, to_date=end)
+    return JsonResponse(data)
+
+
+@login_required
+def dashboard_sales_trend(request):
+    company_id = request.GET.get('company') or None
+    try:
+        days = int(request.GET.get('days', 30))
+    except ValueError:
+        days = 30
+    data = get_sales_trend(company_id=company_id, days=days)
+    return JsonResponse(data, safe=False)
+
+
+@login_required
+def dashboard_top_skus(request):
+    company_id = request.GET.get('company') or None
+    period = request.GET.get('period', 'this_month')
+    from_date_str = request.GET.get('from')
+    to_date_str = request.GET.get('to')
+    from_date_obj = to_date_obj = None
+    if from_date_str:
+        try:
+            from datetime import date
+            from_date_obj = date.fromisoformat(from_date_str)
+        except ValueError:
+            pass
+    if to_date_str:
+        try:
+            from datetime import date
+            to_date_obj = date.fromisoformat(to_date_str)
+        except ValueError:
+            pass
+    start, end = resolve_date_range(period, from_date_obj, to_date_obj)
+    try:
+        limit = int(request.GET.get('limit', 10))
+    except ValueError:
+        limit = 10
+    data = get_top_skus(company_id=company_id, from_date=start, to_date=end, limit=limit)
+    return JsonResponse(data, safe=False)
+
+
+@login_required
+def dashboard_purchase_vs_sales(request):
+    company_id = request.GET.get('company') or None
+    try:
+        months = int(request.GET.get('months', 6))
+    except ValueError:
+        months = 6
+    data = get_purchase_vs_sales(company_id=company_id, months=months)
+    return JsonResponse(data, safe=False)
+
+
+@login_required
+def dashboard_stock_alerts(request):
+    company_id = request.GET.get('company') or None
+    try:
+        threshold = int(request.GET.get('threshold', 5))
+    except ValueError:
+        threshold = 5
+    data = get_stock_alerts(company_id=company_id, threshold=threshold)
+    return JsonResponse(data, safe=False)
+
+
+# ─── Bug / Feature Request ───────────────────────────────────────────────────
+
+@login_required
+def bug_report_chat(request):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+    import json as _json
+    try:
+        body = _json.loads(request.body)
+    except _json.JSONDecodeError:
+        return JsonResponse({'degraded': True})
+    history = body.get('history', [])
+    message = body.get('message', '').strip()
+    if not message:
+        return JsonResponse({'degraded': True})
+    try:
+        result = llm_chat(history, message)
+        return JsonResponse(result)
+    except LLMUnavailable as e:
+        from django.conf import settings as dj_settings
+        resp = {'degraded': True}
+        if dj_settings.DEBUG:
+            resp['debug_reason'] = str(e)
+        return JsonResponse(resp)
+
+
+@login_required
+def bug_report_upload_image(request):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+    image_file = request.FILES.get('image')
+    if not image_file:
+        return JsonResponse({'error': 'no image'}, status=400)
+    img = BugReportImage.objects.create(
+        image=image_file,
+        session_key=request.session.session_key or '',
+    )
+    return JsonResponse({'id': img.pk, 'url': img.image.url})
+
+
+@login_required
+def bug_report_submit(request):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+    import json as _json
+    try:
+        body = _json.loads(request.body)
+    except _json.JSONDecodeError:
+        return JsonResponse({'error': 'invalid JSON'}, status=400)
+
+    title = body.get('title', '').strip()
+    summary = body.get('summary', '').strip()
+    report_type = body.get('type', 'BUG')
+    conversation = body.get('conversation', [])
+    is_degraded = body.get('degraded', False)
+    image_ids = body.get('image_ids', [])
+
+    if not title or not summary:
+        return JsonResponse({'error': 'title and summary required'}, status=400)
+
+    report = BugReport.objects.create(
+        title=title,
+        summary=summary,
+        report_type=report_type if report_type in ('BUG', 'FEATURE') else 'BUG',
+        conversation=conversation,
+        degraded=bool(is_degraded),
+        created_by=request.user,
+    )
+
+    # Link uploaded images; delete orphans from this session
+    session_key = request.session.session_key or ''
+    if image_ids:
+        BugReportImage.objects.filter(pk__in=image_ids).update(bug_report=report, session_key='')
+    # Clean up other uploads from this session that weren't chosen
+    if session_key:
+        BugReportImage.objects.filter(session_key=session_key, bug_report__isnull=True).delete()
+
+    return JsonResponse({'id': report.pk, 'url': f'/bug-reports/{report.pk}/'})
+
+
+@login_required
+def bug_report_list(request):
+    status_filter = request.GET.get('status', '')
+    if request.user.is_staff:
+        qs = BugReport.objects.all()
+    else:
+        qs = BugReport.objects.filter(created_by=request.user)
+    if status_filter:
+        qs = qs.filter(status=status_filter)
+    return render(request, 'api/bug_reports/list.html', {
+        'reports': qs,
+        'status_filter': status_filter,
+    })
+
+
+@login_required
+def bug_report_detail(request, pk):
+    if request.user.is_staff:
+        report = get_object_or_404(BugReport, pk=pk)
+    else:
+        report = get_object_or_404(BugReport, pk=pk, created_by=request.user)
+    return render(request, 'api/bug_reports/detail.html', {
+        'report': report,
+        'status_choices': BugReport.STATUS_CHOICES,
+    })
+
+
+@login_required
+def bug_report_update_status(request, pk):
+    if not request.user.is_staff:
+        return JsonResponse({'error': 'forbidden'}, status=403)
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+    report = get_object_or_404(BugReport, pk=pk)
+    new_status = request.POST.get('status')
+    admin_notes = request.POST.get('admin_notes', '')
+    if new_status in dict(BugReport.STATUS_CHOICES):
+        report.status = new_status
+    report.admin_notes = admin_notes
+    if new_status == 'RESOLVED' and not report.resolved_at:
+        from django.utils import timezone as tz
+        report.resolved_at = tz.now()
+    report.save()
+    messages.success(request, 'อัปเดตสถานะเรียบร้อยแล้ว')
+    return redirect('bug_report_detail', pk=pk)
+
 
 def login_view(request):
     if request.method == 'POST':
@@ -123,7 +377,7 @@ def login_view(request):
         user = authenticate(request, username=username, password=password)
         if user is not None:
             login(request, user)
-            return redirect('help')
+            return redirect('dashboard')
         else:
             messages.error(request, 'Username หรือ Password ไม่ถูกต้อง')
     return render(request, 'login.html')
@@ -131,6 +385,53 @@ def login_view(request):
 def logout_view(request):
     logout(request)
     return redirect('login')
+
+
+# ─── Global Search ───────────────────────────────────────────────────────────
+
+@login_required
+def global_search_view(request):
+    q = request.GET.get('q', '').strip()
+    if len(q) < 2:
+        return JsonResponse({
+            'products': [], 'vendors': [], 'invoices': [], 'purchases': [], 'companies': []
+        })
+
+    def _fmt_products():
+        qs = Product.objects.filter(
+            Q(sku__icontains=q) | Q(name__icontains=q) | Q(category__icontains=q)
+        ).order_by('-created_at')[:5]
+        return [{'id': p.pk, 'label': f'{p.sku} — {p.name}', 'url': f'/products/edit/{p.pk}/'} for p in qs]
+
+    def _fmt_vendors():
+        qs = Vendor.objects.filter(
+            Q(name__icontains=q) | Q(phone__icontains=q)
+        ).order_by('-created_at')[:5]
+        return [{'id': v.pk, 'label': v.name, 'url': f'/vendors/edit/{v.pk}/'} for v in qs]
+
+    def _fmt_invoices():
+        qs = Invoice.objects.filter(
+            Q(invoice_number__icontains=q) | Q(recipient_name__icontains=q) | Q(vendor__name__icontains=q)
+        ).order_by('-invoice_date')[:5]
+        return [{'id': i.pk, 'label': f'{i.invoice_number} — {i.recipient_name or ""}', 'url': f'/invoices/edit/{i.pk}/'} for i in qs]
+
+    def _fmt_purchases():
+        qs = PurchaseOrder.objects.filter(
+            Q(po_number__icontains=q) | Q(vendor__name__icontains=q)
+        ).order_by('-order_date')[:5]
+        return [{'id': p.pk, 'label': f'{p.po_number} — {p.vendor.name}', 'url': f'/purchases/edit/{p.pk}/'} for p in qs]
+
+    def _fmt_companies():
+        qs = Company.objects.filter(name__icontains=q).order_by('name')[:5]
+        return [{'id': c.pk, 'label': c.name, 'url': f'/companies/{c.pk}/edit/'} for c in qs]
+
+    return JsonResponse({
+        'products': _fmt_products(),
+        'vendors': _fmt_vendors(),
+        'invoices': _fmt_invoices(),
+        'purchases': _fmt_purchases(),
+        'companies': _fmt_companies(),
+    })
 
 @login_required
 def purchase_form(request):
@@ -761,6 +1062,36 @@ def product_mapping_view(request):
         'products': products
     }
     return render(request, 'product_mapping.html', context)
+
+
+@login_required
+def product_mapping_suggest_view(request):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+
+    import json as _json
+    from django.conf import settings as dj_settings
+
+    try:
+        body = _json.loads(request.body)
+        items = body.get('items', [])
+    except (_json.JSONDecodeError, Exception):
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    if not items:
+        return JsonResponse({'suggestions': {}, 'degraded': False})
+
+    candidates = list(Product.objects.filter(is_active=True).values('id', 'sku', 'name'))
+
+    try:
+        result = suggest_product_matches(items, candidates)
+        return JsonResponse(result)
+    except LLMUnavailable as e:
+        resp = {'degraded': True, 'suggestions': {}}
+        if dj_settings.DEBUG:
+            resp['debug_reason'] = str(e)
+        return JsonResponse(resp)
+
 
 def report_dashboard_view(request):
     form = ReportFilterForm(request.POST or None)

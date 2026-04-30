@@ -1,165 +1,965 @@
-{% extends 'base.html' %} 
-{% load static %} 
+{% extends 'base.html' %}
+{% load static %}
 
-{% block title %}Help Center{% endblock %} 
-{% block page_title %}Help & Support{% endblock %} 
+{% block title %}Help & Support{% endblock %}
+{% block page_title %}Help & Support{% endblock %}
 
 {% block content %}
+<style>
+  .help-toc {
+    position: sticky;
+    top: 1rem;
+    max-height: calc(100vh - 2rem);
+    overflow-y: auto;
+  }
+  .help-toc::-webkit-scrollbar { width: 4px; }
+  .help-toc::-webkit-scrollbar-track { background: transparent; }
+  .help-toc::-webkit-scrollbar-thumb { background: #444; border-radius: 4px; }
 
-<div
-  id="helpScope"
-  class="card rounded-xl p-4 main-card border-0"
-  style="background-color: transparent"
->
-  <div class="row mb-4">
-    <div class="col-12">
-      <h5 class="mb-3 text-white">
-        <i class="bi bi-file-earmark-arrow-down me-2"></i>System Documents
-      </h5>
+  .toc-link {
+    display: block;
+    padding: 5px 10px;
+    border-radius: 6px;
+    text-decoration: none;
+    color: #aaa;
+    font-size: 0.85rem;
+    transition: all 0.15s;
+  }
+  .toc-link:hover, .toc-link.active { background: rgba(99,179,237,0.15); color: #63b3ed; }
+  .toc-link.section-title { color: #fff; font-weight: 600; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 0.5rem; cursor: default; padding-left: 4px; }
+  .toc-link.section-title:hover { background: transparent; color: #fff; }
+  .toc-sub { padding-left: 18px; }
+
+  .help-section { scroll-margin-top: 1.5rem; }
+  .step-badge {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 24px; height: 24px; border-radius: 50%;
+    background: rgba(99,179,237,0.2); color: #63b3ed;
+    font-size: 0.75rem; font-weight: 700; flex-shrink: 0;
+  }
+  .step-row { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 10px; }
+  .step-row .step-text { color: #ccc; line-height: 1.5; }
+
+  .tip-box {
+    background: rgba(72, 187, 120, 0.08);
+    border-left: 3px solid #48bb78;
+    border-radius: 0 8px 8px 0;
+    padding: 10px 14px;
+    margin: 12px 0;
+  }
+  .tip-box .tip-label { color: #48bb78; font-weight: 600; font-size: 0.8rem; margin-bottom: 4px; }
+  .tip-box p { color: #aaa; margin: 0; font-size: 0.875rem; }
+
+  .warn-box {
+    background: rgba(237, 137, 54, 0.08);
+    border-left: 3px solid #ed8936;
+    border-radius: 0 8px 8px 0;
+    padding: 10px 14px;
+    margin: 12px 0;
+  }
+  .warn-box .warn-label { color: #ed8936; font-weight: 600; font-size: 0.8rem; margin-bottom: 4px; }
+  .warn-box p { color: #aaa; margin: 0; font-size: 0.875rem; }
+
+  .info-box {
+    background: rgba(99, 179, 237, 0.08);
+    border-left: 3px solid #63b3ed;
+    border-radius: 0 8px 8px 0;
+    padding: 10px 14px;
+    margin: 12px 0;
+  }
+  .info-box .info-label { color: #63b3ed; font-weight: 600; font-size: 0.8rem; margin-bottom: 4px; }
+  .info-box p { color: #aaa; margin: 0; font-size: 0.875rem; }
+
+  .feature-chip {
+    display: inline-block; padding: 2px 8px; border-radius: 12px;
+    background: rgba(99,179,237,0.15); color: #63b3ed;
+    font-size: 0.75rem; font-weight: 500; margin: 2px;
+  }
+  .feature-chip.green { background: rgba(72,187,120,0.15); color: #48bb78; }
+  .feature-chip.orange { background: rgba(237,137,54,0.15); color: #ed8936; }
+  .feature-chip.purple { background: rgba(159,122,234,0.15); color: #9f7aea; }
+
+  .section-icon {
+    width: 36px; height: 36px; border-radius: 10px;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 1.1rem; margin-right: 10px; flex-shrink: 0;
+  }
+
+  .help-search-box {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 10px;
+    padding: 10px 14px;
+    color: #fff;
+    width: 100%;
+    outline: none;
+    font-size: 0.9rem;
+    transition: border-color 0.2s;
+  }
+  .help-search-box:focus { border-color: #63b3ed; background: rgba(99,179,237,0.05); }
+  .help-search-box::placeholder { color: #666; }
+
+  .faq-item { border-bottom: 1px solid rgba(255,255,255,0.07); padding: 14px 0; }
+  .faq-item:last-child { border-bottom: none; }
+  .faq-q { color: #fff; font-weight: 500; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+  .faq-q:hover { color: #63b3ed; }
+  .faq-a { color: #aaa; font-size: 0.875rem; padding-top: 8px; display: none; line-height: 1.7; }
+  .faq-item.open .faq-a { display: block; }
+  .faq-item.open .faq-chevron { transform: rotate(180deg); }
+  .faq-chevron { transition: transform 0.2s; color: #666; }
+
+  .shortcut-table td { padding: 6px 10px; color: #ccc; font-size: 0.85rem; border-color: rgba(255,255,255,0.07); }
+  .shortcut-table td:first-child { font-family: monospace; color: #63b3ed; }
+
+  .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 6px; }
+  .dot-draft { background: #666; }
+  .dot-paid { background: #48bb78; }
+  .dot-billed { background: #63b3ed; }
+  .dot-cancelled { background: #fc8181; }
+  .dot-processing { background: #ed8936; }
+
+  .card-help { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 20px; margin-bottom: 16px; }
+  .help-h2 { font-size: 1.15rem; font-weight: 600; color: #fff; margin-bottom: 16px; display: flex; align-items: center; }
+  .help-h3 { font-size: 0.95rem; font-weight: 600; color: #e2e8f0; margin: 16px 0 8px; }
+  .help-p { color: #aaa; font-size: 0.875rem; line-height: 1.7; margin-bottom: 10px; }
+  .help-ul { color: #aaa; font-size: 0.875rem; padding-left: 20px; line-height: 1.9; }
+
+  .back-to-top {
+    position: fixed; bottom: 2rem; right: 2rem;
+    width: 40px; height: 40px; border-radius: 50%;
+    background: rgba(99,179,237,0.2); border: 1px solid rgba(99,179,237,0.3);
+    color: #63b3ed; display: flex; align-items: center; justify-content: center;
+    cursor: pointer; opacity: 0; transition: opacity 0.3s;
+    text-decoration: none; z-index: 100;
+  }
+  .back-to-top.visible { opacity: 1; }
+
+  .highlight-text { color: #63b3ed; font-weight: 500; }
+
+  @media (max-width: 991px) {
+    .help-toc { display: none; }
+  }
+</style>
+
+<div id="helpTop"></div>
+
+<!-- Search Bar -->
+<div class="mb-4">
+  <div class="position-relative">
+    <i class="bi bi-search position-absolute" style="left:12px;top:50%;transform:translateY(-50%);color:#666;"></i>
+    <input type="text" class="help-search-box" id="helpSearch" placeholder="ค้นหาหัวข้อที่ต้องการ... เช่น ใบสั่งซื้อ, รายงาน, Shopee" style="padding-left:36px;">
+  </div>
+  <div id="searchResults" class="mt-2"></div>
+</div>
+
+<div class="row g-4">
+
+  <!-- TOC Sidebar -->
+  <div class="col-lg-3 d-none d-lg-block">
+    <div class="help-toc card-help">
+      <div class="small text-white fw-bold mb-2 pb-2" style="border-bottom:1px solid rgba(255,255,255,0.1)">
+        <i class="bi bi-list-ul me-2"></i>สารบัญ
+      </div>
+      <a href="#sec-overview" class="toc-link toc-sub">🏠 ภาพรวมระบบ</a>
+      <a href="#sec-dashboard" class="toc-link toc-sub">📊 Dashboard</a>
+
+      <div class="toc-link section-title mt-2">จัดการข้อมูล</div>
+      <a href="#sec-purchase" class="toc-link toc-sub">🛒 ใบสั่งซื้อ (PO)</a>
+      <a href="#sec-invoice" class="toc-link toc-sub">🧾 ใบกำกับ/ใบขาย</a>
+      <a href="#sec-product" class="toc-link toc-sub">📦 สินค้า</a>
+      <a href="#sec-vendor" class="toc-link toc-sub">👥 ผู้จำหน่าย</a>
+      <a href="#sec-transaction" class="toc-link toc-sub">💰 รายรับ/รายจ่าย</a>
+
+      <div class="toc-link section-title mt-2">Online Platform</div>
+      <a href="#sec-import" class="toc-link toc-sub">📥 นำเข้าข้อมูล</a>
+      <a href="#sec-mapping" class="toc-link toc-sub">🔗 จับคู่สินค้า</a>
+
+      <div class="toc-link section-title mt-2">ภาษีและรายงาน</div>
+      <a href="#sec-reports" class="toc-link toc-sub">📈 รายงาน</a>
+      <a href="#sec-vat" class="toc-link toc-sub">📋 VAT Tracking</a>
+      <a href="#sec-wht" class="toc-link toc-sub">🏛️ 50 ทวิ</a>
+
+      <div class="toc-link section-title mt-2">อื่นๆ</div>
+      <a href="#sec-company" class="toc-link toc-sub">🏢 บริษัท</a>
+      <a href="#sec-search" class="toc-link toc-sub">🔍 ค้นหาทั่วไป</a>
+      <a href="#sec-bugreport" class="toc-link toc-sub">🐛 แจ้งปัญหา</a>
+
+      <div class="toc-link section-title mt-2">อ้างอิง</div>
+      <a href="#sec-faq" class="toc-link toc-sub">❓ FAQ</a>
+      <a href="#sec-status" class="toc-link toc-sub">🟢 สถานะต่างๆ</a>
     </div>
+  </div>
 
-    <div class="col-md-6 col-lg-4">
-      <div class="card h-100 rounded-xl">
-        <div
-          class="card-body d-flex align-items-center justify-content-between"
-        >
-          <div>
-            <div class="h6 mb-1 text-white">User Manual (Full)</div>
-            <div class="small muted">PDF • 2.4 MB</div>
+  <!-- Main Content -->
+  <div class="col-lg-9" id="helpContent">
+
+    <!-- Overview -->
+    <div id="sec-overview" class="help-section">
+      <div class="card-help">
+        <div class="help-h2">
+          <span class="section-icon" style="background:rgba(99,179,237,0.15)">🏠</span>
+          ระบบ Namkang Phone คืออะไร?
+        </div>
+        <p class="help-p">
+          Namkang Phone เป็นระบบจัดการธุรกิจ (ERP) แบบ Internal ที่ช่วยจัดการทุกอย่างตั้งแต่
+          <strong class="text-white">ซื้อสินค้าเข้า → ขายออก → ดูรายงาน → จัดการภาษี</strong>
+          รองรับหลายบริษัท และเชื่อมกับ Platform ออนไลน์ (Shopee, Lazada, TikTok) ได้โดยตรง
+        </p>
+        <div class="row g-3 mt-1">
+          <div class="col-sm-6 col-xl-4">
+            <div style="background:rgba(99,179,237,0.08);border-radius:10px;padding:14px;">
+              <div class="mb-1">🛒 <strong class="text-white">Purchase</strong></div>
+              <div class="small text-secondary">บันทึกการซื้อสินค้าจากซัพพลายเออร์ ติดตาม stock เข้า</div>
+            </div>
           </div>
-          <a
-            href="{% static 'docs/namkang_manual.pdf' %}"
-            class="btn btn-brand btn-sm"
-            download
-          >
-            <i class="bi bi-download me-1"></i> Download
-          </a>
+          <div class="col-sm-6 col-xl-4">
+            <div style="background:rgba(72,187,120,0.08);border-radius:10px;padding:14px;">
+              <div class="mb-1">🧾 <strong class="text-white">Invoice</strong></div>
+              <div class="small text-secondary">ออกใบกำกับ ขายสินค้า ติดตาม stock ออก คำนวณกำไร</div>
+            </div>
+          </div>
+          <div class="col-sm-6 col-xl-4">
+            <div style="background:rgba(159,122,234,0.08);border-radius:10px;padding:14px;">
+              <div class="mb-1">📊 <strong class="text-white">Reports</strong></div>
+              <div class="small text-secondary">ภาษีซื้อ ภาษีขาย รายงาน Stock ส่งออก Excel</div>
+            </div>
+          </div>
+          <div class="col-sm-6 col-xl-4">
+            <div style="background:rgba(237,137,54,0.08);border-radius:10px;padding:14px;">
+              <div class="mb-1">🛍️ <strong class="text-white">Platform Import</strong></div>
+              <div class="small text-secondary">นำข้อมูลจาก Shopee/Lazada/TikTok เข้าระบบอัตโนมัติ</div>
+            </div>
+          </div>
+          <div class="col-sm-6 col-xl-4">
+            <div style="background:rgba(252,129,129,0.08);border-radius:10px;padding:14px;">
+              <div class="mb-1">🏛️ <strong class="text-white">Tax (50 ทวิ)</strong></div>
+              <div class="small text-secondary">ออกใบรับรองหักภาษี ณ ที่จ่าย พิมพ์ 4 สำเนา</div>
+            </div>
+          </div>
+          <div class="col-sm-6 col-xl-4">
+            <div style="background:rgba(99,179,237,0.08);border-radius:10px;padding:14px;">
+              <div class="mb-1">📋 <strong class="text-white">VAT Tracking</strong></div>
+              <div class="small text-secondary">ติดตาม VAT ซื้อ/ขาย แยก VAT / ไม่มี VAT</div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
 
-    <div class="col-md-6 col-lg-4">
-      <div class="card h-100 rounded-xl">
-        <div
-          class="card-body d-flex align-items-center justify-content-between"
-        >
-          <div>
-            <div class="h6 mb-1 text-white">Quick Start Guide</div>
-            <div class="small muted">PDF • 800 KB</div>
-          </div>
-          <a href="#" class="btn btn-ghost btn-sm">
-            <i class="bi bi-download me-1"></i> Download
-          </a>
+    <!-- Dashboard -->
+    <div id="sec-dashboard" class="help-section">
+      <div class="card-help">
+        <div class="help-h2">
+          <span class="section-icon" style="background:rgba(99,179,237,0.15)">📊</span>
+          Dashboard — หน้าหลักของระบบ
+        </div>
+        <p class="help-p">หน้า Dashboard เปิดมาแล้วจะเห็นภาพรวมทั้งหมดของธุรกิจ อัปเดตแบบ Real-time</p>
+
+        <div class="help-h3">มีอะไรให้ดูบ้าง?</div>
+        <ul class="help-ul">
+          <li><strong class="text-white">KPI Summary</strong> — ยอดซื้อรวม, ยอดขายรวม, กำไร, ภาษี ของช่วงเวลาที่เลือก</li>
+          <li><strong class="text-white">Sales Trend</strong> — กราฟแนวโน้มยอดขายย้อนหลัง N วัน</li>
+          <li><strong class="text-white">Top Products</strong> — สินค้าขายดีอันดับต้นๆ</li>
+          <li><strong class="text-white">Purchase vs Sales</strong> — เปรียบเทียบซื้อ vs ขาย รายเดือน</li>
+          <li><strong class="text-white">Stock Alerts</strong> — สินค้าใกล้หมด stock (ต่ำกว่า threshold)</li>
+        </ul>
+
+        <div class="tip-box">
+          <div class="tip-label">💡 เทคนิค</div>
+          <p>กรองข้อมูลตามบริษัทได้ ถ้ามีหลายบริษัทในระบบ ใช้ dropdown เลือกบริษัทที่ต้องการดู หรือเลือก "ทุกบริษัท" เพื่อดูภาพรวม</p>
         </div>
       </div>
     </div>
-  </div>
 
-  <hr class="border-secondary my-4" />
+    <!-- Purchase Orders -->
+    <div id="sec-purchase" class="help-section">
+      <div class="card-help">
+        <div class="help-h2">
+          <span class="section-icon" style="background:rgba(237,137,54,0.15)">🛒</span>
+          ใบสั่งซื้อ (Purchase Order)
+        </div>
+        <p class="help-p">ใช้บันทึกการซื้อสินค้าจากซัพพลายเออร์ เมื่อบันทึกแล้ว stock สินค้าจะเพิ่มขึ้น</p>
 
-  <div class="row mb-4 g-3">
-    <div class="col-12">
-      <h5 class="mb-3 text-white">
-        <i class="bi bi-headset me-2"></i>Contact Support
-      </h5>
-    </div>
+        <div class="help-h3">วิธีสร้างใบสั่งซื้อใหม่</div>
+        <div class="step-row"><span class="step-badge">1</span><span class="step-text">คลิก <strong class="text-white">รายการซื้อเข้า</strong> ในเมนูด้านซ้าย</span></div>
+        <div class="step-row"><span class="step-badge">2</span><span class="step-text">กรอก <strong class="text-white">เลขที่เอกสาร (PO Number)</strong> — ต้องไม่ซ้ำกันในแต่ละบริษัท</span></div>
+        <div class="step-row"><span class="step-badge">3</span><span class="step-text">เลือก <strong class="text-white">ผู้จำหน่าย (Vendor)</strong> และ <strong class="text-white">บริษัท</strong></span></div>
+        <div class="step-row"><span class="step-badge">4</span><span class="step-text">เลือก <strong class="text-white">วันที่</strong> และ <strong class="text-white">ประเภทการซื้อ</strong></span></div>
+        <div class="step-row"><span class="step-badge">5</span><span class="step-text">เพิ่มรายการสินค้า: เลือกสินค้า, ใส่จำนวน, ราคา/หน่วย</span></div>
+        <div class="step-row"><span class="step-badge">6</span><span class="step-text">กดปุ่ม <strong class="text-white">บันทึก</strong></span></div>
 
-    <div class="col-md-4">
-      <div class="card p-3 rounded-xl text-center h-100">
-        <i class="bi bi-telephone-fill text-primary fs-2 mb-2"></i>
-        <h6 class="text-white">Phone Support</h6>
-        <p class="small muted mb-2">Mon-Fri, 9am - 6pm</p>
-        <a
-          href="tel:+66012345678"
-          class="text-decoration-none text-white fw-bold"
-          >012-345-6789</a
-        >
+        <div class="help-h3">สถานะใบสั่งซื้อ</div>
+        <div class="d-flex flex-wrap gap-2 mb-3">
+          <div><span class="status-dot dot-draft"></span><span class="text-secondary small">Draft</span> — บันทึกไว้ก่อน ยังไม่จ่ายเงิน</div>
+          <div><span class="status-dot dot-paid"></span><span class="text-secondary small">Paid</span> — จ่ายเงินแล้ว stock เข้าระบบ</div>
+          <div><span class="status-dot dot-cancelled"></span><span class="text-secondary small">Cancelled</span> — ยกเลิกแล้ว</div>
+        </div>
+
+        <div class="warn-box">
+          <div class="warn-label">⚠️ ข้อควรระวัง</div>
+          <p>เมื่อเปลี่ยนสถานะเป็น <strong>Paid</strong> แล้ว จะแก้ไขรายการสินค้าไม่ได้ ถ้าต้องการแก้ต้อง Cancelled แล้วสร้างใหม่</p>
+        </div>
+
+        <div class="help-h3">ฟีเจอร์เพิ่มเติม</div>
+        <ul class="help-ul">
+          <li><strong class="text-white">แนบไฟล์</strong> — แนบใบเสร็จ/ใบกำกับจากผู้จำหน่ายได้ (ใบ Paid สามารถแนบไฟล์ได้)</li>
+          <li><strong class="text-white">ข้อมูลภาษี</strong> — ใส่วันที่ออกภาษีและเลขที่ลำดับ สำหรับรายงานภาษีซื้อ</li>
+          <li><strong class="text-white">ส่วนลด</strong> — ใส่ส่วนลดได้ทั้งแบบจำนวนเงิน</li>
+          <li><strong class="text-white">VAT</strong> — เลือกว่าราคาในใบ include VAT อยู่แล้วหรือยัง และ % ภาษี</li>
+        </ul>
+
+        <div class="tip-box">
+          <div class="tip-label">💡 เกี่ยวกับ Stock</div>
+          <p>Stock จะถูกนับก็ต่อเมื่อใบสั่งซื้อ <strong>Paid</strong> เท่านั้น ถ้า Draft อยู่ยังไม่เข้า stock</p>
+        </div>
       </div>
     </div>
 
-    <div class="col-md-4">
-      <div class="card p-3 rounded-xl text-center h-100">
-        <i class="bi bi-line text-success fs-2 mb-2"></i>
-        <h6 class="text-white">Line Official</h6>
-        <p class="small muted mb-2">Chat with our team</p>
-        <a href="#" class="text-decoration-none text-white fw-bold"
-          >@NamkangSystem</a
-        >
+    <!-- Invoice -->
+    <div id="sec-invoice" class="help-section">
+      <div class="card-help">
+        <div class="help-h2">
+          <span class="section-icon" style="background:rgba(72,187,120,0.15)">🧾</span>
+          ใบกำกับภาษี / ใบขาย (Invoice)
+        </div>
+        <p class="help-p">ใช้บันทึกการขายสินค้า ระบบจะตัด stock ออกอัตโนมัติและคำนวณกำไรให้</p>
+
+        <div class="help-h3">วิธีสร้างใบขายใหม่</div>
+        <div class="step-row"><span class="step-badge">1</span><span class="step-text">คลิก <strong class="text-white">ใบกำกับ/ใบขาย</strong> ในเมนูด้านซ้าย</span></div>
+        <div class="step-row"><span class="step-badge">2</span><span class="step-text">กรอกเลขที่ใบกำกับ, วันที่, เลือกบริษัท</span></div>
+        <div class="step-row"><span class="step-badge">3</span><span class="step-text">ใส่ข้อมูลลูกค้า: ชื่อ, เบอร์โทร, ที่อยู่จัดส่ง (ถ้ามี)</span></div>
+        <div class="step-row"><span class="step-badge">4</span><span class="step-text">ถ้าขายผ่าน Platform ให้ใส่ Platform Name, Order ID, Tracking Number</span></div>
+        <div class="step-row"><span class="step-badge">5</span><span class="step-text">เพิ่มสินค้า: เลือก Product → ระบบดึง Batch (lot) ให้อัตโนมัติแบบ FIFO</span></div>
+        <div class="step-row"><span class="step-badge">6</span><span class="step-text">กดบันทึก — stock ลดลงทันที (ถ้าสถานะ Billed)</span></div>
+
+        <div class="help-h3">สถานะใบขาย</div>
+        <div class="d-flex flex-wrap gap-2 mb-3">
+          <div><span class="status-dot dot-draft"></span><span class="text-secondary small">Draft</span> — ร่าง ยังไม่ตัด stock</div>
+          <div><span class="status-dot dot-billed"></span><span class="text-secondary small">Billed</span> — ขายแล้ว stock ออก</div>
+          <div><span class="status-dot dot-cancelled"></span><span class="text-secondary small">Cancelled</span> — ยกเลิก stock คืนกลับ</div>
+        </div>
+
+        <div class="help-h3">Export ออกมาได้ทั้ง PDF และ Excel</div>
+        <ul class="help-ul">
+          <li>ปุ่ม <strong class="text-white">🖨️ Print PDF</strong> — ออก PDF ใบกำกับภาษี และเปลี่ยนสถานะเป็น Billed อัตโนมัติ</li>
+          <li>ปุ่ม <strong class="text-white">📊 Export Excel</strong> — ส่งออกรายการสินค้าในใบเป็น Excel</li>
+        </ul>
+
+        <div class="info-box">
+          <div class="info-label">ℹ️ FIFO (First-In, First-Out)</div>
+          <p>ระบบจะเลือก Batch สินค้าที่ซื้อมาก่อนขายก่อนให้อัตโนมัติ เพื่อให้ต้นทุนถูกต้อง ถ้าต้องการเลือก Batch เองก็สามารถทำได้ผ่าน dropdown</p>
+        </div>
+
+        <div class="help-h3">Sync จาก Google Sheet</div>
+        <p class="help-p">ถ้ามีรายการขอใบกำกับจาก Google Form สามารถ Sync เข้าระบบได้ผ่านปุ่ม <strong class="text-white">Sync Google Sheet</strong> หน้า Invoice list</p>
       </div>
     </div>
 
-    <div class="col-md-4">
-      <div class="card p-3 rounded-xl text-center h-100">
-        <i class="bi bi-envelope-fill text-danger fs-2 mb-2"></i>
-        <h6 class="text-white">Email Support</h6>
-        <p class="small muted mb-2">Response within 24h</p>
-        <a
-          href="mailto:support@namkang.com"
-          class="text-decoration-none text-white fw-bold"
-          >support@namkang.com</a
-        >
+    <!-- Products -->
+    <div id="sec-product" class="help-section">
+      <div class="card-help">
+        <div class="help-h2">
+          <span class="section-icon" style="background:rgba(159,122,234,0.15)">📦</span>
+          สินค้า (Products)
+        </div>
+        <p class="help-p">จัดการ Master Catalog ของสินค้าทั้งหมด แต่ละรายการมี SKU ที่ unique</p>
+
+        <div class="help-h3">ฟิลด์สำคัญ</div>
+        <ul class="help-ul">
+          <li><strong class="text-white">SKU</strong> — รหัสสินค้า (ต้องไม่ซ้ำกัน)</li>
+          <li><strong class="text-white">ชื่อสินค้า</strong> — ชื่อที่จะแสดงในใบ</li>
+          <li><strong class="text-white">หมวดหมู่</strong> — พิมพ์ใหม่หรือเลือกจากที่มีอยู่แล้ว</li>
+          <li><strong class="text-white">ราคาทุน</strong> — ราคาที่ซื้อมา (Cost Price)</li>
+          <li><strong class="text-white">ราคาขาย</strong> — ราคาตั้ง (Selling Price)</li>
+          <li><strong class="text-white">Stock ปัจจุบัน</strong> — คำนวณจาก ซื้อเข้า - ขายออก อัตโนมัติ</li>
+        </ul>
+
+        <div class="tip-box">
+          <div class="tip-label">💡 เกี่ยวกับ SKU</div>
+          <p>SKU คือ ID หลักของสินค้า สินค้าเดียวกันที่ขายใน Shopee, Lazada, TikTok ควรใช้ SKU เดียวกัน แล้วตั้ง Alias ไว้แทน</p>
+        </div>
+
+        <div class="help-h3">ดูสินค้าที่ Active/Inactive</div>
+        <p class="help-p">ใช้ filter "Active" / "Inactive" เพื่อแสดงเฉพาะสินค้าที่ยังใช้งานอยู่ สินค้าที่ Inactive จะไม่ขึ้นใน dropdown ตอนสร้าง Invoice/PO</p>
       </div>
     </div>
-  </div>
 
-  <hr class="border-secondary my-4" />
+    <!-- Vendors -->
+    <div id="sec-vendor" class="help-section">
+      <div class="card-help">
+        <div class="help-h2">
+          <span class="section-icon" style="background:rgba(252,129,129,0.15)">👥</span>
+          ผู้จำหน่าย (Vendors)
+        </div>
+        <p class="help-p">จัดการข้อมูลซัพพลายเออร์ที่ซื้อสินค้ามาจาก</p>
 
-  <div class="row">
-    <div class="col-12">
-      <h5 class="mb-3 text-white">
-        <i class="bi bi-journal-text me-2"></i>Common Instructions
-      </h5>
+        <div class="help-h3">ฟิลด์สำคัญ</div>
+        <ul class="help-ul">
+          <li><strong class="text-white">ชื่อบริษัท / ชื่อผู้ติดต่อ</strong></li>
+          <li><strong class="text-white">เบอร์โทร / อีเมล</strong></li>
+          <li><strong class="text-white">ที่อยู่</strong></li>
+          <li><strong class="text-white">เลขภาษี (Tax ID)</strong> — ใช้ในเอกสารภาษี</li>
+          <li><strong class="text-white">บริษัท</strong> — ว่าผู้จำหน่ายนี้ supply ให้บริษัทไหน</li>
+        </ul>
 
-      <div class="accordion" id="accordionInstructions">
-        <div class="accordion-item bg-dark border-secondary">
-          <h2 class="accordion-header">
-            <button
-              class="accordion-button collapsed bg-dark text-white shadow-none"
-              type="button"
-              data-bs-toggle="collapse"
-              data-bs-target="#collapseOne"
-            >
-              How do I create a new Purchase Order?
-            </button>
-          </h2>
-          <div
-            id="collapseOne"
-            class="accordion-collapse collapse"
-            data-bs-parent="#accordionInstructions"
-          >
-            <div class="accordion-body text-secondary">
-              1. Navigate to the <strong>Purchase</strong> tab in the
-              sidebar.<br />
-              2. Click on the "New Order" button.<br />
-              3. Select the supplier and fill in the item details (Quantity,
-              Price).<br />
-              4. The total will calculate automatically.<br />
-              5. Click "Save" to record the transaction.
+        <div class="info-box">
+          <div class="info-label">ℹ️ หมายเหตุ</div>
+          <p>Vendor เดียวกันสามารถ supply ให้ได้หลายบริษัท ระบบจะ link ด้วย Company</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Transactions -->
+    <div id="sec-transaction" class="help-section">
+      <div class="card-help">
+        <div class="help-h2">
+          <span class="section-icon" style="background:rgba(72,187,120,0.15)">💰</span>
+          รายรับ / รายจ่าย (Transactions)
+        </div>
+        <p class="help-p">บันทึกรายรับ-รายจ่ายที่ไม่ใช่การซื้อ-ขายสินค้าโดยตรง เช่น ค่าเช่า, ค่าขนส่ง, ค่าซ่อม</p>
+
+        <div class="help-h3">ประเภทรายการ</div>
+        <div class="d-flex flex-wrap gap-2 mb-3">
+          <span class="feature-chip green">💵 INCOME — รายรับ</span>
+          <span class="feature-chip orange">💸 EXPENSE — รายจ่าย</span>
+        </div>
+
+        <div class="help-h3">หมวดหมู่ที่มี</div>
+        <div class="d-flex flex-wrap gap-2 mb-3">
+          <span class="feature-chip">🔧 ค่าซ่อม (Repair Service)</span>
+          <span class="feature-chip">🚚 ค่าขนส่ง (Delivery)</span>
+          <span class="feature-chip">👷 เงินเดือน (Salary)</span>
+          <span class="feature-chip">🏠 ค่าเช่า (Rent)</span>
+          <span class="feature-chip">⚡ ค่าสาธารณูปโภค (Utility)</span>
+          <span class="feature-chip">📢 การตลาด (Marketing)</span>
+          <span class="feature-chip">📌 อื่นๆ (Other)</span>
+        </div>
+
+        <div class="tip-box">
+          <div class="tip-label">💡 เคล็ดลับ</div>
+          <p>Transaction สามารถ link กับ Vendor ได้ เพื่อใช้สร้างใบ 50 ทวิ ทีหลัง</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Platform Import -->
+    <div id="sec-import" class="help-section">
+      <div class="card-help">
+        <div class="help-h2">
+          <span class="section-icon" style="background:rgba(237,137,54,0.15)">📥</span>
+          นำเข้าข้อมูลจาก Platform (Shopee / Lazada / TikTok)
+        </div>
+        <p class="help-p">แทนที่จะพิมพ์ Order จาก Shopee/Lazada/TikTok เองทีละรายการ ระบบนี้ช่วย Import ไฟล์ Excel/CSV เข้ามาเป็น Invoice ให้อัตโนมัติ</p>
+
+        <div class="help-h3">วิธีใช้</div>
+        <div class="step-row"><span class="step-badge">1</span><span class="step-text">ไป <strong class="text-white">Import Platforms</strong> ในเมนู</span></div>
+        <div class="step-row"><span class="step-badge">2</span><span class="step-text">เลือก Platform: <strong class="text-white">Shopee</strong> / <strong class="text-white">Lazada</strong> / <strong class="text-white">TikTok</strong></span></div>
+        <div class="step-row"><span class="step-badge">3</span><span class="step-text">อัปโหลดไฟล์ .csv หรือ .xlsx ที่ Export มาจาก Seller Center</span></div>
+        <div class="step-row"><span class="step-badge">4</span><span class="step-text">ระบบจะ <strong class="text-white">ประมวลผลใน Background</strong> — ไม่ต้องรอหน้าจอ</span></div>
+        <div class="step-row"><span class="step-badge">5</span><span class="step-text">ดูสถานะการ Import ได้ที่ตาราง Import Log ด้านล่างหน้า</span></div>
+
+        <div class="help-h3">สถานะ Import Log</div>
+        <div class="d-flex flex-wrap gap-2 mb-3">
+          <div><span class="status-dot" style="background:#63b3ed"></span><span class="text-secondary small">Pending</span> — รอประมวลผล</div>
+          <div><span class="status-dot dot-processing"></span><span class="text-secondary small">Processing</span> — กำลังนำเข้า...</div>
+          <div><span class="status-dot dot-paid"></span><span class="text-secondary small">Completed</span> — สำเร็จทั้งหมด</div>
+          <div><span class="status-dot" style="background:#f6e05e"></span><span class="text-secondary small">Completed w/ Errors</span> — สำเร็จบางส่วน</div>
+          <div><span class="status-dot dot-cancelled"></span><span class="text-secondary small">Failed</span> — ล้มเหลว</div>
+        </div>
+
+        <div class="warn-box">
+          <div class="warn-label">⚠️ ถ้า Import แล้วมี Error</div>
+          <p>ให้ดาวน์โหลดไฟล์ Error Report เพื่อดูว่า Order ไหนมีปัญหา ส่วนใหญ่มักเกิดจากสินค้าที่ยังไม่ได้ Map SKU ไว้ในระบบ</p>
+        </div>
+
+        <div class="help-h3">ไฟล์ที่รองรับ</div>
+        <div class="d-flex flex-wrap gap-2">
+          <span class="feature-chip">.csv</span>
+          <span class="feature-chip">.xlsx</span>
+          <span class="feature-chip">.xls</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Product Mapping -->
+    <div id="sec-mapping" class="help-section">
+      <div class="card-help">
+        <div class="help-h2">
+          <span class="section-icon" style="background:rgba(159,122,234,0.15)">🔗</span>
+          จับคู่สินค้า (Product Mapping)
+        </div>
+        <p class="help-p">เมื่อ Import จาก Platform มา สินค้าบางรายการอาจมีชื่อหรือ SKU ที่ระบบยังไม่รู้จัก หน้านี้ใช้ "บอก" ระบบว่าสินค้าตัวนั้นคือสินค้า SKU อะไรในระบบ</p>
+
+        <div class="help-h3">เมื่อไหรต้องมา Mapping?</div>
+        <ul class="help-ul">
+          <li>Import แล้วสถานะเป็น <strong class="text-white">Completed with Errors</strong></li>
+          <li>มีรายการที่ขึ้นชื่อสินค้าเป็น "Unmapped" หรือว่างเปล่า</li>
+          <li>เพิ่งเพิ่มสินค้าใหม่เข้าระบบและยังไม่เคย Map</li>
+        </ul>
+
+        <div class="help-h3">วิธีใช้</div>
+        <div class="step-row"><span class="step-badge">1</span><span class="step-text">ไปที่ <strong class="text-white">Product Mapping</strong> ในเมนู</span></div>
+        <div class="step-row"><span class="step-badge">2</span><span class="step-text">จะเห็นรายการที่ยังไม่ได้ Map — มี Platform Name และชื่อสินค้าจาก Platform</span></div>
+        <div class="step-row"><span class="step-badge">3</span><span class="step-text">เลือก <strong class="text-white">SKU ในระบบ</strong> ที่ตรงกัน แล้วกด Save</span></div>
+        <div class="step-row"><span class="step-badge">4</span><span class="step-text">ระบบจะ <strong class="text-white">ย้อนหลังแก้ไข</strong> Invoice ที่ Import มาแล้วด้วย (Retroactive fix)</span></div>
+
+        <div class="info-box">
+          <div class="info-label">ℹ️ ทำครั้งเดียว ใช้ได้ตลอด</div>
+          <p>เมื่อ Map แล้ว ครั้งหน้า Import ไฟล์มาใหม่ ระบบจะจำ Mapping นี้ไว้ ไม่ต้อง Map ซ้ำอีก</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Reports -->
+    <div id="sec-reports" class="help-section">
+      <div class="card-help">
+        <div class="help-h2">
+          <span class="section-icon" style="background:rgba(99,179,237,0.15)">📈</span>
+          รายงาน (Reports)
+        </div>
+        <p class="help-p">ออกรายงานภาษีและ Stock เพื่อใช้ยื่นภาษีหรือตรวจสอบสินค้าคงเหลือ ดาวน์โหลดเป็น Excel ได้</p>
+
+        <div class="help-h3">ประเภทรายงาน</div>
+        <div class="row g-3 mb-3">
+          <div class="col-sm-6">
+            <div style="background:rgba(237,137,54,0.08);border-radius:8px;padding:12px;">
+              <div class="text-white fw-600 mb-1">📋 รายงานภาษีซื้อ</div>
+              <div class="small text-secondary">ใบสั่งซื้อสถานะ Paid ทั้งหมดในช่วงเวลา</div>
+            </div>
+          </div>
+          <div class="col-sm-6">
+            <div style="background:rgba(72,187,120,0.08);border-radius:8px;padding:12px;">
+              <div class="text-white fw-600 mb-1">📋 รายงานภาษีขาย</div>
+              <div class="small text-secondary">ใบกำกับสถานะ Billed ทั้งหมดในช่วงเวลา</div>
+            </div>
+          </div>
+          <div class="col-sm-6">
+            <div style="background:rgba(159,122,234,0.08);border-radius:8px;padding:12px;">
+              <div class="text-white fw-600 mb-1">📦 รายงาน Stock</div>
+              <div class="small text-secondary">สินค้าคงเหลือทั้งหมด ณ ปัจจุบัน</div>
+            </div>
+          </div>
+          <div class="col-sm-6">
+            <div style="background:rgba(99,179,237,0.08);border-radius:8px;padding:12px;">
+              <div class="text-white fw-600 mb-1">📋 รายงานรวม</div>
+              <div class="small text-secondary">ภาษีซื้อ + ภาษีขาย ในไฟล์เดียว</div>
             </div>
           </div>
         </div>
 
-        <div class="accordion-item bg-dark border-secondary">
-          <h2 class="accordion-header">
-            <button
-              class="accordion-button collapsed bg-dark text-white shadow-none"
-              type="button"
-              data-bs-toggle="collapse"
-              data-bs-target="#collapseTwo"
-            >
-              How to export monthly reports?
-            </button>
-          </h2>
-          <div
-            id="collapseTwo"
-            class="accordion-collapse collapse"
-            data-bs-parent="#accordionInstructions"
-          >
-            <div class="accordion-body text-secondary">Go to</div>
+        <div class="help-h3">วิธีออกรายงาน</div>
+        <div class="step-row"><span class="step-badge">1</span><span class="step-text">ไปที่ <strong class="text-white">Reports</strong> ในเมนู</span></div>
+        <div class="step-row"><span class="step-badge">2</span><span class="step-text">เลือก <strong class="text-white">ประเภทรายงาน</strong></span></div>
+        <div class="step-row"><span class="step-badge">3</span><span class="step-text">เลือก <strong class="text-white">บริษัท</strong> (หรือทุกบริษัท)</span></div>
+        <div class="step-row"><span class="step-badge">4</span><span class="step-text">เลือก <strong class="text-white">ช่วงวันที่</strong></span></div>
+        <div class="step-row"><span class="step-badge">5</span><span class="step-text">เลือก <strong class="text-white">Basis</strong>: วันที่เอกสาร หรือ วันที่ออกภาษี</span></div>
+        <div class="step-row"><span class="step-badge">6</span><span class="step-text">กด <strong class="text-white">Generate</strong> แล้วดาวน์โหลด Excel</span></div>
+
+        <div class="tip-box">
+          <div class="tip-label">💡 Basis คืออะไร?</div>
+          <p><strong>วันที่เอกสาร</strong> = วันที่บนใบ PO / Invoice<br>
+          <strong>วันที่ออกภาษี</strong> = วันที่ระบุในช่อง "วันที่ภาษี" ของ PO (ใช้เมื่อวันออกใบกับวันบนภาษีต่างกัน)</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- VAT Tracking -->
+    <div id="sec-vat" class="help-section">
+      <div class="card-help">
+        <div class="help-h2">
+          <span class="section-icon" style="background:rgba(99,179,237,0.15)">📋</span>
+          VAT Tracking
+        </div>
+        <p class="help-p">ระบบติดตาม VAT แยกต่างหากจาก PO/Invoice หลัก ใช้ Import ข้อมูลจาก POS เพื่อตรวจสอบ VAT ซื้อและขาย</p>
+
+        <div class="help-h3">หน้า VAT Buy Summary</div>
+        <p class="help-p">แสดงสรุปรายการซื้อทั้งหมด แยกตาม Document Number พร้อมยอดรวม สามารถดูรายละเอียดใน Order ได้</p>
+
+        <div class="help-h3">วิธี Import ข้อมูล VAT</div>
+        <div class="step-row"><span class="step-badge">1</span><span class="step-text">เตรียมไฟล์ Excel จาก POS ที่มีข้อมูลซื้อ/ขาย</span></div>
+        <div class="step-row"><span class="step-badge">2</span><span class="step-text">ไปหน้า VAT Tracking แล้ว Import</span></div>
+        <div class="step-row"><span class="step-badge">3</span><span class="step-text">ระบบจะแยก VAT / Non-VAT อัตโนมัติตามชื่อซัพพลายเออร์ (suffix /kit หรือ /s16)</span></div>
+        <div class="step-row"><span class="step-badge">4</span><span class="step-text">Export ออกเป็น Excel ได้ทุกเมื่อ</span></div>
+
+        <div class="info-box">
+          <div class="info-label">ℹ️ การแยก VAT อัตโนมัติ</div>
+          <p>ถ้าชื่อผู้จำหน่ายลงท้ายด้วย <code>/kit</code> หรือ <code>/s16</code> ระบบจะจัดเป็น Non-VAT อัตโนมัติ</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- 50 Tawi -->
+    <div id="sec-wht" class="help-section">
+      <div class="card-help">
+        <div class="help-h2">
+          <span class="section-icon" style="background:rgba(252,129,129,0.15)">🏛️</span>
+          ใบรับรองหักภาษี ณ ที่จ่าย (50 ทวิ)
+        </div>
+        <p class="help-p">ออกใบรับรองหักภาษี ณ ที่จ่าย (Withholding Tax Certificate) ตาม format ภาษีไทย พิมพ์ได้ 4 สำเนา</p>
+
+        <div class="help-h3">วิธีออกใบ 50 ทวิ</div>
+        <div class="step-row"><span class="step-badge">1</span><span class="step-text">ไปที่ <strong class="text-white">50 ทวิ</strong> ในเมนู</span></div>
+        <div class="step-row"><span class="step-badge">2</span><span class="step-text">เลือก <strong class="text-white">แหล่งที่มา</strong>: ใบสั่งซื้อ (PO) / รายจ่าย (Transaction) / พิมพ์เอง</span></div>
+        <div class="step-row"><span class="step-badge">3</span><span class="step-text">ระบบดึงข้อมูล Vendor, จำนวนเงิน มาให้อัตโนมัติ</span></div>
+        <div class="step-row"><span class="step-badge">4</span><span class="step-text">เลือก <strong class="text-white">ประเภทเงินได้</strong> และ <strong class="text-white">อัตราภาษี %</strong></span></div>
+        <div class="step-row"><span class="step-badge">5</span><span class="step-text">กด <strong class="text-white">Issue Certificate</strong> — ระบบออกเลขที่ใบรับรองให้อัตโนมัติ (รูปแบบ YYYY/0001)</span></div>
+        <div class="step-row"><span class="step-badge">6</span><span class="step-text">กด <strong class="text-white">Print PDF</strong> เพื่อพิมพ์ 4 สำเนา</span></div>
+
+        <div class="help-h3">ประเภทเงินได้ที่รองรับ</div>
+        <div class="d-flex flex-wrap gap-2 mb-2">
+          <span class="feature-chip">เงินเดือน</span>
+          <span class="feature-chip">ค่าจ้าง/ค่าบริการ</span>
+          <span class="feature-chip">ค่าลิขสิทธิ์</span>
+          <span class="feature-chip">ดอกเบี้ย</span>
+          <span class="feature-chip">เงินปันผล</span>
+          <span class="feature-chip">ค่าเช่า</span>
+          <span class="feature-chip">วิชาชีพ</span>
+          <span class="feature-chip">ค่าจ้างงาน (Contract)</span>
+          <span class="feature-chip">อื่นๆ</span>
+        </div>
+
+        <div class="tip-box">
+          <div class="tip-label">💡 เลขที่ใบรับรองอัตโนมัติ</div>
+          <p>ระบบออกเลขที่ต่อเนื่อง format <strong>2568/0001, 2568/0002...</strong> แยกตามปี ไม่ต้องนับเอง</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Companies -->
+    <div id="sec-company" class="help-section">
+      <div class="card-help">
+        <div class="help-h2">
+          <span class="section-icon" style="background:rgba(99,179,237,0.15)">🏢</span>
+          จัดการบริษัท (Companies)
+        </div>
+        <p class="help-p">ระบบรองรับหลายบริษัทในระบบเดียวกัน แต่ละบริษัทมีข้อมูลและเอกสารแยกกัน</p>
+
+        <div class="help-h3">ข้อมูลบริษัท</div>
+        <ul class="help-ul">
+          <li><strong class="text-white">ชื่อบริษัท</strong> — ชื่อเต็ม ใช้ในเอกสาร</li>
+          <li><strong class="text-white">ชื่อย่อ (Nick Name)</strong> — ใช้แสดงใน dropdown</li>
+          <li><strong class="text-white">เลขภาษี (Tax ID)</strong> — 13 หลัก</li>
+          <li><strong class="text-white">ที่อยู่, เบอร์โทร, อีเมล</strong></li>
+          <li><strong class="text-white">สถานะ Active/Inactive</strong></li>
+        </ul>
+
+        <div class="warn-box">
+          <div class="warn-label">⚠️ ข้อควรระวัง</div>
+          <p>การ Inactive บริษัทจะทำให้ไม่ขึ้นใน dropdown ตอนสร้างเอกสาร ตรวจสอบให้ดีก่อน</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Global Search -->
+    <div id="sec-search" class="help-section">
+      <div class="card-help">
+        <div class="help-h2">
+          <span class="section-icon" style="background:rgba(99,179,237,0.15)">🔍</span>
+          ค้นหาทั่วไป (Global Search)
+        </div>
+        <p class="help-p">Search box ที่ซ่อนอยู่ด้านบน (header) ใช้ค้นหาข้ามทุก Module พิมพ์แล้วกด Enter</p>
+
+        <div class="help-h3">ค้นหาได้จาก</div>
+        <div class="d-flex flex-wrap gap-2">
+          <span class="feature-chip">📦 สินค้า (SKU, ชื่อ)</span>
+          <span class="feature-chip">👥 ผู้จำหน่าย</span>
+          <span class="feature-chip">🧾 ใบกำกับ (เลขที่)</span>
+          <span class="feature-chip">🛒 ใบสั่งซื้อ (เลขที่)</span>
+          <span class="feature-chip">🏢 บริษัท</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bug Reports -->
+    <div id="sec-bugreport" class="help-section">
+      <div class="card-help">
+        <div class="help-h2">
+          <span class="section-icon" style="background:rgba(252,129,129,0.15)">🐛</span>
+          แจ้งปัญหา / ขอฟีเจอร์ใหม่
+        </div>
+        <p class="help-p">เจอบัค หรืออยากได้ฟีเจอร์เพิ่ม แจ้งมาได้เลยผ่านหน้านี้ มี AI ช่วยตรวจสอบด้วย</p>
+
+        <div class="help-h3">วิธีแจ้งปัญหา</div>
+        <div class="step-row"><span class="step-badge">1</span><span class="step-text">ไปที่ <strong class="text-white">Bug Reports</strong> ในเมนู</span></div>
+        <div class="step-row"><span class="step-badge">2</span><span class="step-text">เลือกประเภท: <strong class="text-white">Bug</strong> (พบปัญหา) หรือ <strong class="text-white">Feature</strong> (ขอฟีเจอร์)</span></div>
+        <div class="step-row"><span class="step-badge">3</span><span class="step-text">อธิบายปัญหา — ยิ่งละเอียดยิ่งดี เช่น ทำอะไรอยู่ เกิดอะไรขึ้น</span></div>
+        <div class="step-row"><span class="step-badge">4</span><span class="step-text">แนบ Screenshot ได้ถ้ามี</span></div>
+        <div class="step-row"><span class="step-badge">5</span><span class="step-text">หรือคุยกับ <strong class="text-white">AI Chat</strong> เพื่อให้ช่วย diagnose ปัญหาก่อนส่ง</span></div>
+
+        <div class="help-h3">สถานะ Bug Report</div>
+        <div class="d-flex flex-wrap gap-3 mb-2">
+          <div><span class="status-dot" style="background:#63b3ed"></span><span class="text-secondary small">New</span> — รอตรวจสอบ</div>
+          <div><span class="status-dot dot-processing"></span><span class="text-secondary small">In Progress</span> — กำลังแก้ไข</div>
+          <div><span class="status-dot dot-paid"></span><span class="text-secondary small">Resolved</span> — แก้ไขแล้ว</div>
+          <div><span class="status-dot dot-cancelled"></span><span class="text-secondary small">Rejected</span> — ปฏิเสธ (พร้อมเหตุผล)</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- FAQ -->
+    <div id="sec-faq" class="help-section">
+      <div class="card-help">
+        <div class="help-h2">
+          <span class="section-icon" style="background:rgba(159,122,234,0.15)">❓</span>
+          คำถามที่พบบ่อย (FAQ)
+        </div>
+
+        <div class="faq-item">
+          <div class="faq-q" onclick="toggleFaq(this)">
+            <span>ทำไม Stock สินค้าถึงไม่เพิ่มทั้งที่สร้าง PO แล้ว?</span>
+            <i class="bi bi-chevron-down faq-chevron"></i>
+          </div>
+          <div class="faq-a">
+            Stock จะเพิ่มก็ต่อเมื่อสถานะใบสั่งซื้อเป็น <strong>Paid</strong> เท่านั้น ถ้ายังเป็น <strong>Draft</strong> อยู่ Stock ยังไม่เข้า ลองเปลี่ยนสถานะเป็น Paid ดูครับ
+          </div>
+        </div>
+
+        <div class="faq-item">
+          <div class="faq-q" onclick="toggleFaq(this)">
+            <span>Import จาก Shopee แล้วมี Error บางรายการ ต้องทำอะไร?</span>
+            <i class="bi bi-chevron-down faq-chevron"></i>
+          </div>
+          <div class="faq-a">
+            ดาวน์โหลด Error File จาก Import Log ก่อน จะเห็นว่า Order ไหนมีปัญหา ส่วนใหญ่ Error เกิดจากสินค้าที่ยัง Map SKU ไม่ได้ ให้ไปที่ <strong>Product Mapping</strong> แล้ว Map สินค้าให้ครบก่อน แล้วค่อย Import ใหม่ หรือถ้า Map แล้วรายการเก่าก็จะถูกแก้ไขย้อนหลังให้อัตโนมัติ
+          </div>
+        </div>
+
+        <div class="faq-item">
+          <div class="faq-q" onclick="toggleFaq(this)">
+            <span>อยากออกรายงานภาษีซื้อ ต้องทำยังไง?</span>
+            <i class="bi bi-chevron-down faq-chevron"></i>
+          </div>
+          <div class="faq-a">
+            ไปที่เมนู <strong>Reports</strong> → เลือก "รายงานภาษีซื้อ" → เลือกบริษัทและช่วงวันที่ → กด Generate → ระบบจะออก Excel ให้ดาวน์โหลด ข้อมูลจะดึงจากใบสั่งซื้อที่สถานะ <strong>Paid</strong> ในช่วงวันที่ที่เลือก
+          </div>
+        </div>
+
+        <div class="faq-item">
+          <div class="faq-q" onclick="toggleFaq(this)">
+            <span>ลบสินค้าออกจากใบกำกับที่ Billed แล้วได้ไหม?</span>
+            <i class="bi bi-chevron-down faq-chevron"></i>
+          </div>
+          <div class="faq-a">
+            ไม่ได้โดยตรง ถ้าต้องการแก้ไขใบที่ Billed แล้ว ต้องเปลี่ยนสถานะเป็น <strong>Cancelled</strong> ก่อน (Stock จะคืนกลับ) แล้วสร้างใบใหม่ หรือแก้ไขใบเดิมแล้วเปลี่ยนกลับเป็น Billed
+          </div>
+        </div>
+
+        <div class="faq-item">
+          <div class="faq-q" onclick="toggleFaq(this)">
+            <span>FIFO คืออะไร ทำงานยังไง?</span>
+            <i class="bi bi-chevron-down faq-chevron"></i>
+          </div>
+          <div class="faq-a">
+            FIFO = First In, First Out หมายความว่า สินค้า Lot ที่ซื้อมาก่อนจะถูกขายออกก่อน เช่น ซื้อ iPhone มา 2 Lot: Lot A ราคาทุน 15,000 บาท, Lot B ราคาทุน 16,000 บาท เมื่อขาย ระบบจะดึงจาก Lot A ก่อน เพื่อให้ต้นทุนในการคำนวณกำไรถูกต้องที่สุด
+          </div>
+        </div>
+
+        <div class="faq-item">
+          <div class="faq-q" onclick="toggleFaq(this)">
+            <span>เพิ่มบริษัทใหม่ต้องทำยังไง?</span>
+            <i class="bi bi-chevron-down faq-chevron"></i>
+          </div>
+          <div class="faq-a">
+            ไปที่เมนู <strong>Companies</strong> → กดปุ่ม "เพิ่มบริษัทใหม่" → กรอกข้อมูลชื่อบริษัท เลขภาษี ที่อยู่ → บันทึก หลังจากนั้นบริษัทใหม่จะขึ้นใน dropdown ตอนสร้าง PO/Invoice ได้เลย
+          </div>
+        </div>
+
+        <div class="faq-item">
+          <div class="faq-q" onclick="toggleFaq(this)">
+            <span>เลขที่ใบ 50 ทวิ ระบบออกให้อัตโนมัติหรือต้องพิมพ์เอง?</span>
+            <i class="bi bi-chevron-down faq-chevron"></i>
+          </div>
+          <div class="faq-a">
+            ออกอัตโนมัติครับ รูปแบบ <strong>YYYY/ลำดับ</strong> เช่น 2568/0001, 2568/0002 เรียงต่อกันตามปี ไม่ต้องนับเอง
+          </div>
+        </div>
+
+        <div class="faq-item">
+          <div class="faq-q" onclick="toggleFaq(this)">
+            <span>ดู Stock สินค้าได้จากที่ไหน?</span>
+            <i class="bi bi-chevron-down faq-chevron"></i>
+          </div>
+          <div class="faq-a">
+            ดูได้หลายที่: (1) หน้า <strong>Products</strong> มีคอลัมน์ Stock อยู่, (2) หน้า <strong>Dashboard</strong> มี Stock Alerts แสดงสินค้าใกล้หมด, (3) หน้า <strong>Reports</strong> → Stock Report จะออก Excel ทั้งหมด
+          </div>
+        </div>
+
+        <div class="faq-item">
+          <div class="faq-q" onclick="toggleFaq(this)">
+            <span>ทำไมสินค้าบางตัวไม่ขึ้นใน dropdown ตอนสร้าง Invoice?</span>
+            <i class="bi bi-chevron-down faq-chevron"></i>
+          </div>
+          <div class="faq-a">
+            สินค้าที่ไม่ขึ้นใน dropdown อาจเป็นเพราะถูก set เป็น <strong>Inactive</strong> อยู่ ลองไปที่หน้า Products แล้ว filter ดู Inactive สินค้า ถ้าเจอให้เปิด Active กลับมา
+          </div>
+        </div>
+
+        <div class="faq-item">
+          <div class="faq-q" onclick="toggleFaq(this)">
+            <span>Sync Google Sheet ใช้ทำอะไร?</span>
+            <i class="bi bi-chevron-down faq-chevron"></i>
+          </div>
+          <div class="faq-a">
+            ถ้ามีลูกค้าที่กรอก Google Form ขอใบกำกับภาษี ข้อมูลจะถูก Sync เข้ามาเป็น Invoice ในระบบให้อัตโนมัติผ่านปุ่ม Sync Google Sheet หน้า Invoice list ไม่ต้องพิมพ์ซ้ำ
           </div>
         </div>
       </div>
     </div>
-  </div>
-</div>
+
+    <!-- Status Reference -->
+    <div id="sec-status" class="help-section">
+      <div class="card-help">
+        <div class="help-h2">
+          <span class="section-icon" style="background:rgba(72,187,120,0.15)">🟢</span>
+          สถานะต่างๆ ในระบบ
+        </div>
+
+        <div class="help-h3">ใบสั่งซื้อ (Purchase Order)</div>
+        <table class="table table-sm mb-3" style="border-color:rgba(255,255,255,0.07)">
+          <tbody>
+            <tr style="border-color:rgba(255,255,255,0.07)">
+              <td style="width:120px"><span class="status-dot dot-draft"></span><span class="text-white">Draft</span></td>
+              <td class="text-secondary small">ร่าง ยังไม่ได้จ่ายเงิน Stock ยังไม่เข้า แก้ไขได้ทุกอย่าง</td>
+            </tr>
+            <tr style="border-color:rgba(255,255,255,0.07)">
+              <td><span class="status-dot dot-paid"></span><span class="text-white">Paid</span></td>
+              <td class="text-secondary small">จ่ายเงินแล้ว Stock เข้าระบบ แก้ไขรายการสินค้าไม่ได้ (แนบไฟล์ได้)</td>
+            </tr>
+            <tr style="border-color:rgba(255,255,255,0.07)">
+              <td><span class="status-dot dot-cancelled"></span><span class="text-white">Cancelled</span></td>
+              <td class="text-secondary small">ยกเลิกแล้ว Stock ไม่นับ</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="help-h3">ใบกำกับ / ใบขาย (Invoice)</div>
+        <table class="table table-sm mb-3" style="border-color:rgba(255,255,255,0.07)">
+          <tbody>
+            <tr style="border-color:rgba(255,255,255,0.07)">
+              <td style="width:120px"><span class="status-dot dot-draft"></span><span class="text-white">Draft</span></td>
+              <td class="text-secondary small">ร่าง ยังไม่ตัด Stock แก้ไขได้ทุกอย่าง</td>
+            </tr>
+            <tr style="border-color:rgba(255,255,255,0.07)">
+              <td><span class="status-dot dot-billed"></span><span class="text-white">Billed</span></td>
+              <td class="text-secondary small">ขายแล้ว Stock ออกจากระบบ ใช้ในรายงานภาษีขาย</td>
+            </tr>
+            <tr style="border-color:rgba(255,255,255,0.07)">
+              <td><span class="status-dot dot-cancelled"></span><span class="text-white">Cancelled</span></td>
+              <td class="text-secondary small">ยกเลิก Stock คืนกลับ ไม่นับในรายงาน</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="help-h3">ใบรับรอง 50 ทวิ</div>
+        <table class="table table-sm" style="border-color:rgba(255,255,255,0.07)">
+          <tbody>
+            <tr style="border-color:rgba(255,255,255,0.07)">
+              <td style="width:120px"><span class="status-dot dot-draft"></span><span class="text-white">Draft</span></td>
+              <td class="text-secondary small">ร่าง ยังไม่ออกเลขที่ใบรับรอง</td>
+            </tr>
+            <tr style="border-color:rgba(255,255,255,0.07)">
+              <td><span class="status-dot dot-billed"></span><span class="text-white">Issued</span></td>
+              <td class="text-secondary small">ออกใบรับรองแล้ว มีเลขที่ใบรับรอง พร้อมพิมพ์</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Contact -->
+    <div class="card-help" style="background:rgba(99,179,237,0.05);border-color:rgba(99,179,237,0.15);">
+      <div class="help-h2">
+        <span class="section-icon" style="background:rgba(99,179,237,0.15)">💬</span>
+        ติดต่อทีม
+      </div>
+      <p class="help-p">มีปัญหาเพิ่มเติมหรืออยากให้ระบบมีอะไรเพิ่ม? แจ้งผ่านระบบได้เลย</p>
+      <a href="{% url 'bug_report_list' %}" class="btn btn-sm" style="background:rgba(99,179,237,0.2);color:#63b3ed;border:1px solid rgba(99,179,237,0.3);">
+        <i class="bi bi-bug me-2"></i>แจ้งปัญหา / ขอฟีเจอร์
+      </a>
+    </div>
+
+  </div><!-- end col-lg-9 -->
+</div><!-- end row -->
+
+<!-- Back to Top -->
+<a href="#helpTop" class="back-to-top" id="backToTop">
+  <i class="bi bi-arrow-up"></i>
+</a>
+
+<script>
+  // FAQ Toggle
+  function toggleFaq(el) {
+    const item = el.closest('.faq-item');
+    item.classList.toggle('open');
+  }
+
+  // Back to top
+  window.addEventListener('scroll', () => {
+    const btn = document.getElementById('backToTop');
+    if (window.scrollY > 300) btn.classList.add('visible');
+    else btn.classList.remove('visible');
+  });
+
+  // Active TOC highlight
+  const sections = document.querySelectorAll('.help-section');
+  const tocLinks = document.querySelectorAll('.toc-link.toc-sub');
+
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        tocLinks.forEach(link => link.classList.remove('active'));
+        const active = document.querySelector(`.toc-link[href="#${entry.target.id}"]`);
+        if (active) active.classList.add('active');
+      }
+    });
+  }, { rootMargin: '-20% 0px -60% 0px' });
+
+  sections.forEach(s => observer.observe(s));
+
+  // Search
+  const searchIndex = [
+    { title: 'ภาพรวมระบบ', anchor: 'sec-overview', keywords: 'ระบบ overview erp ภาพรวม' },
+    { title: 'Dashboard', anchor: 'sec-dashboard', keywords: 'dashboard kpi ยอดขาย กราฟ stock alert' },
+    { title: 'ใบสั่งซื้อ (PO)', anchor: 'sec-purchase', keywords: 'purchase order po ใบสั่งซื้อ ซื้อ vendor paid draft' },
+    { title: 'ใบกำกับ / ใบขาย', anchor: 'sec-invoice', keywords: 'invoice ใบกำกับ ใบขาย ขาย billed pdf excel fifo stock' },
+    { title: 'สินค้า', anchor: 'sec-product', keywords: 'product สินค้า sku stock คงเหลือ หมวดหมู่' },
+    { title: 'ผู้จำหน่าย', anchor: 'sec-vendor', keywords: 'vendor ผู้จำหน่าย ซัพพลายเออร์ supplier' },
+    { title: 'รายรับ / รายจ่าย', anchor: 'sec-transaction', keywords: 'transaction รายรับ รายจ่าย income expense ค่าใช้จ่าย' },
+    { title: 'นำเข้าข้อมูล Platform', anchor: 'sec-import', keywords: 'import shopee lazada tiktok นำเข้า platform csv excel' },
+    { title: 'จับคู่สินค้า', anchor: 'sec-mapping', keywords: 'mapping จับคู่ sku map unmapped alias' },
+    { title: 'รายงาน', anchor: 'sec-reports', keywords: 'report รายงาน ภาษีซื้อ ภาษีขาย stock excel export' },
+    { title: 'VAT Tracking', anchor: 'sec-vat', keywords: 'vat ภาษีมูลค่าเพิ่ม tracking import export' },
+    { title: '50 ทวิ', anchor: 'sec-wht', keywords: '50 ทวิ withholding tax หักภาษี ณ ที่จ่าย ใบรับรอง pdf' },
+    { title: 'บริษัท', anchor: 'sec-company', keywords: 'company บริษัท เพิ่มบริษัท tax id' },
+    { title: 'ค้นหาทั่วไป', anchor: 'sec-search', keywords: 'search ค้นหา global' },
+    { title: 'แจ้งปัญหา / Bug Report', anchor: 'sec-bugreport', keywords: 'bug report ปัญหา feature แจ้ง' },
+    { title: 'FAQ', anchor: 'sec-faq', keywords: 'faq คำถาม ตอบ' },
+    { title: 'สถานะ', anchor: 'sec-status', keywords: 'status สถานะ draft paid billed cancelled issued' },
+  ];
+
+  document.getElementById('helpSearch').addEventListener('input', function() {
+    const q = this.value.trim().toLowerCase();
+    const container = document.getElementById('searchResults');
+    if (!q) { container.innerHTML = ''; return; }
+
+    const results = searchIndex.filter(item =>
+      item.title.toLowerCase().includes(q) || item.keywords.includes(q)
+    );
+
+    if (results.length === 0) {
+      container.innerHTML = '<div class="small text-secondary p-2">ไม่พบผลลัพธ์</div>';
+      return;
+    }
+
+    container.innerHTML = results.map(r =>
+      `<a href="#${r.anchor}" onclick="document.getElementById('helpSearch').value='';document.getElementById('searchResults').innerHTML='';"
+         class="d-block p-2 rounded" style="text-decoration:none;color:#ccc;background:rgba(255,255,255,0.04);margin-bottom:4px;">
+        <i class="bi bi-arrow-right-circle me-2 text-primary" style="font-size:0.8rem;"></i>${r.title}
+      </a>`
+    ).join('');
+  });
+
+
+</script>
+
 {% endblock %}

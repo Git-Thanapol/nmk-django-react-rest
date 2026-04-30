@@ -211,3 +211,28 @@ MEDIA_URL = '/media/'
 
 # โฟลเดอร์จริงในเครื่องที่จะเก็บไฟล์
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "simple": {"format": "[%(levelname)s] %(name)s: %(message)s"},
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "simple",
+        },
+    },
+    "loggers": {
+        "api.utils_llm": {
+            "handlers": ["console"],
+            "level": "DEBUG",
+            "propagate": False,
+        },
+        "django.request": {
+            "handlers": ["console"],
+            "level": "WARNING",
+            "propagate": False,
+        },
+    },
+}
