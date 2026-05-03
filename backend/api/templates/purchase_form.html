@@ -3,7 +3,7 @@
 {% load humanize %}
 
 {% block title %}Purchase Orders{% endblock %}
-{% block page_title %}Purchase Management{% endblock %}
+{% block page_title %}รายการซื้อเข้า{% endblock %}
 
 {% block content %}
 <div class="container-fluid p-0">
@@ -12,8 +12,8 @@
         <div class="card-header bg-transparent border-secondary py-3">
             <h5 class="mb-0 text-white">
                 {% if is_editing %}
-                <i class="bi bi-pencil-square me-2 text-warning"></i>แก้ไขคำสั่งซื้อ: <span class="text-warning">{{
-                    editing_po.po_number }}</span>
+                <i class="bi bi-pencil-square me-2 text-warning"></i>แก้ไขคำสั่งซื้อ: <span class="text-warning">
+                    {{editing_po.po_number}}</span>
                 {% else %}
                 <i class="bi bi-cart-plus me-2"></i>สร้างคำสั่งซื้อใหม่
                 {% endif %}

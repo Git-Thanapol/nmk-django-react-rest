@@ -374,21 +374,31 @@ class InvoiceItem(models.Model):
     def clean(self):
         """Validate that purchase item has enough quantity"""
         from django.core.exceptions import ValidationError
-        
-        if self.purchase_item and self.quantity > self.purchase_item.available_quantity:
-            raise ValidationError(
-                f"Not enough quantity available. Available: {self.purchase_item.available_quantity}, Requested: {self.quantity}"
-            )
+
+        if self.purchase_item and self.quantity is not None:
+            available = self.purchase_item.available_quantity
+            # When editing an existing item, the old quantity is already deducted
+            # from remaining_quantity — add it back before comparing.
+            if self.pk:
+                try:
+                    old_qty = InvoiceItem.objects.get(pk=self.pk).quantity or 0
+                except InvoiceItem.DoesNotExist:
+                    old_qty = 0
+                available += old_qty
+
+            if self.quantity > available:
+                raise ValidationError(
+                    f"จำนวนสินค้าไม่เพียงพอ มีอยู่: {available} ต้องการ: {self.quantity}"
+                )
     
     def save(self, *args, **kwargs):
         # 1. Ensure total_price is set (vital for manual saves)
         self.total_price = Decimal(self.quantity) * self.unit_price
-        
-        # 2. Validate
-        self.clean()
-        
-        # 3. STOCK LOGIC WARNING: 
-        # (Kept disabled as per original code)
+
+        # NOTE: clean() is NOT called here intentionally.
+        # Stock validation is handled by invoice_view before remaining_quantity
+        # is decremented in memory. Calling clean() here would read the already-
+        # decremented value and raise a false "ไม่เพียงพอ" error.
 
         super().save(*args, **kwargs)
         

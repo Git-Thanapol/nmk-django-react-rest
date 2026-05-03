@@ -856,16 +856,16 @@ def invoice_view(request, pk=None):
                             batch_cache[batch_id] = PurchaseItem.objects.select_for_update().get(id=batch_id)
                         return batch_cache[batch_id]
 
+                    # B1+B2. Call save(commit=False) first — this populates
+                    # formset.deleted_objects and returns new/changed items.
+                    items_to_save = formset.save(commit=False)
+
                     # B1. Handle Deletions (Restore Stock)
                     for obj in formset.deleted_objects:
                         if obj.pk and obj.purchase_item:
                             batch = get_locked_batch(obj.purchase_item.id)
                             batch.remaining_quantity += obj.quantity
-                            # Note: We save later at the end of the view or per batch update
                         obj.delete()
-
-                    # B2. Handle Updates/Inserts
-                    items_to_save = formset.save(commit=False)
                     
                     for item in items_to_save:
                         selected_product = item.product
