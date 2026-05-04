@@ -51,6 +51,11 @@
                             {{ form.status }}
                         </div>
 
+                        <div class="col-md-3" id="cancel-reason-block" style="display:none;">
+                            <label class="form-label text-secondary small">เหตุผลการยกเลิก</label>
+                            <input type="text" name="cancel_reason" maxlength="255" class="form-control form-control-sm" placeholder="ระบุเหตุผล (ถ้ามี)">
+                        </div>
+
                         <div class="col-md-3">
                             <label class="form-label text-secondary small">วิธีการชำระ</label>
                             {{ form.purchase_type }}
@@ -184,10 +189,6 @@
                     <button type="button" class="btn btn-secondary px-4" disabled>
                         <i class="bi bi-lock-fill me-2"></i>Locked
                     </button>
-                    {% elif editing_po.status == 'PAID' %}
-                    <button type="submit" class="btn btn-danger px-4 fw-bold">
-                        <i class="bi bi-x-circle me-2"></i>Cancel Order
-                    </button>
                     {% else %}
                     <button type="submit" class="btn btn-warning px-4 fw-bold">อัพเดทคำสั่งซื้อ</button>
                     {% endif %}
@@ -249,9 +250,8 @@
                         <select class="form-select form-select-sm bg-dark border-secondary text-light col-filter"
                             data-col="3">
                             <option value="">ทั้งหมด</option>
-                            <option value="DRAFT">Draft</option>
-                            <option value="PAID">Paid</option>
-                            <option value="CANCELLED">Cancelled</option>
+                            <option value="PAID">ชำระแล้ว</option>
+                            <option value="CANCELLED">ยกเลิก</option>
                         </select>
                     </th>
                     <th class="p-2 text-end">
@@ -277,12 +277,10 @@
                     <td>{{ order.vendor.name }}</td>
 
                     <td>
-                        {% if order.status == 'DRAFT' %}
-                            <span class="badge bg-secondary bg-opacity-25 text-light border border-secondary border-opacity-50">DRAFT</span>
-                        {% elif order.status == 'PAID' %}
-                            <span class="badge bg-success bg-opacity-25 text-success border border-success border-opacity-50">PAID</span>
+                        {% if order.status == 'PAID' %}
+                            <span class="badge bg-success bg-opacity-25 text-success border border-success border-opacity-50">ชำระแล้ว</span>
                         {% elif order.status == 'CANCELLED' %}
-                            <span class="badge bg-danger bg-opacity-25 text-danger border border-danger border-opacity-50">CANCELLED</span>
+                            <span class="badge bg-danger bg-opacity-25 text-danger border border-danger border-opacity-50">ยกเลิก</span>
                         {% else %}
                             <span class="badge bg-secondary bg-opacity-25 text-light border border-secondary border-opacity-50">{{ order.status }}</span>
                         {% endif %}
@@ -522,5 +520,16 @@
             companySelect.addEventListener('change', checkDuplicates);
         }
     });
+
+    // Show cancel reason box when status = CANCELLED
+    const statusSelect = document.querySelector('select[name="status"]');
+    const cancelBlock = document.getElementById('cancel-reason-block');
+    function toggleCancelReason() {
+        if (cancelBlock) cancelBlock.style.display = statusSelect.value === 'CANCELLED' ? 'block' : 'none';
+    }
+    if (statusSelect) {
+        statusSelect.addEventListener('change', toggleCancelReason);
+        toggleCancelReason();
+    }
 </script>
 {% endblock %}

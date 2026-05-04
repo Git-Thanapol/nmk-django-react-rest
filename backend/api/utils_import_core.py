@@ -84,9 +84,9 @@ def universal_invoice_import(header_df, items_df, company_id, user_id, platform_
             base_ex_tax = grand_total / (Decimal(1) + (tax_rate / Decimal(100)))
             tax_amt = grand_total - base_ex_tax
 
-            # Date
+            # Date — only a real pd.Timestamp is valid; empty string / NaT / None all fall back
             inv_date = row.get('shipped_date')
-            if not isinstance(inv_date, (pd.Timestamp, str)) or pd.isna(inv_date):
+            if not isinstance(inv_date, pd.Timestamp):
                 inv_date = timezone.now()
 
             # B. Database Transaction
@@ -98,7 +98,7 @@ def universal_invoice_import(header_df, items_df, company_id, user_id, platform_
                     defaults={
                         'created_by': user,
                         'platform_name': platform_name,
-                        'status': 'DRAFT', 
+                        'status': 'UNPRINTED',
                         'invoice_date': inv_date,
                         'tax_include': True,
                         'tax_percent': tax_rate,

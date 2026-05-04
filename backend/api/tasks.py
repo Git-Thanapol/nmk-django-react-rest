@@ -7,7 +7,7 @@ from openpyxl.styles import Font, PatternFill
 
 # Import your existing logic
 from .utils_processors import process_tiktok_orders, process_shopee_orders, process_lazada_orders
-from .legacy_files.utils_import_core import universal_invoice_import
+from .utils_import_core import universal_invoice_import
 from .models import ImportLog, Company
 
 def run_import_background(log_id, file_path, company_id, user_id, platform):

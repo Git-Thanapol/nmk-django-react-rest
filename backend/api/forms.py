@@ -213,7 +213,7 @@ class InvoiceForm(forms.ModelForm):
         # Set Initial Defaults
         if not self.instance.pk:
             self.fields['invoice_date'].initial = timezone.now().date()
-            self.fields['status'].initial = 'DRAFT'  # Use key 'DRAFT', not label 'แบบร่าง'
+            self.fields['status'].initial = 'UNPRINTED'
 
 class InvoiceItemCustomChoiceField(forms.ModelChoiceField):
     """Custom field to display detailed stock info in the dropdown"""

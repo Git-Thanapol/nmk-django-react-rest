@@ -123,7 +123,6 @@ class Product(models.Model):
 class PurchaseOrder(models.Model):
     """Purchase order from vendors"""
     STATUS_CHOICES = [
-        ('DRAFT', 'แบบร่าง'),
         ('PAID', 'ชำระเงินแล้ว'),
         ('CANCELLED', 'ยกเลิก'),
     ]
@@ -135,13 +134,13 @@ class PurchaseOrder(models.Model):
     ]
     
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='purchase_orders')
-    po_number = models.CharField(max_length=50)
+    po_number = models.CharField(max_length=100)
     vendor = models.ForeignKey(Vendor, on_delete=models.PROTECT, related_name='purchase_orders')
     purchase_type = models.CharField(max_length=20, choices=PURCHASE_TYPE_CHOICES, default='Cash')
     order_date = models.DateField(default=timezone.now)
     vendor_invoice_number = models.CharField(max_length=100, blank=True)
     expected_delivery_date = models.DateField(null=True, blank=True)
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='DRAFT')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PAID')
     subtotal = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     discount_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
 
@@ -156,9 +155,12 @@ class PurchaseOrder(models.Model):
     created_by = models.ForeignKey('auth.User', on_delete=models.PROTECT)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    cancelled_at = models.DateTimeField(null=True, blank=True)
+    cancelled_by = models.ForeignKey('auth.User', null=True, blank=True, on_delete=models.PROTECT, related_name='+')
+    cancel_reason = models.CharField(max_length=255, blank=True)
 
-    
-    
+
+
     class Meta:
         db_table = 'purchase_orders'
         #unique_together = ['company', 'po_number'] # Changed 12-12-2025 Allow duplicate PO numbers for testing
@@ -242,13 +244,13 @@ class PurchaseAttachment(models.Model):
 class Invoice(models.Model):
     """Sales Invoice with platform integration fields"""
     STATUS_CHOICES = [
-        ('DRAFT', 'แบบร่าง'),
+        ('UNPRINTED', 'ยังไม่ได้ปริ้น'),
         ('BILLED', 'ออกใบกำกับภาษีแล้ว'),
         ('CANCELLED', 'ยกเลิก'),
     ]
-    
+
     # Identifiers
-    invoice_number = models.CharField(max_length=50) # Unique per company
+    invoice_number = models.CharField(max_length=100) # Unique per company
     company = models.ForeignKey('Company', on_delete=models.CASCADE, related_name='invoices')    
     
     # Customer - Nullable for high volume platform imports
@@ -259,7 +261,7 @@ class Invoice(models.Model):
     tax_sender_date = models.DateField(null=True, blank=True)
     tax_sequence_number = models.CharField(max_length=100, blank=True, null=True)
     saleperson = models.CharField(max_length=100, blank=True)
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='DRAFT')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='UNPRINTED')
 
     # Financials
     tax_include = models.BooleanField(default=True)
@@ -277,6 +279,9 @@ class Invoice(models.Model):
     created_by = models.ForeignKey('auth.User', on_delete=models.PROTECT)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    cancelled_at = models.DateTimeField(null=True, blank=True)
+    cancelled_by = models.ForeignKey('auth.User', null=True, blank=True, on_delete=models.PROTECT, related_name='+')
+    cancel_reason = models.CharField(max_length=255, blank=True)
 
     # Print / Request Tracking
     is_printed = models.BooleanField(default=False, verbose_name="เคยพิมพ์ใบกำกับแล้ว")

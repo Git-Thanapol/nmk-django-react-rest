@@ -119,6 +119,12 @@
                         {% comment %} <input type="text" name="status" class="form-control" value="{{ form.instance.status|default:'' }}"> {% endcomment %}
                         {{ form.status }}
                     </div>
+
+                    <div class="col-md-3" id="cancel-reason-block" style="display:none;">
+                        <label class="form-label text-secondary small">เหตุผลการยกเลิก</label>
+                        <input type="text" name="cancel_reason" maxlength="255" class="form-control form-control-sm" placeholder="ระบุเหตุผล (ถ้ามี)">
+                    </div>
+
                     {% comment %} {% if not is_editing %} {% endcomment %}
                     <div class="col-md-3">
                         <label class="form-label text-secondary small">ช่องทางการขาย</label>
@@ -314,10 +320,10 @@
                         </th>
                         <th class="p-2">
                             <select class="form-select form-select-sm bg-dark border-secondary text-light col-filter" data-col="1">
-                                <option value="">All</option>
-                                <option value="DRAFT">Draft</option>
-                                <option value="BILLED">Billed</option>
-                                <option value="CANCELLED">Cancelled</option>
+                                <option value="">ทั้งหมด</option>
+                                <option value="UNPRINTED">ยังไม่ได้ปริ้น</option>
+                                <option value="BILLED">ออกใบกำกับภาษีแล้ว</option>
+                                <option value="CANCELLED">ยกเลิก</option>
                             </select>
                         </th>
                         <th class="p-2">
@@ -348,11 +354,11 @@
                         
                         <td>
                             {% if inv.status == 'BILLED' %}
-                                <span class="badge bg-success bg-opacity-25 text-success border border-success border-opacity-25">BILLED</span>
-                            {% elif inv.status == 'DRAFT' %}
-                                <span class="badge bg-secondary bg-opacity-25 text-light border border-secondary border-opacity-50">DRAFT</span>
+                                <span class="badge bg-success bg-opacity-25 text-success border border-success border-opacity-25">ออกใบกำกับภาษีแล้ว</span>
+                            {% elif inv.status == 'UNPRINTED' %}
+                                <span class="badge bg-secondary bg-opacity-25 text-light border border-secondary border-opacity-50">ยังไม่ได้ปริ้น</span>
                             {% else %}
-                                <span class="badge bg-danger bg-opacity-25 text-danger">CANCELLED</span>
+                                <span class="badge bg-danger bg-opacity-25 text-danger">ยกเลิก</span>
                             {% endif %}
                         </td>
 
@@ -642,6 +648,17 @@ document.addEventListener('DOMContentLoaded', function() {
         input.addEventListener("input", filterData);
         input.addEventListener("change", filterData);
     });
+
+    // Show cancel reason box when status = CANCELLED
+    const statusSelect = document.querySelector('select[name="status"]');
+    const cancelBlock = document.getElementById('cancel-reason-block');
+    function toggleCancelReason() {
+        if (cancelBlock) cancelBlock.style.display = statusSelect.value === 'CANCELLED' ? 'block' : 'none';
+    }
+    if (statusSelect) {
+        statusSelect.addEventListener('change', toggleCancelReason);
+        toggleCancelReason();
+    }
 });
 </script>
 {% endblock %}

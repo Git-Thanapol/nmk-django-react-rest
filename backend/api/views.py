@@ -8,7 +8,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from django.core.files.storage import FileSystemStorage
 from django.db import transaction
-from django.db.models import Count, Q
+from django.db.models import Count, F, Q
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string,get_template
@@ -63,7 +63,7 @@ from .forms import (
 from .serializers import NoteSerializer, UserSerializer
 
 # Local apps – utilities
-from .legacy_files.utils_import_core import universal_invoice_import
+from .utils_import_core import universal_invoice_import
 from .utils_pdf import link_callback, generate_wht_pdf_4_copies
 from .utils_processors import (
     process_lazada_orders,
@@ -86,6 +86,52 @@ from .utils_dashboard import (
     get_purchase_vs_sales,
     get_stock_alerts,
 )
+
+
+def _apply_cancel_suffix(obj, fields):
+    """Suffix specified fields with -Cancelled-DDMMYYHHMMSSffffff to free up unique keys."""
+    now = timezone.localtime()
+    suffix = f"-Cancelled-{now.strftime('%d%m%y%H%M%S')}{now.microsecond:06d}"
+    for field_name in fields:
+        val = getattr(obj, field_name, None)
+        if val and '-Cancelled-' not in val:
+            max_len = obj._meta.get_field(field_name).max_length or 255
+            # Truncate original value first so suffix is never cut off
+            setattr(obj, field_name, val[:max_len - len(suffix)] + suffix)
+
+
+def _reverse_po_stock(po):
+    """Cancel PO → subtract back the qty that was added when PO was created."""
+    for item in po.purchase_items.select_for_update().order_by('id'):
+        if item.remaining_quantity < item.quantity:
+            raise Exception(
+                f"ไม่สามารถยกเลิก: สินค้า '{item.product.name}' มีการขายไปแล้วบางส่วน "
+                f"(เหลือ {item.remaining_quantity}/{item.quantity}). "
+                f"กรุณายกเลิกใบขายที่ใช้ batch นี้ก่อน"
+            )
+        # Use .update() to bypass PurchaseItem.save() which triggers PO recalc cascade
+        PurchaseItem.objects.filter(pk=item.pk).update(remaining_quantity=item.remaining_quantity - item.quantity)
+
+
+def _restore_invoice_stock(invoice):
+    """Cancel Invoice → add qty back to the source purchase batch."""
+    for inv_item in invoice.invoice_items.select_related('purchase_item').order_by('id'):
+        if inv_item.purchase_item_id:
+            # Use .update() to bypass PurchaseItem.save() which triggers PO recalc cascade
+            PurchaseItem.objects.select_for_update().filter(pk=inv_item.purchase_item_id).update(
+                remaining_quantity=F('remaining_quantity') + inv_item.quantity
+            )
+
+
+def _apply_cancellation(obj, request, suffix_fields, stock_reverser):
+    """Orchestrate cancellation: set audit fields → suffix keys → save → reverse stock."""
+    obj.cancelled_at = timezone.now()
+    obj.cancelled_by = request.user
+    obj.cancel_reason = request.POST.get('cancel_reason', '')[:255]
+    _apply_cancel_suffix(obj, suffix_fields)
+    obj.save()
+    stock_reverser(obj)
+
 
 
 
@@ -716,6 +762,7 @@ def purchase_order_view(request, pk=None):
     else:
         po_instance = None
         is_editing = False
+    old_status = po_instance.status if is_editing else None
 
     # --- RULE 1: If CANCELLED -> Completely Locked (Read-Only) ---
     if is_editing and po_instance.status == 'CANCELLED': # 'Cancelled' in Thai
@@ -752,10 +799,22 @@ def purchase_order_view(request, pk=None):
                     po = form.save(commit=False)
                     if not is_editing:
                         po.created_by = request.user
-                    
-                    # If PAID and not cancelling, we might want to prevent header changes, 
-                    # but the user explicitly said "record will not update" when editing.
-                    # So let's allow the save if it's not CANCELLED but still PAID.
+
+                    just_cancelled = is_editing and (new_status == 'CANCELLED' and old_status != 'CANCELLED')
+
+                    if just_cancelled:
+                        wht = getattr(po_instance, 'wht_cert', None)
+                        if wht and wht.status == 'ISSUED':
+                            raise Exception(
+                                f"ไม่สามารถยกเลิก: มีใบหัก ณ ที่จ่ายสถานะ ISSUED ผูกอยู่ "
+                                f"(เล่ม {wht.book_number} เลขที่ {wht.cert_number}). กรุณาจัดการ WHT ก่อน"
+                            )
+                        _apply_cancellation(po, request,
+                                            suffix_fields=['po_number', 'tax_sequence_number'],
+                                            stock_reverser=_reverse_po_stock)
+                        messages.success(request, "ยกเลิกรายการซื้อเรียบร้อย — Stock ถูกลดกลับแล้ว")
+                        return redirect('purchase_list')
+
                     po.save()
 
                     # B. Save Items
@@ -799,6 +858,8 @@ def purchase_order_view(request, pk=None):
 
     # 3. List View Logic (If viewing list)
     orders = PurchaseOrder.objects.all().order_by('-order_date')
+    if request.GET.get('show_cancelled') != '1':
+        orders = orders.exclude(status='CANCELLED')
     
     # Simple Filters
     if request.GET.get('q'):
@@ -828,6 +889,7 @@ def invoice_view(request, pk=None):
     else:
         invoice_instance = None
         is_editing = False
+    old_status = invoice_instance.status if is_editing else None
 
     # 2. Handle Form Submission
     if request.method == 'POST':
@@ -842,9 +904,20 @@ def invoice_view(request, pk=None):
                     if not is_editing:
                         invoice.created_by = request.user
                         if not invoice.company:
-                            invoice.company = Company.objects.first() 
+                            invoice.company = Company.objects.first()
+
+                    new_status = form.cleaned_data.get('status')
+                    just_cancelled = is_editing and (new_status == 'CANCELLED' and old_status != 'CANCELLED')
+
+                    if just_cancelled:
+                        _apply_cancellation(invoice, request,
+                                            suffix_fields=['invoice_number', 'tax_sequence_number'],
+                                            stock_reverser=_restore_invoice_stock)
+                        messages.success(request, "ยกเลิกใบกำกับเรียบร้อย — Stock คืนกลับให้แล้ว")
+                        return redirect('invoice_list')
+
                     invoice.save()
-                    
+
                     # --- B. Process Items ---
                     # Use a dictionary to track batch updates in memory before final save
                     # to ensure multiple items for the same batch work correctly.
@@ -954,7 +1027,9 @@ def invoice_view(request, pk=None):
 
     # 4. Fetch Recent Data
     invoices = Invoice.objects.select_related('vendor').order_by('-invoice_date', '-created_at')
-    
+    if request.GET.get('show_cancelled') != '1':
+        invoices = invoices.exclude(status='CANCELLED')
+
     if request.GET.get('q'):
         q = request.GET.get('q')
         invoices = invoices.filter(Q(invoice_number__icontains=q) | Q(vendor__name__icontains=q))

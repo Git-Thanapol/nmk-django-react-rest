@@ -14,7 +14,7 @@ import logging
 
 import pandas as pd
 
-from .legacy_files.utils_import_core import load_data
+from .utils_import_core import load_data
 
 log = logging.getLogger(__name__)
 

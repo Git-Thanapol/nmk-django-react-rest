@@ -61,7 +61,7 @@ class PurchaseOrderFactory(DjangoModelFactory):
     po_number = factory.Sequence(lambda n: f"PO-{n:04d}")
     vendor = factory.SubFactory(VendorFactory, company=factory.SelfAttribute('..company'))
     purchase_type = "Cash"
-    status = "DRAFT"
+    status = "PAID"
     tax_include = True
     tax_percent = Decimal("7.00")
     created_by = factory.SubFactory(UserFactory)
@@ -83,7 +83,7 @@ class InvoiceFactory(DjangoModelFactory):
 
     company = factory.SubFactory(CompanyFactory)
     invoice_number = factory.Sequence(lambda n: f"INV-{n:04d}")
-    status = "DRAFT"
+    status = "UNPRINTED"
     tax_include = True
     tax_percent = Decimal("7.00")
     shipping_cost = Decimal("0.00")
