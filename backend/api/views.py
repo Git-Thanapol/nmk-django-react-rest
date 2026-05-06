@@ -1,4 +1,5 @@
 # Django core
+import json
 import os
 
 from django import forms
@@ -22,7 +23,7 @@ from rest_framework import generics
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from pybaht import bahttext
 import openpyxl
-from openpyxl.styles import Font, PatternFill
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from datetime import datetime
 import threading
 
@@ -38,6 +39,7 @@ from .models import (
     PurchaseOrder,
     PurchaseAttachment,
     Transaction,
+    TransactionAttachment,
     Vendor,
     ImportLog,
     WithholdingTaxCert,
@@ -65,6 +67,7 @@ from .serializers import NoteSerializer, UserSerializer
 # Local apps – utilities
 from .utils_import_core import universal_invoice_import
 from .utils_pdf import link_callback, generate_wht_pdf_4_copies
+from .utils_wht import generate_wht_xlsx
 from .utils_processors import (
     process_lazada_orders,
     process_shopee_orders,
@@ -694,10 +697,12 @@ def transaction_view(request, pk=None):
         form = TransactionForm(request.POST, instance=transaction_instance)
         if form.is_valid():
             transaction = form.save(commit=False)
-            # Assign current user/company logic
-            transaction.created_by = request.user 
-            transaction.company = Company.objects.first() # Placeholder logic
+            transaction.created_by = request.user
+            transaction.company = Company.objects.first()
             transaction.save()
+            for f in request.FILES.getlist('attachments'):
+                TransactionAttachment.objects.create(transaction=transaction, file=f)
+            messages.success(request, "บันทึกรายการเรียบร้อยแล้ว")
             return redirect('transaction_list')
     else:
         form = TransactionForm(instance=transaction_instance)
@@ -742,6 +747,8 @@ def transaction_view(request, pk=None):
     type_choices = Transaction.TRANSACTION_TYPES
     category_choices = Transaction.CATEGORY_CHOICES
 
+    attachments = transaction_instance.attachments.all() if transaction_instance else []
+
     context = {
         'form': form,
         'transactions': transactions,
@@ -749,9 +756,18 @@ def transaction_view(request, pk=None):
         'type_choices': type_choices,
         'category_choices': category_choices,
         'is_editing': is_editing,
-        'editing_transaction': transaction_instance
+        'editing_transaction': transaction_instance,
+        'attachments': attachments,
     }
     return render(request, 'transaction_list.html', context)
+
+@login_required
+def transaction_attachment_delete(request, pk):
+    attachment = get_object_or_404(TransactionAttachment, pk=pk)
+    transaction_pk = attachment.transaction.pk
+    attachment.file.delete(save=False)
+    attachment.delete()
+    return redirect('transaction_edit', pk=transaction_pk)
 
 @login_required
 def purchase_order_view(request, pk=None):
@@ -1011,7 +1027,7 @@ def invoice_view(request, pk=None):
                     
                     # --- D. Final Totals ---
                     invoice.calculate_totals()
-                    
+
                     messages.success(request, "บันทึกใบกำกับภาษีเรียบร้อยแล้ว")
                     return redirect('invoice_list')
 
@@ -1036,12 +1052,18 @@ def invoice_view(request, pk=None):
     
     invoices = invoices[:1000]
 
+    product_costs = json.dumps({
+        str(p['id']): float(p['cost_price'])
+        for p in Product.objects.filter(is_active=True).values('id', 'cost_price')
+    })
+
     context = {
         'form': form,
         'formset': formset,
         'invoices': invoices,
         'is_editing': is_editing,
         'editing_invoice': invoice_instance,
+        'product_costs': product_costs,
     }
     return render(request, 'invoice_form.html', context)
 
@@ -1249,33 +1271,28 @@ def report_dashboard_view(request):
 @login_required
 def invoice_pdf_view(request, pk):
     invoice = get_object_or_404(Invoice, pk=pk)
-    
+    is_abbreviated = bool(request.GET.get('abbr'))
+
     if not invoice.is_printed:
         invoice.is_printed = True
         invoice.status = 'BILLED'
     invoice.print_datetime = timezone.now()
     invoice.save(update_fields=['is_printed', 'print_datetime', 'status'])
-    
+
     context = {
         'invoice': invoice,
         'items': invoice.invoice_items.all(),
         'company': invoice.company,
+        'is_abbreviated': is_abbreviated,
     }
 
-    # 1. Render HTML
     html_string = render_to_string('pdf/invoice_print.html', context)
-
-    # 2. Base URL for static files
-    # WeasyPrint needs to know where to find /static/ files on disk
     base_url = request.build_absolute_uri('/')
-
-    # 3. Generate PDF
-    # WeasyPrint handles fonts and images automatically if base_url is correct
     pdf_file = weasyprint.HTML(string=html_string, base_url=base_url).write_pdf()
 
-    # 4. Return Response
     response = HttpResponse(pdf_file, content_type='application/pdf')
-    filename = f"Invoice_{invoice.invoice_number}.pdf"
+    suffix = '_Abbr' if is_abbreviated else ''
+    filename = f"Invoice_{invoice.invoice_number}{suffix}.pdf"
     response['Content-Disposition'] = f'attachment; filename="{filename}"'
     return response
 
@@ -1404,7 +1421,13 @@ def wht_cert_list_view(request):
         cert.amount_before_tax = float(request.POST.get('amount_before_tax', 0).replace(',', ''))
         cert.tax_rate = float(request.POST.get('tax_rate', 3))
         cert.tax_amount = float(request.POST.get('tax_amount', 0).replace(',', ''))
-        
+
+        # 4b. Extra fields for Excel template
+        cert.sequence_no = request.POST.get('sequence_no', '').strip()
+        cert.provident_fund_amount = float(request.POST.get('provident_fund_amount', '0').replace(',', '') or 0)
+        cert.social_security_amount = float(request.POST.get('social_security_amount', '0').replace(',', '') or 0)
+        cert.social_security_id = request.POST.get('social_security_id', '').strip()
+
         # 5. Fix Bug: Robust Linking Logic
         if source_type == 'po' and source_id:
             po = PurchaseOrder.objects.get(id=source_id)
@@ -1439,9 +1462,9 @@ def wht_cert_list_view(request):
         cert.save()
 
         if is_issue:
-            pdf_url = generate_wht_pdf_4_copies(cert)
+            xlsx_url = generate_wht_xlsx(cert)
             messages.success(request, f"Issued Successfully: {cert.cert_number}")
-            return HttpResponseRedirect(pdf_url)
+            return HttpResponseRedirect(xlsx_url)
         else:
             messages.info(request, "Draft Saved.")
             return redirect('wht_list')
@@ -1600,7 +1623,16 @@ class VatExportExcelView(APIView):
 
         queryset = queryset.order_by('vat_order__date', 'vat_order__document_no')
 
-        return export_vat_report(queryset)
+        filepath, filename = export_vat_report(queryset)
+        if os.path.exists(filepath):
+            with open(filepath, 'rb') as f:
+                response = HttpResponse(
+                    f.read(),
+                    content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                )
+                response['Content-Disposition'] = f'attachment; filename={filename}'
+                return response
+        return Response({'error': 'Export failed'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @login_required
@@ -1689,7 +1721,12 @@ class VatBuySummaryExportExcelView(APIView):
 
         queryset = queryset.order_by('-date', '-document_no')
 
-        filepath, filename = export_vat_buy_summary_report(queryset)
+        filepath, filename = export_vat_buy_summary_report(
+            queryset,
+            filter_date=filter_date,
+            vat_status=vat_status,
+            query=product_query,
+        )
 
         if os.path.exists(filepath):
             with open(filepath, 'rb') as f:
@@ -1719,41 +1756,295 @@ class VatBuyOrderDetailView(APIView):
 import csv
 import urllib.request
 
+_THAI_FONT = 'TH Sarabun New'
+_THIN = Side(border_style='thin', color='000000')
+
+
+def _xl_font(size=11, bold=False):
+    return Font(name=_THAI_FONT, size=size, bold=bold)
+
+
+def _xl_border_range(ws, top_row, bottom_row, left_col, right_col):
+    """Apply outer thin border around a rectangular range (preserves inner borders)."""
+    for row in range(top_row, bottom_row + 1):
+        for col in range(left_col, right_col + 1):
+            cell = ws.cell(row=row, column=col)
+            existing = cell.border
+            top = _THIN if row == top_row else existing.top
+            bottom = _THIN if row == bottom_row else existing.bottom
+            left = _THIN if col == left_col else existing.left
+            right = _THIN if col == right_col else existing.right
+            cell.border = Border(top=top, bottom=bottom, left=left, right=right)
+
+
+def _xl_set(ws, row, col, value, *, font=None, align=None, fill=None, number_format=None, merge_to_col=None):
+    cell = ws.cell(row=row, column=col, value=value)
+    if font is not None:
+        cell.font = font
+    if align is not None:
+        cell.alignment = align
+    if fill is not None:
+        cell.fill = fill
+    if number_format is not None:
+        cell.number_format = number_format
+    if merge_to_col is not None and merge_to_col > col:
+        ws.merge_cells(start_row=row, start_column=col, end_row=row, end_column=merge_to_col)
+    return cell
+
+
+def _write_invoice_copy(ws, start_row, invoice, items, is_original, is_abbreviated):
+    """Render one copy (Original or Copy) of the invoice. Returns the row after the rendered block."""
+    company = invoice.company
+    vendor = invoice.vendor
+    gray = PatternFill('solid', fgColor='F0F0F0')
+    light_gray = PatternFill('solid', fgColor='F9F9F9')
+    right = Alignment(horizontal='right', vertical='center', wrap_text=True)
+    left = Alignment(horizontal='left', vertical='center', wrap_text=True)
+    center = Alignment(horizontal='center', vertical='center', wrap_text=True)
+
+    r = start_row
+
+    # --- Header: company info (A-E) | doc title (F-H) ---
+    _xl_set(ws, r, 1, company.name if company else "-",
+            font=_xl_font(16, True), align=left, merge_to_col=5)
+    title = "ใบเสร็จรับเงิน / ใบกำกับภาษี" + ("อย่างย่อ" if is_abbreviated else "")
+    _xl_set(ws, r, 6, title, font=_xl_font(12, True), align=right, merge_to_col=8)
+    ws.row_dimensions[r].height = 28
+
+    r += 1
+    _xl_set(ws, r, 1, (company.address if company and company.address else "-"),
+            font=_xl_font(11), align=left, merge_to_col=5)
+    _xl_set(ws, r, 6, ("ต้นฉบับ / Original" if is_original else "สำเนา / Copy"),
+            font=_xl_font(12), align=right, merge_to_col=8)
+    ws.row_dimensions[r].height = 30
+
+    r += 1
+    _xl_set(ws, r, 1, f"โทรศัพท์: {company.phone if company and company.phone else '-'}",
+            font=_xl_font(11), align=left, merge_to_col=5)
+
+    r += 1
+    tax_id = company.tax_id if company and company.tax_id else "-"
+    _xl_set(ws, r, 1, f"หมายเลขประจำตัวผู้เสียภาษี: {tax_id} / สำนักงานใหญ่",
+            font=_xl_font(11), align=left, merge_to_col=5)
+
+    r += 2  # blank spacer
+
+    # --- Info boxes: customer (A-D) | invoice info (E-H) ---
+    cust_company = vendor.company if vendor and vendor.company else (invoice.recipient_name or "-")
+    cust_name = vendor.name if vendor and vendor.name else (invoice.recipient_name or "-")
+    cust_address = vendor.address if vendor and vendor.address else (invoice.recipient_address or "-")
+    cust_taxid = vendor.tax_id if vendor and vendor.tax_id else "-"
+
+    customer_rows = [
+        ("รหัสลูกค้า:", str(cust_company)),
+        ("นามลูกค้า:", str(cust_name)),
+        ("ที่อยู่:", str(cust_address).replace('\r\n', ' ').replace('\n', ' ')),
+        ("เลขผู้เสียภาษี:", str(cust_taxid)),
+    ]
+    invoice_info_rows = [
+        ("วันที่:", invoice.invoice_date.strftime('%d/%m/%Y') if invoice.invoice_date else "-"),
+        ("เลขที่ใบกำกับภาษี:", invoice.invoice_number or "-"),
+        ("พนักงานขาย:", str(invoice.saleperson or "-")),
+        ("อ้างอิง:", str(invoice.platform_order_id or "-")),
+    ]
+
+    box_top = r
+    for i in range(4):
+        c_label, c_val = customer_rows[i]
+        i_label, i_val = invoice_info_rows[i]
+        _xl_set(ws, r, 1, c_label, font=_xl_font(11, True), align=left)
+        _xl_set(ws, r, 2, c_val, font=_xl_font(11), align=left, merge_to_col=4)
+        _xl_set(ws, r, 5, i_label, font=_xl_font(11, True), align=left)
+        _xl_set(ws, r, 6, i_val, font=_xl_font(11), align=left, merge_to_col=8)
+        ws.row_dimensions[r].height = 30 if i == 2 else 20  # address row taller
+        r += 1
+
+    _xl_border_range(ws, box_top, box_top + 3, 1, 4)
+    _xl_border_range(ws, box_top, box_top + 3, 5, 8)
+
+    r += 1  # blank spacer
+
+    # --- Items table ---
+    items_header_row = r
+    headers = [
+        ("#", 1, 1, center),
+        ("รหัสสินค้า", 2, 2, center),
+        ("รายการ", 3, 4, center),
+        ("จำนวน", 5, 5, center),
+        ("หน่วยละ", 6, 6, center),
+        ("ส่วนลด", 7, 7, center),
+        ("จำนวนเงิน", 8, 8, center),
+    ]
+    for label, col_start, col_end, align in headers:
+        _xl_set(ws, r, col_start, label, font=_xl_font(11, True), align=align,
+                fill=gray, merge_to_col=col_end if col_end > col_start else None)
+        for c in range(col_start, col_end + 1):
+            ws.cell(row=r, column=c).fill = gray
+            ws.cell(row=r, column=c).border = Border(top=_THIN, bottom=_THIN, left=_THIN, right=_THIN)
+            ws.cell(row=r, column=c).font = _xl_font(11, True)
+            ws.cell(row=r, column=c).alignment = align
+    ws.row_dimensions[r].height = 22
+
+    r += 1
+    item_count = len(items)
+    rows_to_render = max(item_count, 5)
+    items_first_row = r
+
+    for i in range(rows_to_render):
+        if i < item_count:
+            it = items[i]
+            sku = (it.product.sku if it.product else it.sku) or "-"
+            name = (it.product.name if it.product else it.item_name) or "-"
+            _xl_set(ws, r, 1, i + 1, font=_xl_font(11), align=center)
+            _xl_set(ws, r, 2, sku, font=_xl_font(11), align=left)
+            _xl_set(ws, r, 3, name, font=_xl_font(11), align=left, merge_to_col=4)
+            _xl_set(ws, r, 5, it.quantity, font=_xl_font(11), align=center)
+            _xl_set(ws, r, 6, float(it.unit_price), font=_xl_font(11), align=right, number_format='#,##0.00')
+            _xl_set(ws, r, 7, "-", font=_xl_font(11), align=right)
+            _xl_set(ws, r, 8, float(it.total_price), font=_xl_font(11), align=right, number_format='#,##0.00')
+        else:
+            ws.merge_cells(start_row=r, start_column=3, end_row=r, end_column=4)
+        ws.row_dimensions[r].height = 20
+        r += 1
+
+    items_last_row = r - 1
+    # Outer border around items area + vertical separators
+    _xl_border_range(ws, items_first_row, items_last_row, 1, 8)
+    for col in [2, 3, 5, 6, 7, 8]:
+        for row in range(items_first_row, items_last_row + 1):
+            cell = ws.cell(row=row, column=col)
+            existing = cell.border
+            cell.border = Border(top=existing.top, bottom=existing.bottom,
+                                 left=_THIN, right=existing.right)
+
+    r += 1  # blank spacer
+
+    # --- Bottom: baht text + totals (5 totals rows) ---
+    totals_top = r
+    baht_value = bahttext(invoice.grand_total) if invoice.grand_total is not None else "-"
+
+    _xl_set(ws, r, 1, f"ยอดเงินสุทธิ ({baht_value})",
+            font=_xl_font(11, True), align=left, fill=light_gray, merge_to_col=5)
+    _xl_set(ws, r, 6, "รวมเป็นเงิน", font=_xl_font(11), align=right, merge_to_col=7)
+    _xl_set(ws, r, 8, float(invoice.subtotal or 0), font=_xl_font(11), align=right,
+            number_format='#,##0.00')
+    ws.row_dimensions[r].height = 22
+
+    r += 1
+    if invoice.notes:
+        _xl_set(ws, r, 1, f"หมายเหตุ: {invoice.notes}",
+                font=Font(name=_THAI_FONT, size=10, color='C00000'), align=left, merge_to_col=5)
+    _xl_set(ws, r, 6, "ส่วนลด", font=_xl_font(11), align=right, merge_to_col=7)
+    _xl_set(ws, r, 8, float(invoice.discount_amount or 0), font=_xl_font(11), align=right,
+            number_format='#,##0.00')
+
+    r += 1
+    _xl_set(ws, r, 6, "ค่าขนส่ง", font=_xl_font(11), align=right, merge_to_col=7)
+    _xl_set(ws, r, 8, float(invoice.shipping_cost or 0), font=_xl_font(11), align=right,
+            number_format='#,##0.00')
+
+    r += 1
+    vat_pct = int(invoice.tax_percent or 0)
+    _xl_set(ws, r, 6, f"VAT {vat_pct}%", font=_xl_font(11), align=right, merge_to_col=7)
+    _xl_set(ws, r, 8, float(invoice.tax_amount or 0), font=_xl_font(11), align=right,
+            number_format='#,##0.00')
+
+    r += 1
+    _xl_set(ws, r, 6, "ยอดเงินสุทธิ", font=_xl_font(11, True), align=right,
+            fill=gray, merge_to_col=7)
+    cell = _xl_set(ws, r, 8, float(invoice.grand_total or 0),
+                   font=_xl_font(11, True), align=right, number_format='#,##0.00')
+    cell.fill = gray
+    ws.cell(row=r, column=6).fill = gray
+    ws.cell(row=r, column=7).fill = gray
+    totals_bottom = r
+
+    # Borders for totals table (right side cols F-H, all 5 rows)
+    for row in range(totals_top, totals_bottom + 1):
+        for col in range(6, 9):
+            ws.cell(row=row, column=col).border = Border(top=_THIN, bottom=_THIN, left=_THIN, right=_THIN)
+
+    # Border for baht-text box (just top row, A-E)
+    _xl_border_range(ws, totals_top, totals_top, 1, 5)
+
+    r += 2  # blank spacer
+
+    # --- Signature section: 4 boxes, each spans 2 cols ---
+    sig_labels = ["ผู้ส่งสินค้า", "ผู้รับสินค้า", "ผู้ตรวจสอบ", "ผู้อนุมัติ"]
+    sig_top = r
+    for i, label in enumerate(sig_labels):
+        col = 1 + i * 2
+        _xl_set(ws, r, col, label, font=_xl_font(11, True), align=center,
+                fill=gray, merge_to_col=col + 1)
+        ws.cell(row=r, column=col).fill = gray
+        ws.cell(row=r, column=col + 1).fill = gray
+    ws.row_dimensions[r].height = 22
+
+    # Signature space (2 tall rows)
+    ws.row_dimensions[r + 1].height = 32
+    ws.row_dimensions[r + 2].height = 32
+
+    # Date row
+    for i in range(4):
+        col = 1 + i * 2
+        _xl_set(ws, r + 3, col, "____________________\nวันที่ ..../..../....",
+                font=_xl_font(10), align=center, merge_to_col=col + 1)
+    ws.row_dimensions[r + 3].height = 32
+
+    # Borders for signature boxes
+    for i in range(4):
+        col_start = 1 + i * 2
+        _xl_border_range(ws, sig_top, sig_top + 3, col_start, col_start + 1)
+
+    return sig_top + 4
+
+
 @login_required
 def invoice_excel_view(request, pk):
     invoice = get_object_or_404(Invoice, pk=pk)
-    
-    # Create workbook
+    items = list(invoice.invoice_items.all())
+    is_abbreviated = bool(request.GET.get('abbr'))
+
     wb = openpyxl.Workbook()
     ws = wb.active
-    ws.title = f"Invoice_{invoice.invoice_number}"
-    
-    # Header format
-    ws.append(["Company", "Invoice Number", "Date", "Customer", "Subtotal", "Tax", "Grand Total", "Status"])
-    ws.append([
-        invoice.company.name if invoice.company else "",
-        invoice.invoice_number,
-        invoice.invoice_date.strftime('%Y-%m-%d') if invoice.invoice_date else "",
-        invoice.vendor.name if invoice.vendor else invoice.recipient_name,
-        float(invoice.subtotal),
-        float(invoice.tax_amount),
-        float(invoice.grand_total),
-        invoice.status
-    ])
+    def _setup_sheet(sheet, invoice_number, is_original):
+        sheet.title = ("ต้นฉบับ" if is_original else "สำเนา")
 
-    ws.append([]) # empty row
-    ws.append(["SKU", "Item Name", "Quantity", "Unit Price", "Total Price"])
-    for item in invoice.invoice_items.all():
-        ws.append([
-            item.product.sku if item.product else item.sku,
-            item.product.name if item.product else item.item_name,
-            item.quantity,
-            float(item.unit_price),
-            float(item.total_price)
-        ])
-    
+        sheet.page_setup.paperSize = sheet.PAPERSIZE_A4
+        sheet.page_setup.orientation = sheet.ORIENTATION_PORTRAIT
+        sheet.page_margins.left = 0.4
+        sheet.page_margins.right = 0.4
+        sheet.page_margins.top = 0.4
+        sheet.page_margins.bottom = 0.4
+        sheet.print_options.horizontalCentered = True
+        sheet.sheet_properties.pageSetUpPr.fitToPage = True
+        sheet.page_setup.fitToWidth = 1
+        sheet.page_setup.fitToHeight = 1
+
+        widths = {'B': 13, 'C': 18, 'D': 14, 'F': 11, 'G': 9, 'H': 12}
+        for col, w in widths.items():
+            sheet.column_dimensions[col].width = w
+
+        last_row = _write_invoice_copy(sheet, 1, invoice, items,
+                                       is_original=is_original, is_abbreviated=is_abbreviated)
+
+        for col_letter in ('A', 'E'):
+            sheet.column_dimensions[col_letter].width = 19
+            sheet.column_dimensions[col_letter].bestFit = True
+
+        sheet.print_area = f'A1:H{last_row - 1}'
+
+    # Sheet 1: Original
+    ws.title = "ต้นฉบับ"
+    _setup_sheet(ws, invoice.invoice_number, is_original=True)
+
+    # Sheet 2: Copy
+    ws_copy = wb.create_sheet()
+    _setup_sheet(ws_copy, invoice.invoice_number, is_original=False)
+
+    suffix = '_Abbr' if is_abbreviated else ''
     response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-    response['Content-Disposition'] = f'attachment; filename="Invoice_{invoice.invoice_number}.xlsx"'
+    response['Content-Disposition'] = f'attachment; filename="Invoice_{invoice.invoice_number}{suffix}.xlsx"'
     wb.save(response)
     return response
 
@@ -1796,4 +2087,4 @@ def sync_google_sheet_requests(request):
                     
         return JsonResponse({'success': True, 'count': sync_count, 'message': f'พบคำขอและซิงค์ข้อมูลแล้ว {sync_count} รายการ'})
     except Exception as e:
-        return JsonResponse({'success': False, 'message': str(e)})
+        return JsonResponse({'success': False, 'message': str(e)})

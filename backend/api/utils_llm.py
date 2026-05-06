@@ -173,7 +173,7 @@ def _load_help_docs() -> str:
 
 
 _HELP_SYSTEM_PROMPT_TEMPLATE = """\
-คุณเป็น AI ผู้ช่วยสำหรับระบบ Namkang Phone ERP ภารกิจ: ตอบคำถามของ user เกี่ยวกับการใช้งานระบบ
+คุณเป็น AI ผู้ช่วยสำหรับระบบ Accounting System ERP ภารกิจ: ตอบคำถามของ user เกี่ยวกับการใช้งานระบบ
 
 ข้อมูลระบบ (คู่มือฉบับเต็ม):
 ---

@@ -39,6 +39,7 @@ urlpatterns = [
     path('transaction_form/', views.transaction_form, name='transaction_form'),
     path('transactions/', views.transaction_view, name='transaction_list'),
     path('transactions/edit/<int:pk>/', views.transaction_view, name='transaction_edit'),
+    path('transactions/attachment/<int:pk>/delete/', views.transaction_attachment_delete, name='transaction_attachment_delete'),
 
     # --- Imports & Mapping ---
     path('import/platforms/', views.platform_import_view, name='platform_import'),

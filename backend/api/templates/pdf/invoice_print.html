@@ -165,8 +165,8 @@
                         <div>โทรศัพท์: {{ invoice.company.phone|default:"-" }}</div>
                         <div>หมายเลขประจำตัวผู้เสียภาษี: {{ invoice.company.tax_id|default:"-" }} / สำนักงานใหญ่</div>
                     </td>
-                    <td width="40%" class="text-right">
-                        <div class="doc-title">ใบเสร็จรับเงิน / ใบกำกับภาษี</div>
+                    <td width="50%" class="text-right">
+                        <div class="doc-title">ใบเสร็จรับเงิน / ใบกำกับภาษี{% if is_abbreviated %}อย่างย่อ{% endif %}</div>
                         <div style="font-size: 14px; margin-top: 5px;">
                             {% if forloop.first %}
                                 ต้นฉบับ / Original

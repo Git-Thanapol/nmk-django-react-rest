@@ -21,13 +21,14 @@ class VendorForm(forms.ModelForm):
 
     class Meta:
         model = Vendor
-        fields = ['name', 'contact_person', 'phone', 'email', 'address', 'tax_id', 'is_active']
+        fields = ['name', 'contact_person', 'phone', 'email', 'address', 'national_id', 'tax_id', 'is_active']
         widgets = {
             'name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'ชื่อผู้ขาย / บริษัท'}),
             'contact_person': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'ชื่อผู้ติดต่อ'}),
             'phone': forms.TextInput(attrs={'class': 'form-control', 'placeholder': '081-234-5678'}),
             'email': forms.EmailInput(attrs={'class': 'form-control', 'placeholder': 'vendor@email.com'}),
             'address': forms.Textarea(attrs={'class': 'form-control', 'rows': 2, 'placeholder': 'ที่อยู่ผู้ขาย'}),
+            'national_id': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'เลขประจำตัวประชาชน 13 หลัก', 'maxlength': '13'}),
             'tax_id': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'เลขประจำตัวผู้เสียภาษีอากรไม่ต้องมีขีด', 'maxlength': '13'}),
             'is_active': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
         }
@@ -312,10 +313,11 @@ class ReportFilterForm(forms.Form):
 class CompanyForm(forms.ModelForm):
     class Meta:
         model = Company
-        fields = ['name', 'nick_name', 'tax_id', 'address', 'phone', 'email', 'is_active']
+        fields = ['name', 'nick_name', 'national_id', 'tax_id', 'address', 'phone', 'email', 'is_active']
         labels = {
             'name': 'ชื่อบริษัท (จดทะเบียน)',
             'nick_name': 'ชื่อย่อ / ชื่อเรียก',
+            'national_id': 'เลขประจำตัวประชาชน (กรรมการ/50ทวิ)',
             'tax_id': 'เลขประจำตัวผู้เสียภาษี',
             'address': 'ที่อยู่บริษัท (สำหรับออกใบกำกับภาษี)',
             'phone': 'เบอร์โทรศัพท์',
@@ -325,6 +327,7 @@ class CompanyForm(forms.ModelForm):
         widgets = {
             'name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'เช่น บริษัท เคไอที23 จำกัด'}),
             'nick_name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'เช่น KIT23'}),
+            'national_id': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'เลขบัตรประชาชน 13 หลัก', 'maxlength': '13'}),
             'tax_id': forms.TextInput(attrs={'class': 'form-control'}),
             'address': forms.Textarea(attrs={'class': 'form-control', 'rows': 3}),
             'phone': forms.TextInput(attrs={'class': 'form-control'}),

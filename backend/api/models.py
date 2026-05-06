@@ -27,6 +27,7 @@ class Company(models.Model):
     """Multi-company support (Our Operating Companies)"""
     name = models.CharField(max_length=200, verbose_name="ชื่อบริษัท")
     nick_name = models.CharField(max_length=100, blank=True, verbose_name="ชื่อย่อ")
+    national_id = models.CharField(max_length=13, blank=True, null=True, verbose_name="เลขประจำตัวประชาชน (กรรมการ)")
     tax_id = models.CharField(max_length=20, blank=True, null=True, verbose_name="เลขผู้เสียภาษี")
     address = models.TextField(blank=True, null=True, verbose_name="ที่อยู่")
     phone = models.CharField(max_length=20, blank=True, null=True, verbose_name="เบอร์โทร")
@@ -64,6 +65,7 @@ class Vendor(models.Model):
     phone = models.CharField(max_length=20, blank=True,null=True)
     email = models.EmailField(blank=True,null=True)
     address = models.TextField(blank=True,null=True)
+    national_id = models.CharField(max_length=13, blank=True, null=True, verbose_name="เลขประจำตัวประชาชน")
     tax_id = models.CharField(max_length=20, blank=True, null=True)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -474,6 +476,23 @@ class Transaction(models.Model):
         """Return positive for income, negative for expense"""
         return self.amount if self.type == 'INCOME' else -self.amount
 
+class TransactionAttachment(models.Model):
+    """File attachments for a transaction"""
+    transaction = models.ForeignKey(Transaction, on_delete=models.CASCADE, related_name='attachments')
+    file = models.FileField(upload_to='transaction_attachments/%Y/%m/')
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'transaction_attachments'
+        ordering = ['-uploaded_at']
+
+    def __str__(self):
+        return f"Attachment for {self.transaction} - {self.file.name}"
+
+    @property
+    def filename(self):
+        return self.file.name.split('/')[-1]
+
 class CSVImportLog(models.Model):
     """Track CSV imports for online platforms"""
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='csv_import_logs', null=True, blank=True)
@@ -575,15 +594,12 @@ class ImportLog(models.Model):
     
 class WithholdingTaxCert(models.Model):
     INCOME_TYPE_CHOICES = [
-        ('1', 'เงินเดือน ค่าจ้าง ฯลฯ (40(1))'),
-        ('2', 'ค่าธรรมเนียม ค่านายหน้า ฯลฯ (40(2))'),
-        ('3', 'ค่าแห่งลิขสิทธิ์ ฯลฯ (40(3))'),
-        ('4a', 'ดอกเบี้ย ฯลฯ (40(4)(ก))'),
-        ('4b', 'เงินปันผล ฯลฯ (40(4)(ข))'),
-        ('5', 'ค่าเช่า (40(5))'),
-        ('6', 'ค่าวิชาชีพอิสระ (40(6))'),
-        ('7', 'ค่ารับเหมา (40(7))'),
-        ('8', 'อื่นๆ (40(8)) - โปรดระบุ'),
+        ('1',  '1. เงินเดือน ค่าจ้าง เบี้ยเลี้ยง โบนัส ฯลฯ ตามมาตรา 40(1)'),
+        ('2',  '2. ค่าธรรมเนียม ค่านายหน้า ฯลฯ ตามมาตรา 40(2)'),
+        ('3',  '3. ค่าแห่งลิขสิทธิ์ ฯลฯ ตามมาตรา 40(3)'),
+        ('4a', '4. (ก) ค่าดอกเบี้ย ฯลฯ ตามมาตรา 40(4)(ก)'),
+        ('4b', '4. (ข) เงินปันผล ส่วนแบ่งของกำไร ฯลฯ ตามมาตรา 40(4)(ข)'),
+        ('6',  '6. อื่นๆ (ระบุ)'),
     ]
 
     STATUS_CHOICES = [
@@ -606,7 +622,7 @@ class WithholdingTaxCert(models.Model):
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='DRAFT')
     
     # Tax Details
-    income_type = models.CharField(max_length=5, choices=INCOME_TYPE_CHOICES, default='8')
+    income_type = models.CharField(max_length=5, choices=INCOME_TYPE_CHOICES, default='6')
     income_description = models.CharField(max_length=200, blank=True, verbose_name="ระบุ (ถ้าเลือกอื่นๆ)")
     tax_rate = models.DecimalField(max_digits=5, decimal_places=2, default=3.00)
     
@@ -614,7 +630,14 @@ class WithholdingTaxCert(models.Model):
     amount_before_tax = models.DecimalField(max_digits=12, decimal_places=2)
     tax_amount = models.DecimalField(max_digits=12, decimal_places=2)
     
+    # Extra fields for Excel template (TWI50)
+    sequence_no = models.CharField(max_length=10, blank=True, verbose_name="ลำดับที่ในแบบ")
+    provident_fund_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0, verbose_name="เงินสะสมกองทุนสำรองฯ")
+    social_security_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0, verbose_name="เงินสมทบประกันสังคม")
+    social_security_id = models.CharField(max_length=20, blank=True, verbose_name="เลขบัตรประกันสังคม")
+
     pdf_file = models.FileField(upload_to='wht_certs/%Y/', null=True, blank=True)
+    xlsx_file = models.FileField(upload_to='wht_certs/%Y/', null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

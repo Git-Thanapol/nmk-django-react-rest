@@ -1,4 +1,4 @@
-# คู่มือการใช้งาน Namkang Phone System
+# คู่มือการใช้งาน Accounting System
 
 ระบบ ERP สำหรับจัดการธุรกิจมือถือ รองรับหลายบริษัท เชื่อมต่อ Shopee/Lazada/TikTok
 

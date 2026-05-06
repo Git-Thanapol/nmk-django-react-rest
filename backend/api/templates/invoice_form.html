@@ -271,6 +271,9 @@
                         <a href="{% url 'invoice_pdf' editing_invoice.id %}" class="btn btn-outline-danger px-4" target="_blank">
                             <i class="bi bi-file-earmark-pdf me-2"></i>Print/PDF
                         </a>
+                        <a href="{% url 'invoice_pdf' editing_invoice.id %}?abbr=1" class="btn btn-outline-warning px-4" target="_blank">
+                            <i class="bi bi-receipt me-2"></i>ใบกำกับภาษีอย่างย่อ
+                        </a>
                         <a href="{% url 'invoice_excel' editing_invoice.id %}" class="btn btn-outline-success px-4" target="_blank">
                             <i class="bi bi-file-earmark-excel me-2"></i>Excel
                         </a>
@@ -313,6 +316,7 @@
                         <th class="text-end" style="width: 10%">ยอดรวมสุทธิ</th>
                         <th class="text-end pe-4" style="width: 5%">แก้ไข</th>
                         <th class="text-end pe-4" style="width: 5%">PDF</th>
+                        <th class="text-end pe-4" style="width: 5%">ย่อ</th>
                     </tr>
                     <tr class="filter-row bg-dark">
                         <th class="ps-4 p-2">
@@ -338,6 +342,7 @@
                         <th class="p-2 text-end">
                             <input type="text" class="form-control form-control-sm bg-dark border-secondary text-light col-filter text-end" data-col="5" placeholder="> ยอดรวมสุทธิ">
                         </th>
+                        <th></th>
                         <th></th>
                         <th></th>
                     </tr>
@@ -400,10 +405,15 @@
                                 </a>
                             {% endif %}
                         </td>
+                        <td class="text-end pe-4">
+                            <a href="{% url 'invoice_pdf' inv.id %}?abbr=1" class="btn btn-sm btn-outline-warning" title="ใบกำกับภาษีอย่างย่อ" target="_blank">
+                                <i class="bi bi-receipt"></i>
+                            </a>
+                        </td>
                     </tr>
                     {% empty %}
                     <tr id="noResultsRow">
-                        <td colspan="7" class="text-center py-5 text-muted">ไม่พบใบแจ้งหนี้ที่ค้นหา</td>
+                        <td colspan="9" class="text-center py-5 text-muted">ไม่พบใบแจ้งหนี้ที่ค้นหา</td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -659,6 +669,65 @@ document.addEventListener('DOMContentLoaded', function() {
         statusSelect.addEventListener('change', toggleCancelReason);
         toggleCancelReason();
     }
+
+    // --- PART 3: BELOW-COST WARNING BEFORE SAVE ---
+    const productCostMap = {{ product_costs|safe }};
+    const invoiceForm = document.getElementById('invoiceForm');
+    let belowCostConfirmed = false;
+
+    invoiceForm.addEventListener('submit', function(e) {
+        if (belowCostConfirmed) return;
+
+        const warnings = [];
+        document.querySelectorAll('tr.item-row').forEach(row => {
+            if (row.style.display === 'none') return;
+            const productSelect = row.querySelector('.product-select');
+            const priceInput = row.querySelector('.price');
+            if (!productSelect || !priceInput) return;
+
+            const productId = productSelect.value;
+            const unitPrice = parseFloat(priceInput.value) || 0;
+            const costPrice = productCostMap[productId];
+
+            if (productId && costPrice !== undefined && unitPrice < costPrice) {
+                const productName = productSelect.options[productSelect.selectedIndex]?.text || productId;
+                warnings.push(`${productName.split('|')[0].trim()} — ราคาขาย ${unitPrice.toLocaleString('th-TH', {minimumFractionDigits: 2})} ต่ำกว่าทุน ${costPrice.toLocaleString('th-TH', {minimumFractionDigits: 2})} บาท`);
+            }
+        });
+
+        if (warnings.length > 0) {
+            e.preventDefault();
+            document.getElementById('belowCostList').innerHTML = warnings.map(w => `<li>${w}</li>`).join('');
+            new bootstrap.Modal(document.getElementById('belowCostModal')).show();
+        }
+    });
+
+    document.getElementById('belowCostConfirmBtn').addEventListener('click', function() {
+        belowCostConfirmed = true;
+        bootstrap.Modal.getInstance(document.getElementById('belowCostModal')).hide();
+        invoiceForm.requestSubmit();
+    });
 });
 </script>
+
+<!-- Below-Cost Warning Modal -->
+<div class="modal fade" id="belowCostModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content bg-dark border-warning">
+            <div class="modal-header border-warning">
+                <h5 class="modal-title text-warning"><i class="bi bi-exclamation-triangle-fill me-2"></i>ราคาขายต่ำกว่าทุน</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body text-light">
+                <p class="mb-2">สินค้าต่อไปนี้มีราคาขายต่ำกว่าต้นทุน:</p>
+                <ul id="belowCostList" class="text-warning small mb-3"></ul>
+                <p class="mb-0">ต้องการบันทึกต่อหรือไม่?</p>
+            </div>
+            <div class="modal-footer border-warning">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">ยกเลิก</button>
+                <button type="button" id="belowCostConfirmBtn" class="btn btn-warning">ยืนยัน บันทึก</button>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
