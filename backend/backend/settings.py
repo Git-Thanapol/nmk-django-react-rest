@@ -39,18 +39,38 @@ DEBUG = config('DEBUG', default=True, cast=bool)
 
 # 3. ALLOWED_HOSTS
 # Add your domain or IP here.
-ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='127.0.0.1,localhost', cast=lambda v: [s.strip() for s in v.split(',')])
+ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='127.0.0.1,localhost,45.136.255.175.nip.io', cast=lambda v: [s.strip() for s in v.split(',')])
 
 
 # 4. HTTPS SETTINGS (Warnings W004, W008, W012, W016)
 # Only enable these if not in Debug mode (i.e., on Production)
+# =========================================================
+# PRODUCTION SECURITY SETTINGS
+# These settings apply ONLY when DEBUG is False (Production)
+# =========================================================
 if not DEBUG:
-    SECURE_SSL_REDIRECT = True
-    SESSION_COOKIE_SECURE = True
-    CSRF_COOKIE_SECURE = True
+    # 3. HTTPS & SSL Redirect (W008)
+    # Redirect all non-HTTPS traffic to HTTPS
+    SECURE_SSL_REDIRECT = config('SECURE_SSL_REDIRECT', default=True, cast=bool)
+
+    # 4. Cookie Security (W012, W016)
+    # Ensure cookies are only sent over HTTPS
+    SESSION_COOKIE_SECURE = config('SESSION_COOKIE_SECURE', default=True, cast=bool)
+    CSRF_COOKIE_SECURE = config('CSRF_COOKIE_SECURE', default=True, cast=bool)
+
+    # 5. HSTS Settings (W004)
+    # Tells the browser to ONLY connect via HTTPS for the next year
     SECURE_HSTS_SECONDS = 31536000  # 1 year
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = True
+
+    # 6. Trust Nginx (Crucial for Nginx/Gunicorn setup)
+    # Without this, Django won't know the request is secure because Nginx handles the SSL
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
+    # 7. CSRF Trusted Origins (Prevents 403 Forbidden on Forms)
+    # Replace with your actual domain
+    CSRF_TRUSTED_ORIGINS = config('CSRF_TRUSTED_ORIGINS', default='https://localhost', cast=lambda v: [s.strip() for s in v.split(',')])
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
@@ -170,6 +190,7 @@ STATIC_URL = '/static/'
 # This directory is created automatically by the collectstatic command.
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
+
 # 3. STATICFILES_DIRS: Where you put your custom CSS/Fonts during development
 # Django looks here for files to copy.
 STATICFILES_DIRS = [
@@ -184,3 +205,34 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # CORS settings
 CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOWS_CREDENTIALS = True
+
+# URL ที่ใช้เรียกไฟล์ (เช่น http://localhost:8000/media/...)
+MEDIA_URL = '/media/'
+
+# โฟลเดอร์จริงในเครื่องที่จะเก็บไฟล์
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "simple": {"format": "[%(levelname)s] %(name)s: %(message)s"},
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "simple",
+        },
+    },
+    "loggers": {
+        "api.utils_llm": {
+            "handlers": ["console"],
+            "level": "DEBUG",
+            "propagate": False,
+        },
+        "django.request": {
+            "handlers": ["console"],
+            "level": "WARNING",
+            "propagate": False,
+        },
+    },
+}

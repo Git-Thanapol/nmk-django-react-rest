@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}รายละเอียดรายงาน #{{ report.pk }}{% endblock %}
+{% block page_title %}รายงาน #{{ report.pk }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-4 py-3">
+  <div class="row g-3">
+
+    <!-- Left: report detail -->
+    <div class="col-12 col-lg-8">
+
+      <div class="card shadow-sm mb-3">
+        <div class="card-header d-flex align-items-center gap-2 py-2">
+          {% if report.report_type == 'BUG' %}
+            <span class="badge bg-danger">🐛 บั๊ก</span>
+          {% else %}
+            <span class="badge bg-info">✨ ฟีเจอร์</span>
+          {% endif %}
+          {% if report.degraded %}<span class="badge bg-secondary" title="ส่งแบบฟอร์มธรรมดา (LLM ไม่พร้อม)">📋 plain form</span>{% endif %}
+          <span class="fw-semibold">{{ report.title }}</span>
+        </div>
+        <div class="card-body">
+          <h6 class="text-muted small mb-1">รายละเอียด / สรุป</h6>
+          <p class="mb-3" style="white-space:pre-wrap">{{ report.summary }}</p>
+
+          {% if not report.degraded and report.conversation %}
+          <details class="mb-3">
+            <summary class="text-muted small mb-2" style="cursor:pointer">
+              <i class="bi bi-chat-dots me-1"></i>บทสนทนา ({{ report.conversation|length }} ข้อความ)
+            </summary>
+            <div class="border rounded p-3 mt-2" style="max-height:320px;overflow-y:auto">
+              {% for msg in report.conversation %}
+              <div class="mb-2 {% if msg.role == 'user' %}text-end{% endif %}">
+                <span class="badge {% if msg.role == 'user' %}bg-primary{% else %}bg-secondary{% endif %} mb-1">
+                  {{ msg.role }}
+                </span>
+                <div class="small" style="white-space:pre-wrap">{{ msg.content }}</div>
+              </div>
+              {% endfor %}
+            </div>
+          </details>
+          {% endif %}
+
+          <!-- Images -->
+          {% with report.images.all as imgs %}
+          {% if imgs %}
+          <h6 class="text-muted small mb-2">รูปภาพแนบ ({{ imgs|length }})</h6>
+          <div class="d-flex flex-wrap gap-2">
+            {% for img in imgs %}
+            <a href="{{ img.image.url }}" target="_blank">
+              <img src="{{ img.image.url }}" class="rounded border" style="width:80px;height:80px;object-fit:cover;">
+            </a>
+            {% endfor %}
+          </div>
+          {% endif %}
+          {% endwith %}
+        </div>
+        <div class="card-footer small text-muted">
+          ส่งโดย {{ report.created_by.username|default:"ไม่ระบุ" }} · {{ report.created_at|date:"d/m/Y H:i" }}
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Right: status management (staff only) -->
+    <div class="col-12 col-lg-4">
+      <div class="card shadow-sm">
+        <div class="card-header small fw-semibold py-2">สถานะ</div>
+        <div class="card-body">
+          <div class="mb-3">
+            {% if report.status == 'NEW' %}<span class="badge bg-primary fs-6">ใหม่</span>
+            {% elif report.status == 'IN_PROGRESS' %}<span class="badge bg-warning text-dark fs-6">กำลังดำเนินการ</span>
+            {% elif report.status == 'RESOLVED' %}<span class="badge bg-success fs-6">แก้ไขแล้ว</span>
+            {% else %}<span class="badge bg-secondary fs-6">{{ report.get_status_display }}</span>{% endif %}
+          </div>
+
+          {% if request.user.is_staff %}
+          <form method="post" action="{% url 'bug_report_status' report.pk %}">
+            {% csrf_token %}
+            <div class="mb-3">
+              <label class="form-label small">เปลี่ยนสถานะ</label>
+              <select name="status" class="form-select form-select-sm">
+                {% for val, label in status_choices %}
+                <option value="{{ val }}" {% if report.status == val %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="mb-3">
+              <label class="form-label small">หมายเหตุ (admin)</label>
+              <textarea name="admin_notes" class="form-control form-control-sm" rows="3">{{ report.admin_notes }}</textarea>
+            </div>
+            <button class="btn btn-primary btn-sm w-100">บันทึก</button>
+          </form>
+          {% endif %}
+
+          {% if report.admin_notes %}
+          <div class="mt-3 border-top pt-2">
+            <div class="text-muted small fw-semibold mb-1">หมายเหตุ admin</div>
+            <p class="small mb-0" style="white-space:pre-wrap">{{ report.admin_notes }}</p>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="mt-3">
+        <a href="{% url 'bug_report_list' %}" class="btn btn-outline-secondary btn-sm w-100">
+          <i class="bi bi-arrow-left me-1"></i>กลับรายการ
+        </a>
+      </div>
+    </div>
+
+  </div>
+</div>
+{% endblock %}

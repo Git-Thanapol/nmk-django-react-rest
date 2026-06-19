@@ -1,0 +1,18 @@
+# /etc/systemd/system/gunicorn_nmk.service
+
+[Unit]
+Description=Gunicorn daemon for NMK Django Project
+After=network.target
+
+[Service]
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/nmk/backend
+# Load environment variables from .env file
+EnvironmentFile=/var/www/nmk/backend/.env
+ExecStart=/var/www/nmk/venv/bin/gunicorn \
+          --config gunicorn.conf.py \
+          backend.wsgi:application
+
+[Install]
+WantedBy=multi-user.target

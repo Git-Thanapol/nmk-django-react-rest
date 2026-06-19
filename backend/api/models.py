@@ -7,6 +7,7 @@ from decimal import Decimal
 from django.db import migrations, models
 from django.db.models import Sum
 from django.db.models.functions import Coalesce
+from pybaht import bahttext
 
 
 DATE_INPUT_FORMATS = ['%d-%m-%Y']
@@ -23,18 +24,21 @@ class Note(models.Model):
         return self.title
     
 class Company(models.Model):
-    """Multi-company support"""
-    name = models.CharField(max_length=200)
-    tax_id = models.CharField(max_length=20, blank=True, null=True)
-    address = models.TextField(blank=True, null=True)
-    phone = models.CharField(max_length=20, blank=True,null=True)
-    email = models.EmailField(blank=True,null=True)
-    is_active = models.BooleanField(default=True)
+    """Multi-company support (Our Operating Companies)"""
+    name = models.CharField(max_length=200, verbose_name="ชื่อบริษัท")
+    nick_name = models.CharField(max_length=100, blank=True, verbose_name="ชื่อย่อ")
+    national_id = models.CharField(max_length=13, blank=True, null=True, verbose_name="เลขประจำตัวประชาชน (กรรมการ)")
+    tax_id = models.CharField(max_length=20, blank=True, null=True, verbose_name="เลขผู้เสียภาษี")
+    address = models.TextField(blank=True, null=True, verbose_name="ที่อยู่")
+    phone = models.CharField(max_length=20, blank=True, null=True, verbose_name="เบอร์โทร")
+    email = models.EmailField(blank=True, null=True, verbose_name="อีเมล")
+    is_active = models.BooleanField(default=True, verbose_name="สถานะใช้งาน")
     created_at = models.DateTimeField(auto_now_add=True)
     
     class Meta:
         db_table = 'companies'
         verbose_name_plural = 'Companies'
+        ordering = ['-is_active', 'name']
     
     def __str__(self):
         return self.name
@@ -61,6 +65,7 @@ class Vendor(models.Model):
     phone = models.CharField(max_length=20, blank=True,null=True)
     email = models.EmailField(blank=True,null=True)
     address = models.TextField(blank=True,null=True)
+    national_id = models.CharField(max_length=13, blank=True, null=True, verbose_name="เลขประจำตัวประชาชน")
     tax_id = models.CharField(max_length=20, blank=True, null=True)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -68,23 +73,6 @@ class Vendor(models.Model):
     class Meta:
         db_table = 'vendors'
         unique_together = ['company', 'name']
-    
-    def __str__(self):
-        return f"{self.name} ({self.company})"
-
-class Customer(models.Model):
-    """Customer for invoices"""
-    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='customers', null=True, blank=True)
-    name = models.CharField(max_length=200)
-    phone = models.CharField(max_length=20, blank=True,null=True)
-    email = models.EmailField(blank=True,null=True)
-    address = models.TextField(blank=True,null=True)
-    tax_id = models.CharField(max_length=20, blank=True, null=True)
-    is_active = models.BooleanField(default=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    
-    class Meta:
-        db_table = 'customers'
     
     def __str__(self):
         return f"{self.name} ({self.company})"
@@ -137,7 +125,6 @@ class Product(models.Model):
 class PurchaseOrder(models.Model):
     """Purchase order from vendors"""
     STATUS_CHOICES = [
-        ('DRAFT', 'แบบร่าง'),
         ('PAID', 'ชำระเงินแล้ว'),
         ('CANCELLED', 'ยกเลิก'),
     ]
@@ -148,14 +135,14 @@ class PurchaseOrder(models.Model):
         ('Check', 'เงินเช็ค'),
     ]
     
-    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='purchase_orders', null=True, blank=True)
-    po_number = models.CharField(max_length=50)
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='purchase_orders')
+    po_number = models.CharField(max_length=100)
     vendor = models.ForeignKey(Vendor, on_delete=models.PROTECT, related_name='purchase_orders')
     purchase_type = models.CharField(max_length=20, choices=PURCHASE_TYPE_CHOICES, default='Cash')
     order_date = models.DateField(default=timezone.now)
     vendor_invoice_number = models.CharField(max_length=100, blank=True)
     expected_delivery_date = models.DateField(null=True, blank=True)
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='DRAFT')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PAID')
     subtotal = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     discount_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
 
@@ -170,9 +157,12 @@ class PurchaseOrder(models.Model):
     created_by = models.ForeignKey('auth.User', on_delete=models.PROTECT)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    cancelled_at = models.DateTimeField(null=True, blank=True)
+    cancelled_by = models.ForeignKey('auth.User', null=True, blank=True, on_delete=models.PROTECT, related_name='+')
+    cancel_reason = models.CharField(max_length=255, blank=True)
 
-    
-    
+
+
     class Meta:
         db_table = 'purchase_orders'
         #unique_together = ['company', 'po_number'] # Changed 12-12-2025 Allow duplicate PO numbers for testing
@@ -185,12 +175,18 @@ class PurchaseOrder(models.Model):
         """Calculate order totals from items"""
         from .models import PurchaseItem
         items = PurchaseItem.objects.filter(purchase_order=self)
-        self.subtotal = sum(item.total_price for item in items)
-        # Assuming 7% VAT for Thailand
+        self.subtotal = sum((item.total_price for item in items), Decimal('0'))
+        
+        # Helper to convert to Decimal for math safety
+        t_percent = Decimal(str(self.tax_percent))
+        divisor = Decimal('1') + (t_percent / Decimal('100'))
+
         if self.tax_include:
-            self.tax_amount = self.subtotal - (self.subtotal / (1 + self.tax_percent / 100))
+            # Reverse Calc: Tax = Subtotal - (Subtotal / 1.07)
+            self.tax_amount = self.subtotal - (self.subtotal / divisor)
         else:
-            self.tax_amount = self.subtotal * (self.tax_percent / 100)
+            # Forward Calc
+            self.tax_amount = self.subtotal * (t_percent / Decimal('100'))
         
         self.total_amount = self.subtotal + self.tax_amount
         self.save()
@@ -234,28 +230,40 @@ class PurchaseItem(models.Model):
         """Get available quantity for selling"""
         return self.remaining_quantity
 
+class PurchaseAttachment(models.Model):
+    """File attachments for a purchase order"""
+    purchase_order = models.ForeignKey(PurchaseOrder, on_delete=models.CASCADE, related_name='attachments')
+    file = models.FileField(upload_to='purchase_attachments/%Y/%m/')
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'purchase_attachments'
+        ordering = ['-uploaded_at']
+
+    def __str__(self):
+        return f"Attachment for {self.purchase_order} - {self.file.name}"
+
 class Invoice(models.Model):
     """Sales Invoice with platform integration fields"""
     STATUS_CHOICES = [
-        ('DRAFT', 'แบบร่าง'),
+        ('UNPRINTED', 'ยังไม่ได้ปริ้น'),
         ('BILLED', 'ออกใบกำกับภาษีแล้ว'),
         ('CANCELLED', 'ยกเลิก'),
     ]
-    
+
     # Identifiers
-    invoice_number = models.CharField(max_length=50) # Unique per company
-    company = models.ForeignKey('Company', on_delete=models.CASCADE, related_name='invoices', null=True, blank=True)    
+    invoice_number = models.CharField(max_length=100) # Unique per company
+    company = models.ForeignKey('Company', on_delete=models.CASCADE, related_name='invoices')    
     
     # Customer - Nullable for high volume platform imports
-    customer = models.ForeignKey('Customer', on_delete=models.PROTECT, related_name='invoices', null=True, blank=True)
+    vendor = models.ForeignKey('Vendor', on_delete=models.PROTECT, related_name='invoices', null=True, blank=True)
     
     invoice_date = models.DateField(default=timezone.now)      
     
     tax_sender_date = models.DateField(null=True, blank=True)
     tax_sequence_number = models.CharField(max_length=100, blank=True, null=True)
     saleperson = models.CharField(max_length=100, blank=True)
-    #status = models.CharField(max_length=100, default='DRAFT') 
-    status = models.CharField(choices=STATUS_CHOICES, default='แบบร่าง')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='UNPRINTED')
 
     # Financials
     tax_include = models.BooleanField(default=True)
@@ -264,7 +272,7 @@ class Invoice(models.Model):
 
     subtotal = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     discount_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)    
-    shipping_cost = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    shipping_cost = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     
     # Renamed from total_amount
     grand_total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
@@ -273,6 +281,14 @@ class Invoice(models.Model):
     created_by = models.ForeignKey('auth.User', on_delete=models.PROTECT)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    cancelled_at = models.DateTimeField(null=True, blank=True)
+    cancelled_by = models.ForeignKey('auth.User', null=True, blank=True, on_delete=models.PROTECT, related_name='+')
+    cancel_reason = models.CharField(max_length=255, blank=True)
+
+    # Print / Request Tracking
+    is_printed = models.BooleanField(default=False, verbose_name="เคยพิมพ์ใบกำกับแล้ว")
+    print_datetime = models.DateTimeField(null=True, blank=True, verbose_name="เวลาพิมพ์ล่าสุด")
+    tax_invoice_requested = models.BooleanField(default=False, verbose_name="ลูกค้าร้องขอใบกำกับภาษี")
 
     # Platform Fields
     platform_name = models.CharField(max_length=100, blank=True) 
@@ -280,7 +296,7 @@ class Invoice(models.Model):
     platform_order_status = models.CharField(max_length=100, blank=True) 
     platform_tracking_number = models.CharField(max_length=100, blank=True) 
     recipient_name = models.CharField(max_length=200, blank=True)
-    recipient_phone = models.CharField(max_length=20, blank=True)
+    recipient_phone = models.CharField(max_length=30, blank=True)
     recipient_address = models.TextField(blank=True)
     warehouse_name = models.CharField(max_length=100, blank=True) 
     
@@ -297,20 +313,26 @@ class Invoice(models.Model):
         Standard calculation logic for MANUAL inputs.
         Import logic bypasses this.
         """
-        from .models import InvoiceItem
+        from .models import InvoiceItem # Avoid circular import
+        # Using iterator to avoid loading all objects into memory if huge, though unlikely for invoice items
         items = InvoiceItem.objects.filter(invoice=self)
-        self.subtotal = sum(item.total_price for item in items)
+        
+        # FIX: Ensure we start with Decimal(0) to avoid type errors if list is empty or types mixed
+        self.subtotal = sum((item.total_price for item in items), Decimal(0))
+
+        # Helper to convert to Decimal for math safety
+        t_percent = Decimal(str(self.tax_percent))
+        divisor = Decimal(1) + (t_percent / Decimal(100))
 
         if self.tax_include:
             # Reverse Calc: Tax = Subtotal - (Subtotal / 1.07)
-            self.tax_amount = self.subtotal - (self.subtotal / (1 + self.tax_percent / 100))
+            # FIX: Use Decimal arithmetic
+            self.tax_amount = self.subtotal - (self.subtotal / divisor)
         else:
             # Forward Calc
-            self.tax_amount = self.subtotal * (self.tax_percent / 100)
+            self.tax_amount = self.subtotal * (t_percent / Decimal(100))
 
-        # Logic for manual input: Grand Total = Subtotal + Tax (if excluded) + Shipping
-        # If included, Subtotal already has tax, so we just add shipping? 
-        # Usually for manual entry:
+        # Logic for manual input
         if self.tax_include:
              # Subtotal acts as the base with tax, we just add shipping
             self.grand_total = self.subtotal + self.shipping_cost - self.discount_amount
@@ -330,7 +352,8 @@ class Invoice(models.Model):
         """Calculate profit margin for this invoice"""
         from .models import InvoiceItem
         items = InvoiceItem.objects.filter(invoice=self)
-        total_cost = sum(item.total_cost for item in items)
+        # FIX: Ensure initial value is Decimal
+        total_cost = sum((item.total_cost for item in items), Decimal(0))
         return self.subtotal - total_cost
     
     profit_margin = property(get_profit_margin)
@@ -338,10 +361,10 @@ class Invoice(models.Model):
 class InvoiceItem(models.Model):
     """Individual items in an invoice with purchase item tracking"""
     invoice = models.ForeignKey(Invoice, on_delete=models.CASCADE, related_name='invoice_items')
-    product = models.ForeignKey(Product, on_delete=models.PROTECT, null=True, blank=True, related_name='invoice_items')
-    purchase_item = models.ForeignKey(PurchaseItem, on_delete=models.PROTECT, related_name='invoice_items', null=True, blank=True)
+    product = models.ForeignKey('Product', on_delete=models.PROTECT, null=True, blank=True, related_name='invoice_items')
+    purchase_item = models.ForeignKey('PurchaseItem', on_delete=models.PROTECT, related_name='invoice_items', null=True, blank=True)
 
-    sku = models.CharField(max_length=100, blank=True)  # Store platform SKU/name for reference
+    sku = models.CharField(max_length=255, blank=True)  # Store platform SKU/name for reference
     item_name = models.TextField(blank=True)    
     quantity = models.PositiveIntegerField(validators=[MinValueValidator(1)])
     unit_price = models.DecimalField(max_digits=10, decimal_places=2)
@@ -351,39 +374,43 @@ class InvoiceItem(models.Model):
         db_table = 'invoice_items'
     
     def __str__(self):
-        return f"{self.product.name} x {self.quantity}"
+        # FIX: Handle case where product is None
+        name = self.product.name if self.product else self.item_name or "Unknown Item"
+        return f"{name} x {self.quantity}"
     
     def clean(self):
         """Validate that purchase item has enough quantity"""
         from django.core.exceptions import ValidationError
-        
-        if self.purchase_item and self.quantity > self.purchase_item.available_quantity:
-            raise ValidationError(
-                f"Not enough quantity available. Available: {self.purchase_item.available_quantity}, Requested: {self.quantity}"
-            )
+
+        if self.purchase_item and self.quantity is not None:
+            available = self.purchase_item.available_quantity
+            # When editing an existing item, the old quantity is already deducted
+            # from remaining_quantity — add it back before comparing.
+            if self.pk:
+                try:
+                    old_qty = InvoiceItem.objects.get(pk=self.pk).quantity or 0
+                except InvoiceItem.DoesNotExist:
+                    old_qty = 0
+                available += old_qty
+
+            if self.quantity > available:
+                raise ValidationError(
+                    f"จำนวนสินค้าไม่เพียงพอ มีอยู่: {available} ต้องการ: {self.quantity}"
+                )
     
     def save(self, *args, **kwargs):
         # 1. Ensure total_price is set (vital for manual saves)
-        self.total_price = self.quantity * self.unit_price
-        
-        # 2. Validate
-        self.clean()
-        
-        # 3. STOCK LOGIC WARNING: 
-        # Ideally, move stock deduction to a Signal or Service. 
-        # Kept here as requested, but added a check to prevent crash if purchase_item is None.
+        self.total_price = Decimal(self.quantity) * self.unit_price
 
-        ##Temporarily disabled to prevent stock issues during testing
-        # if self.pk is None and self.purchase_item:
-        #     # Only deduct on CREATE (pk is None), not on every update.
-        #     # This prevents double-deduction on simple edits, though it prevents 
-        #     # adjusting stock if you change quantity later.
-        #     self.purchase_item.remaining_quantity -= self.quantity
-        #     self.purchase_item.save()
+        # NOTE: clean() is NOT called here intentionally.
+        # Stock validation is handled by invoice_view before remaining_quantity
+        # is decremented in memory. Calling clean() here would read the already-
+        # decremented value and raise a false "ไม่เพียงพอ" error.
 
         super().save(*args, **kwargs)
         
         # 4. Trigger Parent Update
+        # This will save the parent invoice, updating subtotal/grand_total
         self.invoice.calculate_totals()
 
     # --- SAFE PROPERTIES ---
@@ -391,11 +418,11 @@ class InvoiceItem(models.Model):
     def unit_cost(self):
         if self.purchase_item:
             return self.purchase_item.unit_cost
-        return 0 # Or Decimal(0)
+        return Decimal(0)
 
     @property
     def total_cost(self):
-        return self.quantity * self.unit_cost
+        return Decimal(self.quantity) * self.unit_cost
 
     @property
     def profit(self):
@@ -405,8 +432,8 @@ class InvoiceItem(models.Model):
     def profit_margin_percentage(self):
         if self.total_price > 0:
             return (self.profit / self.total_price) * 100
-        return 0
-
+        return Decimal(0)
+    
 class Transaction(models.Model):
     """Other income/expense transactions"""
     TRANSACTION_TYPES = [
@@ -424,7 +451,8 @@ class Transaction(models.Model):
         ('OTHER', 'อื่นๆ'),
     ]
     
-    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='transactions', null=True, blank=True)
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='transactions')
+    vendor = models.ForeignKey(Vendor, on_delete=models.PROTECT, related_name='transactions', null=True, blank=True) 
     transaction_number = models.CharField(max_length=50)
     transaction_date = models.DateField(default=timezone.now)
     type = models.CharField(max_length=10, choices=TRANSACTION_TYPES)
@@ -447,6 +475,23 @@ class Transaction(models.Model):
     def signed_amount(self):
         """Return positive for income, negative for expense"""
         return self.amount if self.type == 'INCOME' else -self.amount
+
+class TransactionAttachment(models.Model):
+    """File attachments for a transaction"""
+    transaction = models.ForeignKey(Transaction, on_delete=models.CASCADE, related_name='attachments')
+    file = models.FileField(upload_to='transaction_attachments/%Y/%m/')
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'transaction_attachments'
+        ordering = ['-uploaded_at']
+
+    def __str__(self):
+        return f"Attachment for {self.transaction} - {self.file.name}"
+
+    @property
+    def filename(self):
+        return self.file.name.split('/')[-1]
 
 class CSVImportLog(models.Model):
     """Track CSV imports for online platforms"""
@@ -519,3 +564,246 @@ class ProductAlias(models.Model):
 
     def __str__(self):
         return f"{self.external_key} -> {self.product.name}"
+
+class ImportLog(models.Model):
+    STATUS_CHOICES = [
+        ('PENDING', 'Pending'),
+        ('PROCESSING', 'Processing'),
+        ('COMPLETED', 'Completed'),
+        ('FAILED', 'Failed'), # General script failure
+        ('COMPLETED_WITH_ERRORS', 'Finished (With Errors)'), # Import ran, but some rows failed
+    ]
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    platform = models.CharField(max_length=50)
+    filename = models.CharField(max_length=255)
+    
+    status = models.CharField(max_length=30, choices=STATUS_CHOICES, default='PENDING')
+    total_records = models.IntegerField(default=0)
+    success_count = models.IntegerField(default=0)
+    failed_count = models.IntegerField(default=0)
+    
+    # We will save the generated Error Excel here
+    error_file = models.FileField(upload_to='import_errors/', null=True, blank=True)
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.platform} - {self.created_at}"
+    
+class WithholdingTaxCert(models.Model):
+    INCOME_TYPE_CHOICES = [
+        ('1',  '1. เงินเดือน ค่าจ้าง เบี้ยเลี้ยง โบนัส ฯลฯ ตามมาตรา 40(1)'),
+        ('2',  '2. ค่าธรรมเนียม ค่านายหน้า ฯลฯ ตามมาตรา 40(2)'),
+        ('3',  '3. ค่าแห่งลิขสิทธิ์ ฯลฯ ตามมาตรา 40(3)'),
+        ('4a', '4. (ก) ค่าดอกเบี้ย ฯลฯ ตามมาตรา 40(4)(ก)'),
+        ('4b', '4. (ข) เงินปันผล ส่วนแบ่งของกำไร ฯลฯ ตามมาตรา 40(4)(ข)'),
+        ('6',  '6. อื่นๆ (ระบุ)'),
+    ]
+
+    STATUS_CHOICES = [
+        ('DRAFT', 'แบบร่าง'),
+        ('ISSUED', 'ออกใบรับแล้ว'),
+    ]
+
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='wht_certs')
+    vendor = models.ForeignKey(Vendor, on_delete=models.PROTECT, related_name='wht_certs')
+    
+    # Link Sources (Nullable: เลือกอย่างใดอย่างหนึ่ง)
+    purchase_order = models.OneToOneField(PurchaseOrder, on_delete=models.SET_NULL, null=True, blank=True, related_name='wht_cert')
+    transaction = models.OneToOneField(Transaction, on_delete=models.SET_NULL, null=True, blank=True, related_name='wht_cert')
+    
+    # Running Numbers
+    book_number = models.CharField(max_length=20, default='1', verbose_name='เล่มที่') 
+    cert_number = models.CharField(max_length=50, verbose_name='เลขที่') 
+    
+    date_issued = models.DateField(default=timezone.now)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='DRAFT')
+    
+    # Tax Details
+    income_type = models.CharField(max_length=5, choices=INCOME_TYPE_CHOICES, default='6')
+    income_description = models.CharField(max_length=200, blank=True, verbose_name="ระบุ (ถ้าเลือกอื่นๆ)")
+    tax_rate = models.DecimalField(max_digits=5, decimal_places=2, default=3.00)
+    
+    # Amounts
+    amount_before_tax = models.DecimalField(max_digits=12, decimal_places=2)
+    tax_amount = models.DecimalField(max_digits=12, decimal_places=2)
+    
+    # Extra fields for Excel template (TWI50)
+    sequence_no = models.CharField(max_length=10, blank=True, verbose_name="ลำดับที่ในแบบ")
+    provident_fund_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0, verbose_name="เงินสะสมกองทุนสำรองฯ")
+    social_security_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0, verbose_name="เงินสมทบประกันสังคม")
+    social_security_id = models.CharField(max_length=20, blank=True, verbose_name="เลขบัตรประกันสังคม")
+
+    pdf_file = models.FileField(upload_to='wht_certs/%Y/', null=True, blank=True)
+    xlsx_file = models.FileField(upload_to='wht_certs/%Y/', null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'withholding_tax_certs'
+        ordering = ['-date_issued', '-cert_number']
+
+    @property
+    def total_text_thai(self):
+        """แปลงยอดภาษีเป็นตัวอักษรไทย"""
+        return bahttext(self.tax_amount)
+    
+    def save(self, *args, **kwargs):
+        # Auto-generate running number if empty
+        if not self.cert_number:
+            current_year = self.date_issued.year
+            
+            # Find the last number for THIS company and THIS year
+            last_cert = WithholdingTaxCert.objects.filter(
+                company=self.company,
+                date_issued__year=current_year
+            ).exclude(cert_number='').order_by('cert_number').last()
+            
+            if last_cert and '/' in last_cert.cert_number:
+                try:
+                    # Example: 2025/0001 -> split -> 0001 -> int -> +1
+                    last_seq = int(last_cert.cert_number.split('/')[-1])
+                    new_seq = last_seq + 1
+                except ValueError:
+                    new_seq = 1
+            else:
+                new_seq = 1
+            
+            # Format: 2025/0001
+            self.cert_number = f"{current_year}/{new_seq:04d}"
+            
+        super().save(*args, **kwargs)
+
+# ---------------------------------------------------------------------------
+# VAT Orders Tracking (Standalone Section)
+# ---------------------------------------------------------------------------
+
+class VatOrderBuy(models.Model):
+    """Header for imported POS Buy-in data"""
+    document_no = models.CharField(max_length=100, unique=True, verbose_name="เลขที่เอกสาร")
+    date = models.DateField(default=timezone.now, verbose_name="วันที่ซื้อ")
+    supplier_name = models.CharField(max_length=200, blank=True, verbose_name="ชื่อผู้จำหน่าย")
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'vat_order_buy'
+        ordering = ['-date', '-document_no']
+
+    def __str__(self):
+        return f"{self.document_no} - {self.supplier_name}"
+
+
+class VatOrderBuyItem(models.Model):
+    """Item for imported POS Buy-in data, keyed by Serial No"""
+    vat_order = models.ForeignKey(VatOrderBuy, on_delete=models.CASCADE, related_name='items')
+    serial_no = models.CharField(max_length=100, unique=True, db_index=True, verbose_name="Serial No")
+    product_name = models.CharField(max_length=500, verbose_name="ชื่อสินค้า")
+    unit = models.CharField(max_length=50, blank=True, verbose_name="หน่วย")
+    purchase_price = models.DecimalField(max_digits=12, decimal_places=2, default=0, verbose_name="ราคาซื้อ")
+    
+    # User editable fields inline in the report
+    vat_company = models.CharField(max_length=100, blank=True, default="NONE", verbose_name="บริษัท VAT")
+    payment_method_in = models.CharField(max_length=100, blank=True, verbose_name="วิธีชำระ(เข้า)")
+    bank_in = models.CharField(max_length=100, blank=True, verbose_name="ธนาคาร(เข้า)")
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'vat_order_buy_items'
+        ordering = ['-vat_order__date', 'serial_no']
+
+    def __str__(self):
+        return f"{self.serial_no} - {self.product_name}"
+
+
+class VatOrderSale(models.Model):
+    """Header for imported POS Sales data"""
+    document_no = models.CharField(max_length=100, unique=True, verbose_name="เลขที่เอกสาร")
+    date = models.DateField(default=timezone.now, verbose_name="วันที่ขาย")
+    customer_name = models.CharField(max_length=200, blank=True, verbose_name="ชื่อลูกค้า")
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'vat_order_sale'
+        ordering = ['-date', '-document_no']
+
+    def __str__(self):
+        return f"{self.document_no} - {self.customer_name}"
+
+
+class VatOrderSaleItem(models.Model):
+    """Item for imported POS Sales data, keyed by Serial No to match with Buy"""
+    vat_order = models.ForeignKey(VatOrderSale, on_delete=models.CASCADE, related_name='items')
+    serial_no = models.CharField(max_length=100, db_index=True, verbose_name="Serial No")
+    product_name = models.CharField(max_length=500, verbose_name="ชื่อสินค้า")
+    unit = models.CharField(max_length=50, blank=True, verbose_name="หน่วย")
+    sale_price = models.DecimalField(max_digits=12, decimal_places=2, default=0, verbose_name="ราคาขาย")
+
+    payment_method_out = models.CharField(max_length=100, blank=True, verbose_name="วิธีชำระ(ออก)")
+    company_out = models.CharField(max_length=100, blank=True, verbose_name="บริษัท(ออก)")
+    tax_invoice_request = models.BooleanField(default=False, verbose_name="ขอใบกำกับภาษี")
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'vat_order_sale_items'
+        unique_together = ['vat_order', 'serial_no']
+        ordering = ['-vat_order__date', 'serial_no']
+
+    def __str__(self):
+        return f"{self.serial_no} - {self.product_name}"
+
+
+# ---------------------------------------------------------------------------
+# Bug / Feature Request System
+# ---------------------------------------------------------------------------
+
+class BugReport(models.Model):
+    TYPE_CHOICES = [('BUG', 'รายงานบั๊ก'), ('FEATURE', 'ขอฟีเจอร์ใหม่')]
+    STATUS_CHOICES = [
+        ('NEW', 'ใหม่'),
+        ('IN_PROGRESS', 'กำลังดำเนินการ'),
+        ('RESOLVED', 'แก้ไขแล้ว'),
+        ('REJECTED', 'ปฏิเสธ'),
+    ]
+
+    title = models.CharField(max_length=200, verbose_name='หัวเรื่อง')
+    report_type = models.CharField(max_length=10, choices=TYPE_CHOICES, default='BUG')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='NEW')
+    summary = models.TextField(verbose_name='รายละเอียด')
+    conversation = models.JSONField(default=list, blank=True)
+    degraded = models.BooleanField(default=False)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='bug_reports')
+    created_at = models.DateTimeField(auto_now_add=True)
+    resolved_at = models.DateTimeField(null=True, blank=True)
+    admin_notes = models.TextField(blank=True)
+
+    class Meta:
+        db_table = 'bug_reports'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"[{self.report_type}] {self.title}"
+
+
+class BugReportImage(models.Model):
+    bug_report = models.ForeignKey(
+        BugReport, on_delete=models.CASCADE, null=True, blank=True, related_name='images'
+    )
+    image = models.ImageField(upload_to='bug_reports/%Y/%m/')
+    session_key = models.CharField(max_length=40, blank=True, db_index=True)
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'bug_report_images'
+        ordering = ['uploaded_at']
+
+    def __str__(self):
+        return f"Image for {self.bug_report_id or 'draft'}"

@@ -1,0 +1,395 @@
+{% extends "base.html" %}
+
+{% block title %}VAT สรุปเอกสารซื้อ{% endblock %}
+{% block page_title %}สรุปเอกสาร VAT ซื้อ (Buy Orders Summary){% endblock %}
+
+{% block content %}
+<div class="card bg-dark border-secondary shadow-sm">
+    <div class="card-body p-4">
+
+        <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+            <div class="d-flex align-items-center gap-2">
+                <h5 class="mb-0 text-light"><i class="bi bi-receipt-cutoff me-2"></i>รายการเอกสารซื้อ (Buy Orders)</h5>
+            </div>
+            <a href="{% url 'vat_tracking' %}" class="btn btn-outline-secondary btn-sm">
+                <i class="bi bi-arrow-left me-1"></i>กลับไปจัดการ VAT
+            </a>
+        </div>
+
+        <!-- Alert Message -->
+        <div id="alertPlaceholder"></div>
+
+        <!-- Filters -->
+        <div class="row g-3 mb-4">
+            <div class="col-md-3">
+                <label class="form-label small text-secondary">ค้นหาสินค้า (ชื่อ)</label>
+                <input type="text" id="filterQuery"
+                    class="form-control form-control-sm bg-dark text-light border-secondary" placeholder="คำค้นหา...">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small text-secondary">ประเภท VAT</label>
+                <select id="filterVatStatus" class="form-select form-select-sm bg-dark text-light border-secondary">
+                    <option value="vat_only" selected>VAT Only (/kit, /s16)</option>
+                    <option value="non_vat">Non VAT</option>
+                    <option value="all">ทั้งหมด (All)</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small text-secondary">วันที่</label>
+                <input type="date" id="filterDate"
+                    class="form-control form-control-sm bg-dark text-light border-secondary">
+            </div>
+            <div class="col-md-3 d-flex align-items-end gap-2">
+                <button class="btn btn-outline-light btn-sm w-50" id="btnSearch">
+                    <i class="bi bi-search me-1"></i>ค้นหา
+                </button>
+                <button class="btn btn-success btn-sm w-50" id="btnExport" disabled>
+                    <i class="bi bi-file-earmark-spreadsheet me-1"></i>Export
+                </button>
+            </div>
+        </div>
+
+        <!-- Summary Cards -->
+        <div class="row g-3 mb-3">
+            <div class="col-md-4">
+                <div class="card bg-dark border-primary text-center py-2">
+                    <div class="small text-secondary">จำนวนเอกสาร</div>
+                    <div class="h5 mb-0 text-primary" id="sumDocCount">0</div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card bg-dark border-info text-center py-2">
+                    <div class="small text-secondary">จำนวนรายการ</div>
+                    <div class="h5 mb-0 text-info" id="sumItemCount">0</div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card bg-dark border-warning text-center py-2">
+                    <div class="small text-secondary">สรุปยอด VAT</div>
+                    <div class="h5 mb-0 text-warning" id="sumTotalVat">0.00</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Document Summary Table -->
+        <div class="table-responsive">
+            <table class="table table-dark table-hover table-bordered align-middle text-nowrap"
+                style="font-size: 0.85rem;" id="summaryTable">
+                <thead>
+                    <tr class="text-center" style="background-color: rgba(13, 110, 253, 0.1);">
+                        <th style="width: 40px;"></th>
+                        <th>วันที่</th>
+                        <th>เลขที่เอกสาร</th>
+                        <th>ร้านค้า (Supplier)</th>
+                        <th>บริษัท VAT</th>
+                        <th class="text-center">จำนวน</th>
+                        <th class="text-end">รวมยอด VAT</th>
+                    </tr>
+                </thead>
+                <tbody id="summaryTableBody">
+                    <tr>
+                        <td colspan="7" class="text-center py-4 text-secondary">กำลังโหลดข้อมูล...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+
+        let summaryData = [];
+
+        // Elements
+        const summaryTableBody = document.getElementById('summaryTableBody');
+        const alertPlaceholder = document.getElementById('alertPlaceholder');
+
+        // Filter Elements
+        const filterQuery = document.getElementById('filterQuery');
+        const filterVatStatus = document.getElementById('filterVatStatus');
+        const filterDate = document.getElementById('filterDate');
+        const btnSearch = document.getElementById('btnSearch');
+
+        // Summary cards
+        const sumDocCount = document.getElementById('sumDocCount');
+        const sumItemCount = document.getElementById('sumItemCount');
+        const sumTotalVat = document.getElementById('sumTotalVat');
+
+        // Default date = today
+        const today = new Date().toISOString().slice(0, 10);
+        filterDate.value = today;
+
+        // --- Helpers ---
+        function showAlert(message, type) {
+            alertPlaceholder.innerHTML = `<div class="alert alert-${type} alert-dismissible fade show py-2" role="alert">
+            ${message}
+            <button type="button" class="btn-close py-2" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>`;
+        }
+
+        function getCookie(name) {
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                const cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i].trim();
+                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
+                    }
+                }
+            }
+            return cookieValue;
+        }
+        const csrftoken = getCookie('csrftoken');
+
+        function formatNumber(val) {
+            if (!val && val !== 0) return '';
+            return parseFloat(val).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+
+        function getFilterParams() {
+            const params = new URLSearchParams();
+            if (filterQuery.value) params.append('q', filterQuery.value);
+            if (filterVatStatus.value !== 'all') params.append('vat_status', filterVatStatus.value);
+            if (filterDate.value) params.append('date', filterDate.value);
+            return params;
+        }
+
+        // =====================================================================
+        // Fetch & Render Document Summaries
+        // =====================================================================
+        async function fetchSummary() {
+            summaryTableBody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-muted"><div class="spinner-border spinner-border-sm text-primary" role="status"></div> กำลังโหลด...</td></tr>';
+
+            try {
+                const params = getFilterParams();
+                const response = await fetch(`/api/vat/buy-orders/?${params.toString()}`, {
+                    method: 'GET',
+                    credentials: 'same-origin',
+                    headers: { 'Accept': 'application/json' }
+                });
+
+                if (!response.ok) throw new Error('Network response was not ok');
+
+                summaryData = await response.json();
+                renderSummary();
+            } catch (error) {
+                console.error(error);
+                summaryTableBody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-danger">เกิดข้อผิดพลาดในการโหลดข้อมูล</td></tr>';
+            }
+        }
+
+        function renderSummary() {
+            if (summaryData.length === 0) {
+                summaryTableBody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-muted">ไม่พบข้อมูล</td></tr>';
+                sumDocCount.textContent = '0';
+                sumItemCount.textContent = '0';
+                sumTotalVat.textContent = '0.00';
+                document.getElementById('btnExport').disabled = true;
+                return;
+            }
+
+            document.getElementById('btnExport').disabled = false;
+
+            // Totals
+            let totalItems = 0;
+            let totalVat = 0;
+            summaryData.forEach(d => {
+                totalItems += d.item_count;
+                totalVat += d.total_buy_amount;
+            });
+            sumDocCount.textContent = summaryData.length.toLocaleString();
+            sumItemCount.textContent = totalItems.toLocaleString();
+            sumTotalVat.textContent = formatNumber(totalVat);
+
+            let html = '';
+            summaryData.forEach(doc => {
+                // VAT Badge
+                let vatBadge = '';
+                if (doc.is_vat_company) {
+                    const supplier = (doc.supplier_name || '').toLowerCase().trim();
+                    if (supplier.endsWith('/kit')) {
+                        vatBadge = '<span class="badge bg-success bg-opacity-75">Kit</span>';
+                    } else if (supplier.endsWith('/s16')) {
+                        vatBadge = '<span class="badge bg-info bg-opacity-75">S16</span>';
+                    }
+                } else {
+                    vatBadge = '<span class="badge bg-secondary bg-opacity-25 text-secondary">-</span>';
+                }
+
+                html += `<tr class="summary-row" data-order-id="${doc.id}" style="cursor: pointer;" title="คลิกเพื่อดูรายการ">
+                    <td class="text-center"><i class="bi bi-chevron-right text-muted expand-icon"></i></td>
+                    <td>${doc.date || ''}</td>
+                    <td class="fw-semibold text-primary">${doc.document_no}</td>
+                    <td class="text-truncate" style="max-width: 200px;" title="${doc.supplier_name}">${doc.supplier_name || ''}</td>
+                    <td class="text-center">${vatBadge}</td>
+                    <td class="text-center">${doc.item_count}</td>
+                    <td class="text-end fw-semibold text-warning">${formatNumber(doc.total_buy_amount)}</td>
+                </tr>
+                <tr class="detail-row d-none" id="detail-${doc.id}">
+                    <td colspan="7" class="p-0" style="background: rgba(13,110,253,0.05);">
+                        <div class="p-3">
+                            <div class="text-center text-muted small py-2">คลิกเพื่อโหลดรายการ...</div>
+                        </div>
+                    </td>
+                </tr>`;
+            });
+
+            summaryTableBody.innerHTML = html;
+
+            // Attach click handlers for expand/collapse
+            document.querySelectorAll('.summary-row').forEach(row => {
+                row.addEventListener('click', function () {
+                    const orderId = this.getAttribute('data-order-id');
+                    const detailRow = document.getElementById(`detail-${orderId}`);
+                    const icon = this.querySelector('.expand-icon');
+
+                    if (detailRow.classList.contains('d-none')) {
+                        detailRow.classList.remove('d-none');
+                        icon.classList.remove('bi-chevron-right');
+                        icon.classList.add('bi-chevron-down');
+                        loadOrderItems(orderId, detailRow);
+                    } else {
+                        detailRow.classList.add('d-none');
+                        icon.classList.remove('bi-chevron-down');
+                        icon.classList.add('bi-chevron-right');
+                    }
+                });
+            });
+        }
+
+        // =====================================================================
+        // Load Items for a specific Document (Drill-down)
+        // =====================================================================
+        async function loadOrderItems(orderId, detailRow) {
+            const container = detailRow.querySelector('div');
+            container.innerHTML = '<div class="text-center text-muted small py-2"><div class="spinner-border spinner-border-sm" role="status"></div> กำลังโหลดรายการ...</div>';
+
+            try {
+                const response = await fetch(`/api/vat/buy-orders/${orderId}/items/`, {
+                    method: 'GET',
+                    credentials: 'same-origin',
+                    headers: { 'Accept': 'application/json' }
+                });
+
+                if (!response.ok) throw new Error('Failed to load items');
+
+                const items = await response.json();
+
+                if (items.length === 0) {
+                    container.innerHTML = '<div class="text-center text-muted small py-2">ไม่พบรายการ</div>';
+                    return;
+                }
+
+                let itemHtml = `<table class="table table-sm table-dark table-bordered mb-0" style="font-size: 0.8rem;">
+                    <thead>
+                        <tr style="background: rgba(13,110,253,0.15);">
+                            <th>Serial No.</th>
+                            <th>สินค้า</th>
+                            <th class="text-end">ราคาซื้อ</th>
+                            <th>บริษัท VAT</th>
+                            <th style="width: 120px;">ชำระ (เข้า)</th>
+                            <th style="width: 120px;">ธนาคาร</th>
+                            <th class="text-center" style="width: 80px;">ขายแล้ว?</th>
+                        </tr>
+                    </thead>
+                    <tbody>`;
+
+                items.forEach(item => {
+                    const hasSale = item.sale_match !== null;
+                    const saleIcon = hasSale
+                        ? '<span class="badge bg-success"><i class="bi bi-check-lg"></i></span>'
+                        : '<span class="badge bg-danger bg-opacity-50"><i class="bi bi-clock"></i></span>';
+
+                    itemHtml += `<tr>
+                        <td>${item.serial_no || ''}</td>
+                        <td class="text-truncate" style="max-width: 250px;" title="${item.product_name}">${item.product_name || ''}</td>
+                        <td class="text-end fw-semibold">${formatNumber(item.purchase_price)}</td>
+                        <td>${item.supplier_name || ''}</td>
+                        <td>
+                            <input type="text" class="form-control form-control-sm inline-input"
+                                data-type="buy" data-id="${item.id}" data-field="payment_method_in"
+                                value="${item.payment_method_in || ''}">
+                        </td>
+                        <td>
+                            <input type="text" class="form-control form-control-sm inline-input"
+                                data-type="buy" data-id="${item.id}" data-field="bank_in"
+                                value="${item.bank_in || ''}">
+                        </td>
+                        <td class="text-center">${saleIcon}</td>
+                    </tr>`;
+                });
+
+                itemHtml += '</tbody></table>';
+                container.innerHTML = itemHtml;
+
+                // Attach inline edit handlers
+                container.querySelectorAll('.inline-input').forEach(input => {
+                    input.addEventListener('change', function () {
+                        inlineEdit(
+                            this.getAttribute('data-type'),
+                            this.getAttribute('data-id'),
+                            this.getAttribute('data-field'),
+                            this.value
+                        );
+                    });
+                });
+
+            } catch (error) {
+                console.error(error);
+                container.innerHTML = '<div class="text-center text-danger small py-2">เกิดข้อผิดพลาด</div>';
+            }
+        }
+
+        async function inlineEdit(itemType, id, field, value) {
+            try {
+                const response = await fetch('/api/vat/report/', {
+                    method: 'PUT',
+                    credentials: 'same-origin',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': csrftoken
+                    },
+                    body: JSON.stringify({ item_type: itemType, id: id, [field]: value })
+                });
+                if (!response.ok) {
+                    showAlert('บันทึกข้อมูลไม่สำเร็จ', 'danger');
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        // --- Events ---
+        btnSearch.addEventListener('click', fetchSummary);
+        filterQuery.addEventListener('keyup', (e) => {
+            if (e.key === 'Enter') fetchSummary();
+        });
+        filterDate.addEventListener('change', fetchSummary);
+        filterVatStatus.addEventListener('change', fetchSummary);
+
+        const btnExport = document.getElementById('btnExport');
+        btnExport.addEventListener('click', () => {
+            const params = getFilterParams();
+            window.open('/api/vat/buy-orders/export/?' + params.toString(), '_blank');
+        });
+
+        // Custom CSS
+        const style = document.createElement('style');
+        style.innerHTML = `
+        .inline-input { border: 1px solid transparent; background: transparent; transition: all 0.2s; box-shadow: none !important; padding: 0.1rem 0.3rem; color: #dee2e6; }
+        .inline-input:hover, .inline-input:focus { border-color: #dee2e6; background: #212529; color: #fff; }
+        .summary-row:hover { background: rgba(13,110,253,0.08) !important; }
+        .summary-row:hover .expand-icon { color: #0d6efd !important; }
+        .detail-row td { border-top: none !important; }
+    `;
+        document.head.appendChild(style);
+
+        // Initial Load
+        fetchSummary();
+    });
+</script>
+{% endblock %}

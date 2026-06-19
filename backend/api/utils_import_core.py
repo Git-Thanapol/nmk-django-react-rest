@@ -3,7 +3,7 @@ from django.db import transaction
 from decimal import Decimal, InvalidOperation
 from django.contrib.auth.models import User
 from django.utils import timezone
-from .models import Invoice, Company, InvoiceItem,ProductAlias
+from .models import Invoice, Company, InvoiceItem, ProductAlias
 import os
 
 # --- 1. SHARED HELPERS ---
@@ -11,7 +11,6 @@ def load_data(file_path):
     """Universal file loader"""
     ext = os.path.splitext(file_path)[-1].lower()
     if ext == '.csv':
-        # utf-8-sig handles BOM characters often found in Excel exports
         return pd.read_csv(file_path, encoding='utf-8-sig', dtype=str)
     elif ext in ['.xls', '.xlsx']:
         return pd.read_excel(file_path, dtype=str)
@@ -45,11 +44,14 @@ def universal_invoice_import(header_df, items_df, company_id, user_id, platform_
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
-    # Optimize Item Lookup
+    # --- CRITICAL FIX: CLEAN ITEMS DATAFRAME ---
     if 'order_id' not in items_df.columns:
         return {"status": "error", "message": "Items DF missing 'order_id'"}
     
-    items_df['order_id'] = items_df['order_id'].astype(str)
+    # Ensure Order IDs are strings AND stripped of whitespace to match Header
+    items_df['order_id'] = items_df['order_id'].astype(str).str.strip() 
+    
+    # Group items by Order ID for fast lookup
     items_grouped = items_df.groupby('order_id')
 
     success_count = 0
@@ -58,7 +60,10 @@ def universal_invoice_import(header_df, items_df, company_id, user_id, platform_
     # Import Loop
     records = header_df.fillna('').to_dict('records')
     
-    for row in records:
+    # Lazy import inside function to avoid circular dependency
+    from .utils_product_mapping import resolve_product 
+
+    for index, row in enumerate(records):
         try:
             # A. Prepare Data
             order_id = str(row.get('order_id', '')).strip()
@@ -79,23 +84,21 @@ def universal_invoice_import(header_df, items_df, company_id, user_id, platform_
             base_ex_tax = grand_total / (Decimal(1) + (tax_rate / Decimal(100)))
             tax_amt = grand_total - base_ex_tax
 
-            # Date
+            # Date — only a real pd.Timestamp is valid; empty string / NaT / None all fall back
             inv_date = row.get('shipped_date')
-            if not isinstance(inv_date, (pd.Timestamp, str)) or pd.isna(inv_date):
+            if not isinstance(inv_date, pd.Timestamp):
                 inv_date = timezone.now()
 
             # B. Database Transaction
-            from .utils_product_mapping import resolve_product # Lazy import to avoid circular dependency
-
             with transaction.atomic():
                 # 1. Update/Create Invoice
-                invoice, _ = Invoice.objects.update_or_create(
+                invoice, created = Invoice.objects.update_or_create(
                     company=company,
                     invoice_number=order_id,
                     defaults={
                         'created_by': user,
                         'platform_name': platform_name,
-                        'status': 'DRAFT', # Always Draft first so user can map products
+                        'status': 'UNPRINTED',
                         'invoice_date': inv_date,
                         'tax_include': True,
                         'tax_percent': tax_rate,
@@ -116,11 +119,14 @@ def universal_invoice_import(header_df, items_df, company_id, user_id, platform_
                 )
 
                 # 2. Handle Items
-                InvoiceItem.objects.filter(invoice=invoice).delete()
+                # Always clear old items to prevent duplication on re-import
+                invoice.invoice_items.all().delete() 
                 new_items = []
 
+                # DEBUG: Check if we find items
                 if order_id in items_grouped.groups:
                     related_items = items_grouped.get_group(order_id)
+                    
                     for _, item_row in related_items.iterrows():
                         qty = int(clean_decimal(item_row.get('quantity', 1)))
                         u_price = clean_decimal(item_row.get('unit_price', 0))
@@ -132,12 +138,17 @@ def universal_invoice_import(header_df, items_df, company_id, user_id, platform_
                             invoice=invoice,
                             product=internal_product,
                             purchase_item=None,
-                            sku=external_key[:100], # Store the external key for mapping UI
+                            # Use external_key (the SKU from file) so Mapping UI can find it
+                            sku=str(external_key)[:255], 
                             item_name=str(item_row.get('item_name', ''))[:255],
                             quantity=qty,
                             unit_price=u_price,
                             total_price=qty * u_price
                         ))
+                else:
+                    # Optional: Log if an invoice has no items found
+                    # print(f"Warning: No items found for Order {order_id}")
+                    pass
 
                 if new_items:
                     InvoiceItem.objects.bulk_create(new_items)
@@ -145,7 +156,12 @@ def universal_invoice_import(header_df, items_df, company_id, user_id, platform_
                 success_count += 1
 
         except Exception as e:
-            errors.append(f"Order {row.get('order_id')}: {str(e)}")
+            error_info = {
+                'row_index': index + 2,
+                'order_id': str(row.get('order_id', 'Unknown')), 
+                'reason': str(e)
+            }
+            errors.append(error_info)
 
     return {
         "status": "completed",

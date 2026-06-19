@@ -1,27 +1,11 @@
 from django import forms
 from django.forms import inlineformset_factory
-from .models import Customer, Vendor, Product, Transaction,PurchaseOrder, PurchaseItem, Product, Invoice, InvoiceItem,Company
+from django.utils import timezone
+from .models import Vendor, Product, Transaction,PurchaseOrder, PurchaseItem, Product, Invoice, InvoiceItem,Company
 from django.core.validators import FileExtensionValidator
 from django import forms
-
-
-
-class CustomerForm(forms.ModelForm):
-    class Meta:
-        model = Customer
-        # Note: 'company' is excluded here as it's usually set automatically based on the logged-in user
-        fields = ['name', 'tax_id', 'phone', 'email', 'address', 'is_active']
-        widgets = {
-            'name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Customer or Company Name'}),
-            'tax_id': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Tax Identification ID'}),
-            'phone': forms.TextInput(attrs={'class': 'form-control', 'placeholder': '081-234-5678'}),
-            'email': forms.EmailInput(attrs={'class': 'form-control', 'placeholder': 'name@example.com'}),
-            'address': forms.Textarea(attrs={'class': 'form-control', 'rows': 2, 'placeholder': 'Billing/Shipping Address'}),
-            'is_active': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
-        }
-        labels = {
-            'name': 'Customer / Company Name',
-        } 
+from django import forms
+from .models import PurchaseOrder, Company # <--- Make sure Company is imported
 
 class VendorForm(forms.ModelForm):
     company_selection = forms.CharField(
@@ -30,20 +14,21 @@ class VendorForm(forms.ModelForm):
         widget=forms.TextInput(attrs={
             'class': 'form-control', 
             'list': 'company_list',
-            'placeholder': 'Select existing or type new Company name...',
+            'placeholder': 'เลือกบริษัท (เว้นว่างได้)...',
             'autocomplete': 'off'
         })
     )
 
     class Meta:
         model = Vendor
-        fields = ['name', 'contact_person', 'phone', 'email', 'address', 'tax_id', 'is_active']
+        fields = ['name', 'contact_person', 'phone', 'email', 'address', 'national_id', 'tax_id', 'is_active']
         widgets = {
             'name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'ชื่อผู้ขาย / บริษัท'}),
             'contact_person': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'ชื่อผู้ติดต่อ'}),
             'phone': forms.TextInput(attrs={'class': 'form-control', 'placeholder': '081-234-5678'}),
             'email': forms.EmailInput(attrs={'class': 'form-control', 'placeholder': 'vendor@email.com'}),
             'address': forms.Textarea(attrs={'class': 'form-control', 'rows': 2, 'placeholder': 'ที่อยู่ผู้ขาย'}),
+            'national_id': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'เลขประจำตัวประชาชน 13 หลัก', 'maxlength': '13'}),
             'tax_id': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'เลขประจำตัวผู้เสียภาษีอากรไม่ต้องมีขีด', 'maxlength': '13'}),
             'is_active': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
         }
@@ -102,7 +87,7 @@ class ProductForm(forms.ModelForm):
 class TransactionForm(forms.ModelForm):
     class Meta:
         model = Transaction
-        fields = ['transaction_number', 'transaction_date', 'type', 'category', 'amount', 'reference', 'description']
+        fields = ['transaction_number', 'transaction_date', 'type', 'category', 'amount', 'reference', 'description','company','vendor']
         widgets = {
             'transaction_number': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'ตัวอย่างเช่น .. TX-2024-001'}),
             'transaction_date': forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}),
@@ -111,53 +96,52 @@ class TransactionForm(forms.ModelForm):
             'amount': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'placeholder': '0.00'}),
             'reference': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'หมายเลขอ้างอิง / หมายเลขใบเสร็จ (ถ้ามี)'}),
             'description': forms.Textarea(attrs={'class': 'form-control', 'rows': 2, 'placeholder': 'อธิบายรายละเอียด...'}),
+            'company': forms.Select(attrs={'class': 'form-select'}),
+            'vendor': forms.Select(attrs={'class': 'form-select'}),
         }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # Set default date to today if not editing
+        self.fields['company'].queryset = Company.objects.filter(is_active=True).only('id', 'name')
+        self.fields['vendor'].queryset = Vendor.objects.filter(is_active=True)
         if not self.instance.pk:
+
             from django.utils import timezone
             self.fields['transaction_date'].initial = timezone.now().date()
-
 
 class PurchaseOrderForm(forms.ModelForm):
     class Meta:
         model = PurchaseOrder
-        fields = ['po_number', 'vendor', 'order_date', 'purchase_type', 
-                  'expected_delivery_date', 'tax_include', 'tax_percent', 'notes', 'status','tax_sender_date','tax_sequence_number']
+        fields = ['po_number', 'vendor', 'order_date', 'purchase_type', 'company', 
+                  'expected_delivery_date', 'tax_include', 'tax_percent', 'notes', 
+                  'status', 'tax_sender_date', 'tax_sequence_number']
         widgets = {
             'po_number': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'ระบุรหัสคำสั่งซื้อ เช่น PO-2024-XXXX'}),
             'vendor': forms.Select(attrs={'class': 'form-select'}),
-            #'order_date': forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}),
-            #'expected_delivery_date': forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}),
             'purchase_type': forms.Select(attrs={'class': 'form-select'}),
             'status': forms.Select(attrs={'class': 'form-select'}),
-            'tax_include': forms.CheckboxInput(attrs={'class': 'form-check-input', 'id': 'id_tax_include'}), # ID for JS
-            'tax_percent': forms.NumberInput(attrs={'class': 'form-control', 'id': 'id_tax_percent', 'step': '0.01'}), # ID for JS
+            'tax_include': forms.CheckboxInput(attrs={'class': 'form-check-input', 'id': 'id_tax_include'}),
+            'tax_percent': forms.NumberInput(attrs={'class': 'form-control', 'id': 'id_tax_percent', 'step': '0.01'}),
             'notes': forms.Textarea(attrs={'class': 'form-control', 'rows': 2}),
-            #'tax_sender_date': forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}),
             'tax_sequence_number': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'ระบุเลขที่ลำดับภาษี'}),
-
-
-            # --- FIX: Force YYYY-MM-DD format for Date Pickers ---
-            'order_date': forms.DateInput(
-                attrs={'class': 'form-control', 'type': 'date'}, 
-                format='%Y-%m-%d'
-            ),
-            'expected_delivery_date': forms.DateInput(
-                attrs={'class': 'form-control', 'type': 'date'}, 
-                format='%Y-%m-%d'
-            ),
-            'tax_sender_date': forms.DateInput(
-                attrs={'class': 'form-control', 'type': 'date'}, 
-                format='%Y-%m-%d'
-            ),
+            'company': forms.Select(attrs={'class': 'form-select'}),
+            
+            # Date Pickers
+            'order_date': forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}, format='%Y-%m-%d'),
+            'expected_delivery_date': forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}, format='%Y-%m-%d'),
+            'tax_sender_date': forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}, format='%Y-%m-%d'),
         }
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # Set default date
+        
+        # 1. Filter Company Dropdown (Only Active Companies)
+        # This overrides the default "All Companies" list
+        self.fields['vendor'].queryset = Vendor.objects.filter(is_active=True)
+        self.fields['company'].queryset = Company.objects.filter(is_active=True).only('id', 'name')
+
+        # 2. Set default date (Your existing logic)
         if not self.instance.pk:
             from django.utils import timezone
             self.fields['order_date'].initial = timezone.now().date()
@@ -184,26 +168,27 @@ PurchaseItemFormSet = inlineformset_factory(
 class InvoiceForm(forms.ModelForm):
     class Meta:
         model = Invoice
-        fields = ['invoice_number', 'customer', 'invoice_date', 'platform_name', 
-                  'status', 'tax_include', 'tax_percent', 'shipping_cost', 'notes', 'tax_sender_date','tax_sequence_number','saleperson','platform_name']
+        fields = [
+            'invoice_number', 'vendor', 'invoice_date', 'platform_name', 'company',
+            'status', 'tax_include', 'tax_percent', 'shipping_cost', 'notes', 
+            'tax_sender_date', 'tax_sequence_number', 'saleperson'
+        ]
         widgets = {
             'invoice_number': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'INV-2024-XXXX'}),
-            'customer': forms.Select(attrs={'class': 'form-select'}),
-            'invoice_date': forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}),
-            'platform_name': forms.Select(attrs={'class': 'form-select'}),
+            'vendor': forms.Select(attrs={'class': 'form-select'}),
+            'company': forms.Select(attrs={'class': 'form-select'}),
             'status': forms.Select(attrs={'class': 'form-select'}),
+            'platform_name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'ระบุช่องทางการขาย'}),
+            
             'tax_include': forms.CheckboxInput(attrs={'class': 'form-check-input', 'id': 'id_tax_include'}),
             'tax_percent': forms.NumberInput(attrs={'class': 'form-control', 'id': 'id_tax_percent', 'step': '0.01'}),
             'shipping_cost': forms.NumberInput(attrs={'class': 'form-control', 'id': 'id_shipping_cost', 'step': '0.01', 'value': '0.00'}),
+            
             'notes': forms.Textarea(attrs={'class': 'form-control', 'rows': 2}),
-            #'tax_sender_date': forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}),
             'tax_sequence_number': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'ระบุเลขที่ลำดับภาษี'}),
             'saleperson': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'ระบุชื่อผู้ขาย'}),
-            'platform_name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'ระบุช่องทางการขาย'}),
-            'status': forms.Select(attrs={'class': 'form-select'}),          
 
-
-            # --- FIX: Force YYYY-MM-DD format for Date Pickers ---
+            # Date Pickers with YYYY-MM-DD enforcement
             'invoice_date': forms.DateInput(
                 attrs={'class': 'form-control', 'type': 'date'}, 
                 format='%Y-%m-%d'
@@ -212,18 +197,24 @@ class InvoiceForm(forms.ModelForm):
                 attrs={'class': 'form-control', 'type': 'date'}, 
                 format='%Y-%m-%d'
             ),
-
         }
         labels = {
             'status': 'Status',
+            'platform_name': 'Platform / Channel',
+            'vendor': 'Customer / Vendor',
         }
             
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
+        # Filter active companies and vendors
+        self.fields['vendor'].queryset = Vendor.objects.filter(is_active=True)
+        self.fields['company'].queryset = Company.objects.filter(is_active=True).only('id', 'name')
+
+        # Set Initial Defaults
         if not self.instance.pk:
-            from django.utils import timezone
             self.fields['invoice_date'].initial = timezone.now().date()
-            self.fields['status'].initial = 'แบบร่าง'  # Default to "แบบร่าง"
+            self.fields['status'].initial = 'UNPRINTED'
 
 class InvoiceItemCustomChoiceField(forms.ModelChoiceField):
     """Custom field to display detailed stock info in the dropdown"""
@@ -232,14 +223,14 @@ class InvoiceItemCustomChoiceField(forms.ModelChoiceField):
         return f"{obj.product.name} | PO: {obj.purchase_order.po_number} | Stock: {obj.remaining_quantity} | Cost: {obj.unit_cost}"
 
 class InvoiceItemForm(forms.ModelForm):
-    # 1. Product Field (User selects this first)
+    # 1. Product Field (User selects this first when adding manually)
     product = forms.ModelChoiceField(
         queryset=Product.objects.filter(is_active=True),
         widget=forms.Select(attrs={'class': 'form-select product-select'}),
-        required=True
+        required=False
     )
 
-    # 2. Batch Field (Optional - filtered by JS)
+    # 2. Batch Field (Optional - filtered by JS on frontend)
     purchase_item = forms.ModelChoiceField(
         queryset=PurchaseItem.objects.filter(remaining_quantity__gt=0),
         widget=forms.Select(attrs={'class': 'form-select batch-select'}),
@@ -257,14 +248,8 @@ class InvoiceItemForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        
-        # Optimization: Add data attributes to dropdown options for JS
-        # We need to tell the HTML which batch belongs to which product
-        if 'purchase_item' in self.fields:
-            # We iterate through the queryset to add custom attributes
-            # Note: This is a bit advanced, usually done in widget, 
-            # but for simplicity we will handle the mapping in the Template via a loop.
-            pass
+        # Additional logic can be added here if needed
+        # Mapping for batch-product logic will be handled in the template via JS/Loop
 
 # The Formset remains the same
 InvoiceItemFormSet = inlineformset_factory(
@@ -274,7 +259,6 @@ InvoiceItemFormSet = inlineformset_factory(
     extra=1, 
     can_delete=True
 )
-
 
 class ImportFileForm(forms.Form):
     import_file = forms.FileField(
@@ -286,12 +270,25 @@ class ImportFileForm(forms.Form):
     # Hidden field to track which platform is being imported
     platform = forms.CharField(widget=forms.HiddenInput(), initial='tiktok')
 
-
 class ReportFilterForm(forms.Form):
-    company = forms.ModelChoiceField(
-        queryset=Company.objects.all(),
+    REPORT_BASIS_CHOICES = [
+        ('create_date', 'ตามวันที่เอกสาร (Document Date)'),
+        ('tax_date', 'ตามวันที่ยื่นภาษี (Tax Filing Date)'),
+    ]
+
+    # Changed from ModelChoiceField to ChoiceField to support "All" manually
+    company = forms.ChoiceField(
+        choices=[], # Populated in __init__
         widget=forms.Select(attrs={'class': 'form-select'}),
-        label="Select Company"
+        label="Select Company",
+        required=True
+    )
+    
+    report_basis = forms.ChoiceField(
+        choices=REPORT_BASIS_CHOICES,
+        widget=forms.Select(attrs={'class': 'form-select'}),
+        label="Report Basis",
+        initial='create_date'
     )
     start_date = forms.DateField(
         widget=forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}),
@@ -301,3 +298,39 @@ class ReportFilterForm(forms.Form):
         widget=forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}),
         label="End Date"
     )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # 1. Fetch companies
+        companies = Company.objects.filter(is_active=True).order_by('name')
+        
+        # 2. Create Custom Choices: [('all', '--- All Companies ---'), (1, 'Company A'), ...]
+        company_choices = [('all', '--- ทุกบริษัท (All Companies) ---')]
+        company_choices += [(c.id, c.name) for c in companies]
+        
+        self.fields['company'].choices = company_choices
+
+class CompanyForm(forms.ModelForm):
+    class Meta:
+        model = Company
+        fields = ['name', 'nick_name', 'national_id', 'tax_id', 'address', 'phone', 'email', 'is_active']
+        labels = {
+            'name': 'ชื่อบริษัท (จดทะเบียน)',
+            'nick_name': 'ชื่อย่อ / ชื่อเรียก',
+            'national_id': 'เลขประจำตัวประชาชน (กรรมการ/50ทวิ)',
+            'tax_id': 'เลขประจำตัวผู้เสียภาษี',
+            'address': 'ที่อยู่บริษัท (สำหรับออกใบกำกับภาษี)',
+            'phone': 'เบอร์โทรศัพท์',
+            'email': 'อีเมล',
+            'is_active': 'เปิดใช้งาน (Active)'
+        }
+        widgets = {
+            'name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'เช่น บริษัท เคไอที23 จำกัด'}),
+            'nick_name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'เช่น KIT23'}),
+            'national_id': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'เลขบัตรประชาชน 13 หลัก', 'maxlength': '13'}),
+            'tax_id': forms.TextInput(attrs={'class': 'form-control'}),
+            'address': forms.Textarea(attrs={'class': 'form-control', 'rows': 3}),
+            'phone': forms.TextInput(attrs={'class': 'form-control'}),
+            'email': forms.EmailInput(attrs={'class': 'form-control'}),
+            'is_active': forms.CheckboxInput(attrs={'class': 'form-check-input', 'role': 'switch'}),
+        }

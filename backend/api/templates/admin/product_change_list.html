@@ -1,0 +1,13 @@
+{% extends "admin/change_list.html" %}
+
+{% block object-tools %}
+    <ul class="object-tools">
+        <li>
+            <a href="import-master-csv/" class="addlink" style="background: #28a745;">
+                📥 Import Master CSV (Static)
+            </a>
+        </li>
+        
+        {{ block.super }}
+    </ul>
+{% endblock %}

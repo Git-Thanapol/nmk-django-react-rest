@@ -1,0 +1,300 @@
+/* VatTracking.css */
+
+:root {
+  --primary-color: #4f46e5;      /* Indigo */
+  --primary-hover: #4338ca;
+  --secondary-color: #10b981;    /* Emerald */
+  --bg-color: #f8fafc;           /* Light gray BG */
+  --white: #ffffff;
+  --text-dark: #1e293b;
+  --text-muted: #64748b;
+  --border-color: #e2e8f0;
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+
+  /* Table Specific */
+  --table-header-buy: #eef2ff;
+  --table-header-sale: #ecfdf5;
+  --table-row-even: #f8fafc;
+  --table-row-odd: #ffffff;
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background-color: var(--bg-color);
+}
+
+.vat-container {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 2rem;
+  color: var(--text-dark);
+}
+
+/* Header */
+.vat-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2rem;
+}
+
+.vat-title {
+  font-size: 1.875rem;
+  font-weight: 700;
+  color: var(--text-dark);
+  margin: 0;
+}
+
+.vat-subtitle {
+  font-size: 1rem;
+  color: var(--text-muted);
+  margin: 0.25rem 0 0 0;
+}
+
+.vat-actions {
+  display: flex;
+  gap: 1rem;
+}
+
+/* Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.625rem 1.25rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 1px solid transparent;
+}
+
+.btn .icon {
+  margin-right: 0.5rem;
+  font-size: 1rem;
+}
+
+.btn-primary {
+  background-color: var(--primary-color);
+  color: var(--white);
+}
+
+.btn-primary:hover {
+  background-color: var(--primary-hover);
+  box-shadow: var(--shadow-sm);
+}
+
+.btn-primary:disabled {
+  background-color: #94a3b8;
+  cursor: not-allowed;
+}
+
+.btn-outline {
+  border-color: var(--border-color);
+  background-color: var(--white);
+  color: var(--text-dark);
+}
+
+.btn-outline:hover:not(:disabled) {
+  background-color: #f1f5f9;
+  border-color: #cbd5e1;
+}
+
+.btn-upload {
+  cursor: pointer;
+  position: relative;
+}
+.btn-upload:has(input:disabled) {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* Alerts */
+.alert {
+  padding: 1rem;
+  border-radius: var(--radius-md);
+  margin-bottom: 1.5rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+.alert-success { background-color: #d1fae5; color: #065f46; }
+.alert-error { background-color: #fee2e2; color: #991b1b; }
+.alert-info { background-color: #dbeafe; color: #1e40af; }
+
+/* Filters */
+.vat-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  background: var(--white);
+  padding: 1.5rem;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  margin-bottom: 2rem;
+  border: 1px solid var(--border-color);
+}
+
+.filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  flex: 1;
+  min-width: 200px;
+}
+
+.filter-group label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-dark);
+}
+
+.form-input, .form-select {
+  padding: 0.625rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  font-size: 0.875rem;
+  color: var(--text-dark);
+  transition: border-color 0.2s;
+  background-color: var(--white);
+}
+
+.form-input:focus, .form-select:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.1);
+}
+
+/* Table Area */
+.vat-table-wrapper {
+  background: var(--white);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border-color);
+  overflow: hidden;
+}
+
+.table-responsive {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.vat-table {
+  width: 100%;
+  border-collapse: collapse;
+  white-space: nowrap;
+  font-size: 0.875rem;
+}
+
+.vat-table th {
+  padding: 0.75rem 1rem;
+  text-align: left;
+  font-weight: 600;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.vat-table th.th-buy {
+  background-color: var(--table-header-buy);
+  color: #3730a3; /* darker indigo */
+  text-align: center;
+  border-right: 2px solid #c7d2fe;
+}
+
+.vat-table th.th-sale {
+  background-color: var(--table-header-sale);
+  color: #065f46; /* darker emerald */
+  text-align: center;
+}
+
+.vat-table td {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border-color);
+  vertical-align: middle;
+}
+
+.row-even { background-color: var(--table-row-even); }
+.row-odd { background-color: var(--table-row-odd); }
+
+.vat-table tr:hover {
+  background-color: #f1f5f9;
+}
+
+.vat-table td:nth-child(8) {
+  border-right: 2px solid #e2e8f0; /* Separator between Buy and Sale */
+}
+
+/* Cell specific styling */
+.cell-bold { font-weight: 600; color: var(--text-dark); }
+.cell-muted { color: var(--text-muted); font-size: 0.8rem; }
+.cell-money { text-align: right; font-variant-numeric: tabular-nums; }
+
+.serial-no {
+  font-size: 0.75rem;
+  color: var(--primary-color);
+  background: #e0e7ff;
+  display: inline-block;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  margin-bottom: 4px;
+}
+.serial-no::before { content: "SN: "; }
+
+.product-name {
+  max-width: 250px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Inline Inputs */
+.inline-input {
+  width: 100%;
+  min-width: 80px;
+  padding: 0.4rem;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  font-size: 0.85rem;
+  transition: all 0.2s;
+}
+
+.inline-input:hover {
+  border-color: var(--border-color);
+  background: var(--white);
+}
+
+.inline-input:focus {
+  outline: none;
+  background: var(--white);
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.1);
+}
+
+.unmatched-cell {
+  text-align: center;
+  background-color: #fef2f2; /* Light red */
+}
+
+/* Badges */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.625rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.badge-warning {
+  background-color: #fef08a; /* Yellow */
+  color: #854d0e;
+}
+
+.loading-cell, .empty-cell {
+  text-align: center;
+  padding: 3rem !important;
+  color: var(--text-muted);
+}

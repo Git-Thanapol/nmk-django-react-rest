@@ -3,7 +3,7 @@
 {% load humanize %}
 
 {% block title %}Invoices{% endblock %}
-{% block page_title %}Sales & Invoicing{% endblock %}
+{% block page_title %}การขายและการออกใบแจ้งหนี้{% endblock %}
 
 
 {% block content %}
@@ -49,7 +49,7 @@
                 </div>
                  <div class="col-md-3">
                     <small class="text-secondary d-block">ที่อยู่</small>
-                    <span class="text-muted small">{{ form.instance.recipient_address|truncatechars:50 }}</span>
+                    <span class="text-muted small">{{ form.instance.recipient_address|truncatechars:100 }}</span>
                 </div>
             </div>
         </div>
@@ -76,6 +76,19 @@
                         <div class="alert alert-{{ message.tags }} py-2 small">{{ message }}</div>
                     {% endfor %}
                 {% endif %}
+
+                {% if is_editing %}
+                    {% if editing_invoice.is_printed %}
+                        <div class="alert alert-secondary py-2 small mb-3">
+                            <i class="bi bi-printer-fill me-2"></i> ใบกำกับภาษีนี้เคยพิมพ์แล้วเมื่อ {{ editing_invoice.print_datetime|date:"d/m/Y H:i" }}
+                        </div>
+                    {% endif %}
+                    {% if editing_invoice.tax_invoice_requested %}
+                        <div class="alert alert-info py-2 small mb-3">
+                            <i class="bi bi-info-circle-fill me-2"></i> ลูกค้าร้องขอใบกำกับภาษีจากระบบ (Google Sheets)
+                        </div>
+                    {% endif %}
+                {% endif %}
                 
                 {% if form.errors or formset.total_error_count %}
                     <div class="alert alert-danger small">
@@ -91,14 +104,14 @@
                     </div>
                     <div class="col-md-3">
                         <label class="form-label text-secondary small">ลูกค้า</label>
-                        {{ form.customer }}
+                        {{ form.vendor }}
                     </div>
                     <div class="col-md-3">
                         <label class="form-label text-secondary small">วันที่</label>
                         {{ form.invoice_date }}
                     </div>                    
                     <div class="col-md-3">
-                        <label class="form-label text-secondary small">ผู้ขาย</label>
+                        <label class="form-label text-secondary small">พนักงานขาย</label>
                         <input type="text" name="saleperson" class="form-control" value="{{ form.instance.saleperson|default:'' }}">
                     </div>
                     <div class="col-md-3">
@@ -106,6 +119,19 @@
                         {% comment %} <input type="text" name="status" class="form-control" value="{{ form.instance.status|default:'' }}"> {% endcomment %}
                         {{ form.status }}
                     </div>
+
+                    <div class="col-md-3" id="cancel-reason-block" style="display:none;">
+                        <label class="form-label text-secondary small">เหตุผลการยกเลิก</label>
+                        <input type="text" name="cancel_reason" maxlength="255" class="form-control form-control-sm" placeholder="ระบุเหตุผล (ถ้ามี)">
+                    </div>
+
+                    {% comment %} {% if not is_editing %} {% endcomment %}
+                    <div class="col-md-3">
+                        <label class="form-label text-secondary small">ช่องทางการขาย</label>
+                            {% comment %} <input type="text" name="channel" class="form-control" value="{{ form.instance.platform_name|default:'' }}"> {% endcomment %}
+                        {{ form.platform_name }}
+                    </div>
+                    {% comment %} {% endif %} {% endcomment %}
                     <div class="col-md-3">
                         <label class="form-label text-secondary small">เลขที่ลำดับภาษี</label>
                         <input type="text" name="tax_sequence_number" class="form-control" value="{{ form.instance.tax_sequence_number|default:'' }}">
@@ -114,13 +140,15 @@
                         <label class="form-label text-secondary small">วันที่กำหนดส่งภาษี</label>
                         {{ form.tax_sender_date }}
                     </div>
-                    {% comment %} {% if not is_editing %} {% endcomment %}
-                        <div class="col-md-3">
-                            <label class="form-label text-secondary small">ช่องทางการขาย</label>
-                            {% comment %} <input type="text" name="channel" class="form-control" value="{{ form.instance.platform_name|default:'' }}"> {% endcomment %}
-                            {{ form.platform_name }}
-                        </div>
-                    {% comment %} {% endif %} {% endcomment %}
+
+                    <div class="col-md-6">
+                        <label class="form-label text-secondary small">หมายเหตุ</label>                            
+                        {{ form.notes }}
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label text-secondary small">นำเข้าสู่บริษัท</label>                            
+                        {{ form.company }}
+                    </div>
                 </div>
 
                 <hr class="border-secondary">
@@ -152,7 +180,7 @@
                                     <select name="{{ item_form.purchase_item.html_name }}" 
                                             class="form-select form-select-sm batch-select" 
                                             id="{{ item_form.purchase_item.auto_id }}">
-                                        <option value="" data-cost="0">-- Auto-Assign --</option>
+                                        <option value="" data-cost="0">-- เลือกสต็อก --</option>
                                         
                                         {% for batch in item_form.fields.purchase_item.queryset %}
                                             <option value="{{ batch.id }}" 
@@ -197,8 +225,8 @@
 
                 <div class="row mt-4">
                     <div class="col-md-7">
-                        <label class="form-label text-secondary small">หมายเหตุ</label>
-                        {{ form.notes }}
+                        <label class="form-label text-secondary small"></label>
+                        {% comment %} {{ form.notes }} {% endcomment %}
                     </div>
                     <div class="col-md-5">
                         <div class="card bg-dark border-secondary p-3">
@@ -240,8 +268,14 @@
 
                 <div class="d-flex justify-content-end gap-2 mt-4">
                     {% if is_editing %}
-                        <a href="{% url 'invoice_pdf' editing_invoice.id %}" class="btn btn-outline-danger px-4">
-                            <i class="bi bi-printer me-2"></i>Print / PDF
+                        <a href="{% url 'invoice_pdf' editing_invoice.id %}" class="btn btn-outline-danger px-4" target="_blank">
+                            <i class="bi bi-file-earmark-pdf me-2"></i>Print/PDF
+                        </a>
+                        <a href="{% url 'invoice_pdf' editing_invoice.id %}?abbr=1" class="btn btn-outline-warning px-4" target="_blank">
+                            <i class="bi bi-receipt me-2"></i>ใบกำกับภาษีอย่างย่อ
+                        </a>
+                        <a href="{% url 'invoice_excel' editing_invoice.id %}" class="btn btn-outline-success px-4" target="_blank">
+                            <i class="bi bi-file-earmark-excel me-2"></i>Excel
                         </a>
 
                         <a href="{% url 'invoice_list' %}" class="btn btn-ghost px-4">ย้อนกลับ</a>
@@ -259,9 +293,14 @@
             <div>
                 <h5 class="mb-0 text-white"><i class="bi bi-clock-history me-2"></i>ใบแจ้งหนี้ล่าสุด (Last 1000)</h5>
             </div>
-            <div class="input-group input-group-sm w-auto">
-                <span class="input-group-text bg-secondary border-secondary text-light"><i class="bi bi-search"></i></span>
-                <input type="text" id="globalSearch" class="form-control bg-dark border-secondary text-light" placeholder="ค้นหา ...">
+            <div class="d-flex gap-2">
+                <button type="button" class="btn btn-sm btn-outline-info" onclick="syncGoogleSheet()">
+                    <i class="bi bi-cloud-download me-1"></i> ดึงคำขอใบกำกับ
+                </button>
+                <div class="input-group input-group-sm w-auto">
+                    <span class="input-group-text bg-secondary border-secondary text-light"><i class="bi bi-search"></i></span>
+                    <input type="text" id="globalSearch" class="form-control bg-dark border-secondary text-light" placeholder="ค้นหา ...">
+                </div>
             </div>
         </div>
 
@@ -277,6 +316,7 @@
                         <th class="text-end" style="width: 10%">ยอดรวมสุทธิ</th>
                         <th class="text-end pe-4" style="width: 5%">แก้ไข</th>
                         <th class="text-end pe-4" style="width: 5%">PDF</th>
+                        <th class="text-end pe-4" style="width: 5%">ย่อ</th>
                     </tr>
                     <tr class="filter-row bg-dark">
                         <th class="ps-4 p-2">
@@ -284,10 +324,10 @@
                         </th>
                         <th class="p-2">
                             <select class="form-select form-select-sm bg-dark border-secondary text-light col-filter" data-col="1">
-                                <option value="">All</option>
-                                <option value="DRAFT">Draft</option>
-                                <option value="BILLED">Billed</option>
-                                <option value="CANCELLED">Cancelled</option>
+                                <option value="">ทั้งหมด</option>
+                                <option value="UNPRINTED">ยังไม่ได้ปริ้น</option>
+                                <option value="BILLED">ออกใบกำกับภาษีแล้ว</option>
+                                <option value="CANCELLED">ยกเลิก</option>
                             </select>
                         </th>
                         <th class="p-2">
@@ -304,20 +344,26 @@
                         </th>
                         <th></th>
                         <th></th>
+                        <th></th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for inv in invoices %}
-                    <tr>
-                        <td class="ps-4 text-secondary">{{ inv.invoice_date|date:"Y-m-d" }}</td>
+                    <tr class="{% if inv.is_printed %}opacity-75 bg-secondary bg-opacity-10{% endif %}">
+                        <td class="ps-4 text-secondary">
+                            {{ inv.invoice_date|date:"Y-m-d" }}
+                            {% if inv.tax_invoice_requested %}
+                                <br><span class="badge bg-info mt-1"><i class="bi bi-person-lines-fill"></i> ขอใบกำกับฯ</span>
+                            {% endif %}
+                        </td>
                         
                         <td>
                             {% if inv.status == 'BILLED' %}
-                                <span class="badge bg-success bg-opacity-25 text-success border border-success border-opacity-25">BILLED</span>
-                            {% elif inv.status == 'DRAFT' %}
-                                <span class="badge bg-secondary bg-opacity-25 text-light border border-secondary border-opacity-50">DRAFT</span>
+                                <span class="badge bg-success bg-opacity-25 text-success border border-success border-opacity-25">ออกใบกำกับภาษีแล้ว</span>
+                            {% elif inv.status == 'UNPRINTED' %}
+                                <span class="badge bg-secondary bg-opacity-25 text-light border border-secondary border-opacity-50">ยังไม่ได้ปริ้น</span>
                             {% else %}
-                                <span class="badge bg-danger bg-opacity-25 text-danger">CANCELLED</span>
+                                <span class="badge bg-danger bg-opacity-25 text-danger">ยกเลิก</span>
                             {% endif %}
                         </td>
 
@@ -349,14 +395,25 @@
                             </a>
                         </td>
                         <td class="text-end pe-4">
-                            <a href="{% url 'invoice_pdf' inv.id %}" class="btn btn-sm btn-outline-danger me-1" title="Download PDF">
-                                <i class="bi bi-file-earmark-pdf"></i>
+                            {% if inv.is_printed %}
+                                <a href="{% url 'invoice_pdf' inv.id %}" class="btn btn-sm btn-secondary me-1" title="Printed: {{ inv.print_datetime|date:'d/m/Y H:i' }}">
+                                    <i class="bi bi-printer-fill"></i>
+                                </a>
+                            {% else %}
+                                <a href="{% url 'invoice_pdf' inv.id %}" class="btn btn-sm btn-outline-danger me-1" title="Download PDF">
+                                    <i class="bi bi-file-earmark-pdf"></i>
+                                </a>
+                            {% endif %}
+                        </td>
+                        <td class="text-end pe-4">
+                            <a href="{% url 'invoice_pdf' inv.id %}?abbr=1" class="btn btn-sm btn-outline-warning" title="ใบกำกับภาษีอย่างย่อ" target="_blank">
+                                <i class="bi bi-receipt"></i>
                             </a>
                         </td>
                     </tr>
                     {% empty %}
                     <tr id="noResultsRow">
-                        <td colspan="7" class="text-center py-5 text-muted">ไม่พบใบแจ้งหนี้ที่ค้นหา</td>
+                        <td colspan="9" class="text-center py-5 text-muted">ไม่พบใบแจ้งหนี้ที่ค้นหา</td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -400,6 +457,22 @@
 </table>
 
 <script>
+function syncGoogleSheet() {
+    if(!confirm('ยืนยันดึงคำขอใบกำกับภาษีจาก Google Sheet?')) return;
+    
+    fetch('{% url "invoice_sync_google_sheet" %}')
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                alert(data.message);
+                if (data.count > 0) window.location.reload();
+            } else {
+                alert('เกิดข้อผิดพลาด: ' + data.message);
+            }
+        })
+        .catch(err => alert('เกิดข้อผิดพลาดในการเชื่อมต่อ'));
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     
     // --- PART 1: INVOICE FORM CALCULATIONS ---
@@ -585,6 +658,76 @@ document.addEventListener('DOMContentLoaded', function() {
         input.addEventListener("input", filterData);
         input.addEventListener("change", filterData);
     });
+
+    // Show cancel reason box when status = CANCELLED
+    const statusSelect = document.querySelector('select[name="status"]');
+    const cancelBlock = document.getElementById('cancel-reason-block');
+    function toggleCancelReason() {
+        if (cancelBlock) cancelBlock.style.display = statusSelect.value === 'CANCELLED' ? 'block' : 'none';
+    }
+    if (statusSelect) {
+        statusSelect.addEventListener('change', toggleCancelReason);
+        toggleCancelReason();
+    }
+
+    // --- PART 3: BELOW-COST WARNING BEFORE SAVE ---
+    const productCostMap = {{ product_costs|safe }};
+    const invoiceForm = document.getElementById('invoiceForm');
+    let belowCostConfirmed = false;
+
+    invoiceForm.addEventListener('submit', function(e) {
+        if (belowCostConfirmed) return;
+
+        const warnings = [];
+        document.querySelectorAll('tr.item-row').forEach(row => {
+            if (row.style.display === 'none') return;
+            const productSelect = row.querySelector('.product-select');
+            const priceInput = row.querySelector('.price');
+            if (!productSelect || !priceInput) return;
+
+            const productId = productSelect.value;
+            const unitPrice = parseFloat(priceInput.value) || 0;
+            const costPrice = productCostMap[productId];
+
+            if (productId && costPrice !== undefined && unitPrice < costPrice) {
+                const productName = productSelect.options[productSelect.selectedIndex]?.text || productId;
+                warnings.push(`${productName.split('|')[0].trim()} — ราคาขาย ${unitPrice.toLocaleString('th-TH', {minimumFractionDigits: 2})} ต่ำกว่าทุน ${costPrice.toLocaleString('th-TH', {minimumFractionDigits: 2})} บาท`);
+            }
+        });
+
+        if (warnings.length > 0) {
+            e.preventDefault();
+            document.getElementById('belowCostList').innerHTML = warnings.map(w => `<li>${w}</li>`).join('');
+            new bootstrap.Modal(document.getElementById('belowCostModal')).show();
+        }
+    });
+
+    document.getElementById('belowCostConfirmBtn').addEventListener('click', function() {
+        belowCostConfirmed = true;
+        bootstrap.Modal.getInstance(document.getElementById('belowCostModal')).hide();
+        invoiceForm.requestSubmit();
+    });
 });
 </script>
+
+<!-- Below-Cost Warning Modal -->
+<div class="modal fade" id="belowCostModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content bg-dark border-warning">
+            <div class="modal-header border-warning">
+                <h5 class="modal-title text-warning"><i class="bi bi-exclamation-triangle-fill me-2"></i>ราคาขายต่ำกว่าทุน</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body text-light">
+                <p class="mb-2">สินค้าต่อไปนี้มีราคาขายต่ำกว่าต้นทุน:</p>
+                <ul id="belowCostList" class="text-warning small mb-3"></ul>
+                <p class="mb-0">ต้องการบันทึกต่อหรือไม่?</p>
+            </div>
+            <div class="modal-footer border-warning">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">ยกเลิก</button>
+                <button type="button" id="belowCostConfirmBtn" class="btn btn-warning">ยืนยัน บันทึก</button>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}

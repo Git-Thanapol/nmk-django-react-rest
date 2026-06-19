@@ -1,67 +1,457 @@
 {% extends 'base.html' %}
-{% load static %}
-{% load humanize %}
-{% block title %}Product Mapping{% endblock %}
-{% block page_title %}Product Mapping{% endblock %}
+
+{% block title %}การจับคู่สินค้า{% endblock %}
+{% block page_title %}แดชบอร์ดการจับคู่สินค้า{% endblock %}
 
 {% block content %}
-<div class="container mt-4">
-    <h2><i class="bi bi-link-45deg"></i>สินค้าที่ต้องจับคู่</h2>
-    <p class="text-muted">รายการต่อไปนี้จากไฟล์ที่นำเข้า ไม่ตรงกับสินค้าใด ๆ ในระบบภายใน</p>
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 
-    <div class="card shadow-sm">
-        <div class="table-responsive">
-            <table class="table table-hover align-middle">
-                <thead class="table-light">
-                    <tr>
-                        <th style="width: 20%"  class="text-center">รหัสสินค้า / คีย์ภายนอก</th>
-                        <th style="width: 20%"  class="text-center">ชื่อตัวอย่างสินค้า</th>
-                        <th style="width: 10%"  class="text-center">จำนวนที่ค้างอยู่</th>
-                        <th style="width: 20%"  class="text-center">จับคู่กับสินค้าในระบบ</th>
-                        <th style="width: 3%"  class="text-center">บันทึก</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for item in unmapped_items %}
-                    <tr>
-                        <form method="POST">
-                            {% csrf_token %}
-                            <td>
-                                <input type="hidden" name="external_key" value="{{ item.sku }}">
-                                <span class="fw-bold text-danger">{{ item.sku }}</span>
+<style>
+    .select2-dropdown {
+        background-color: #212529 !important;
+        color: #ffffff !important;
+        border: 1px solid #495057;
+    }
+    .select2-container--default .select2-results__option {
+        background-color: #212529;
+        color: #ffffff;
+    }
+    .select2-container--default .select2-results__option--highlighted[aria-selected] {
+        background-color: #0d6efd !important;
+        color: #ffffff !important;
+    }
+    .select2-search__field {
+        background-color: #343a40 !important;
+        color: #ffffff !important;
+        border: 1px solid #495057 !important;
+    }
+    .select2-container--default .select2-selection--single {
+        background-color: #212529;
+        color: #ffffff;
+        border: 1px solid #495057;
+    }
+    .select2-container--default .select2-selection--single .select2-selection__rendered {
+        color: #ffffff !important;
+    }
+
+    /* AI suggestion chips */
+    .ai-suggestion-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 0.25rem 0.6rem;
+        border-radius: 999px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        background: linear-gradient(135deg, #1a2a3a, #1e2d4a);
+        border: 1px solid #3a5a8a;
+        color: #90cdf4;
+        white-space: nowrap;
+    }
+    .ai-suggestion-chip .conf-badge {
+        background: #2b4a6a;
+        border-radius: 999px;
+        padding: 0 0.4rem;
+        font-size: 0.7rem;
+        color: #63b3ed;
+    }
+    .btn-ai-confirm {
+        font-size: 0.72rem;
+        padding: 0.2rem 0.55rem;
+        border-radius: 999px;
+        background: linear-gradient(135deg, #276749, #2c7a7b);
+        border: none;
+        color: #fff;
+        white-space: nowrap;
+    }
+    .btn-ai-confirm:hover { opacity: 0.85; color: #fff; }
+    .btn-ai-manual {
+        font-size: 0.72rem;
+        padding: 0.2rem 0.55rem;
+        border-radius: 999px;
+        background: transparent;
+        border: 1px solid #555;
+        color: #aaa;
+        white-space: nowrap;
+    }
+    .btn-ai-manual:hover { border-color: #888; color: #fff; }
+    .ai-suggestion-cell { min-width: 220px; }
+
+    /* AI button */
+    #btn-ai-suggest {
+        background: linear-gradient(135deg, #63b3ed, #9f7aea);
+        border: none;
+        color: #fff;
+        border-radius: 999px;
+        padding: 0.45rem 1.2rem;
+        font-weight: 600;
+        font-size: 0.875rem;
+    }
+    #btn-ai-suggest:disabled { opacity: 0.6; }
+
+    /* Modal AI chips */
+    .modal-ai-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3rem;
+        padding: 0.2rem 0.55rem;
+        border-radius: 999px;
+        font-size: 0.73rem;
+        font-weight: 600;
+        background: linear-gradient(135deg, #1a2a3a, #1e2d4a);
+        border: 1px solid #3a5a8a;
+        color: #90cdf4;
+        cursor: pointer;
+        transition: border-color 0.15s;
+    }
+    .modal-ai-chip:hover { border-color: #63b3ed; }
+</style>
+
+<div class="container-fluid p-4">
+
+    <div class="alert alert-info d-flex align-items-center mb-4" role="alert">
+        <i class="bi bi-info-circle-fill fs-4 me-3"></i>
+        <div>
+            <strong>วิธีการทำงาน:</strong>
+            รายการที่นำเข้าโดยไม่มีสินค้าที่ตรงกันจะแสดงอยู่ด้านล่าง
+            กด <b>"🤖 ให้ AI ช่วยเดา"</b> เพื่อให้ระบบแนะนำสินค้า แล้วกดยืนยันเอง หรือคลิก <b>"จับคู่สินค้า"</b> เพื่อเลือกเอง
+        </div>
+    </div>
+
+    <div class="card shadow-sm border-0">
+        <div class="card-header bg-gradient py-3 d-flex align-items-center justify-content-between flex-wrap gap-2">
+            <h5 class="mb-0 text-warning fw-bold">รายการภายนอกที่ยังไม่ได้จับคู่ (20 อันดับแรก)</h5>
+            {% if unmapped_items %}
+            <button id="btn-ai-suggest" type="button">
+                <i class="bi bi-stars me-1"></i> ให้ AI ช่วยเดา
+            </button>
+            {% endif %}
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="bg-light">
+                        <tr>
+                            <th style="width: 25%;">รหัสสินค้าแพลตฟอร์ม (SKU/ชื่อ)</th>
+                            <th style="width: 28%;">ชื่อสินค้า (จากการนำเข้า)</th>
+                            <th class="text-center" style="width: 10%;">จำนวนครั้ง</th>
+                            <th class="ai-suggestion-cell" style="width: 27%;">🤖 AI แนะนำ</th>
+                            <th class="text-end" style="width: 10%;">เลือกเอง</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in unmapped_items %}
+                        <tr data-external-key="{{ item.sku }}" data-item-name="{{ item.item_name }}">
+                            <td class="fw-bold text-secondary-emphasis">
+                                <i class="bi bi-key text-muted me-1"></i>
+                                {{ item.sku }}
                             </td>
-                            
-                            <td>{{ item.item_name }}</td>
-                            
-                            <td class="text-center"><span class="badge bg-secondary">{{ item.count }} orders</span></td>
-                            
-                            <td>
-                                <select name="product_id" class="form-select select2" required>
-                                    <option value="">-- เลือกจับคู่สินค้าในระบบ --</option>
-                                    {% for p in products %}
-                                        <option value="{{ p.id }}">{{ p.name }} ({{ p.sku }})</option>
-                                    {% endfor %}
-                                </select>
+
+                            <td class="text-secondary small">{{ item.item_name }}</td>
+
+                            <td class="text-center">
+                                <span class="badge bg-warning text-dark rounded-pill">
+                                    {{ item.count }} คำสั่งซื้อ
+                                </span>
                             </td>
-                            
-                            <td>
-                                <button type="submit" class="btn btn-primary btn-sm">
-                                    <i class="bi bi-check-lg"></i> บันทึก
+
+                            <td class="ai-suggestion-cell" id="ai-cell-{{ forloop.counter }}">
+                                <span class="text-muted small fst-italic">— กด "ให้ AI ช่วยเดา" —</span>
+                            </td>
+
+                            <td class="text-end">
+                                <button type="button"
+                                        class="btn btn-sm btn-primary map-btn"
+                                        data-bs-toggle="modal"
+                                        data-bs-target="#mappingModal"
+                                        data-external-key="{{ item.sku }}"
+                                        data-item-name="{{ item.item_name }}"
+                                        data-row-index="{{ forloop.counter }}">
+                                    <i class="bi bi-link-45deg"></i> จับคู่
                                 </button>
                             </td>
-                        </form>
-                    </tr>
-                    {% empty %}
-                    <tr>
-                        <td colspan="5" class="text-center py-5 text-success">
-                            <i class="bi bi-check-circle-fill fs-1"></i>
-                            <br>จับคู่กับสินค้าในระบบครบถ้วนแล้ว!
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="5" class="text-center py-5">
+                                <i class="bi bi-check-circle text-success fs-1 mb-3 d-block"></i>
+                                <h5 class="text-muted">สินค้าทั้งหมดถูกจับคู่แล้ว!</h5>
+                                <p class="small text-secondary">เยี่ยมมาก ฐานข้อมูลสินค้าของคุณเรียบร้อยแล้ว</p>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
 </div>
+
+<!-- Mapping Modal -->
+<div class="modal fade" id="mappingModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-gradient">
+                <h5 class="modal-title">จับคู่สินค้าภายนอก</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="ปิด"></button>
+            </div>
+            <form method="POST" action="{% url 'product_mapping' %}">
+                {% csrf_token %}
+                <div class="modal-body">
+
+                    <input type="hidden" name="external_key" id="modalExternalKey">
+
+                    <div class="mb-3">
+                        <label class="form-label text-muted small">รายการภายนอก (ข้อมูลจากแพลตฟอร์ม)</label>
+                        <input type="text" class="form-control bg-dark" id="modalDisplayKey" readonly>
+                        <div class="form-text small text-truncate" id="modalDisplayName"></div>
+                    </div>
+
+                    <!-- AI suggestions inside modal -->
+                    <div id="modalAiSuggestions" class="mb-3 d-none">
+                        <label class="form-label text-muted small">🤖 AI แนะนำ — คลิกเพื่อเลือก</label>
+                        <div id="modalAiChips" class="d-flex flex-wrap gap-2"></div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">เลือกสินค้าของระบบ</label>
+                        <select name="product_id" id="systemProductSelect" class="form-select" required>
+                            <option class="bg-dark" value="">ค้นหาสินค้า...</option>
+                            {% for prod in products %}
+                                <option class="text-dark" value="{{ prod.id }}" data-sku="{{ prod.sku }}" data-name="{{ prod.name }}">
+                                    {{ prod.sku }} | {{ prod.name }}
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-ghost" data-bs-dismiss="modal">ยกเลิก</button>
+                    <button type="submit" class="btn btn-primary">บันทึกการจับคู่</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Hidden confirm form (reused for AI quick-confirm) -->
+<form id="confirmForm" method="POST" action="{% url 'product_mapping' %}" style="display:none;">
+    {% csrf_token %}
+    <input type="hidden" name="external_key" id="confirmExternalKey">
+    <input type="hidden" name="product_id" id="confirmProductId">
+</form>
+
+<script>
+(function() {
+    'use strict';
+
+    var STORAGE_KEY = 'pmSuggestions_v1';
+
+    // ── AI suggestions store (persisted in sessionStorage) ────────────────────
+    var _suggestionsByKey = {};
+
+    try {
+        var _stored = sessionStorage.getItem(STORAGE_KEY);
+        if (_stored) _suggestionsByKey = JSON.parse(_stored);
+    } catch(e) {}
+
+    // ── Select2 init ──────────────────────────────────────────────────────────
+    $(document).ready(function() {
+        // Restore suggestions from sessionStorage on page load
+        if (Object.keys(_suggestionsByKey).length) {
+            renderSuggestionsInTable(_suggestionsByKey);
+        }
+
+        $('#systemProductSelect').select2({
+            dropdownParent: $('#mappingModal'),
+            placeholder: "พิมพ์ SKU หรือชื่อเพื่อค้นหา...",
+            allowClear: true,
+            width: '100%'
+        });
+
+        $('.map-btn').on('click', function() {
+            var key = $(this).data('external-key');
+            var name = $(this).data('item-name');
+
+            $('#modalExternalKey').val(key);
+            $('#modalDisplayKey').val(key);
+            $('#modalDisplayName').text(name);
+            $('#systemProductSelect').val(null).trigger('change');
+
+            // Auto-pre-select top AI suggestion in Select2
+            var sugg = _suggestionsByKey[key];
+            if (sugg && sugg.length) {
+                selectModalProduct(sugg[0].product_id);
+            }
+
+            populateModalChips(key);
+        });
+
+        $(document).on('select2:open', function() {
+            document.querySelector('.select2-search__field').focus();
+        });
+    });
+
+    // ── Event delegation for confirm buttons (avoids inline onclick quoting bugs) ──
+    document.addEventListener('click', function(e) {
+        var btn = e.target.closest('.btn-ai-confirm');
+        if (btn) {
+            confirmSuggestion(btn.dataset.key, parseInt(btn.dataset.pid, 10));
+        }
+    });
+
+    function getCsrf() {
+        var m = document.cookie.match(/csrftoken=([^;]+)/);
+        return m ? m[1] : '';
+    }
+
+    // ── Fetch AI suggestions ──────────────────────────────────────────────────
+    document.getElementById('btn-ai-suggest') && document.getElementById('btn-ai-suggest').addEventListener('click', function() {
+        var btn = this;
+        var rows = document.querySelectorAll('tbody tr[data-external-key]');
+        var items = [];
+        rows.forEach(function(row) {
+            items.push({
+                external_key: row.dataset.externalKey,
+                item_name: row.dataset.itemName
+            });
+        });
+
+        if (!items.length) return;
+
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> กำลังวิเคราะห์...';
+
+        fetch('{% url "product_mapping_suggest" %}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCsrf()
+            },
+            body: JSON.stringify({ items: items })
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-stars me-1"></i> ให้ AI ช่วยเดา';
+
+            if (data.degraded) {
+                showToast('AI ไม่พร้อมใช้งาน — เลือกเองได้ผ่านปุ่ม "จับคู่สินค้า"', 'warning');
+                return;
+            }
+
+            _suggestionsByKey = data.suggestions || {};
+            try { sessionStorage.setItem(STORAGE_KEY, JSON.stringify(_suggestionsByKey)); } catch(e) {}
+            renderSuggestionsInTable(_suggestionsByKey);
+        })
+        .catch(function(err) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-stars me-1"></i> ให้ AI ช่วยเดา';
+            showToast('เกิดข้อผิดพลาด กรุณาลองอีกครั้ง', 'danger');
+        });
+    });
+
+    // ── Render suggestions into table cells ───────────────────────────────────
+    function renderSuggestionsInTable(suggestionsByKey) {
+        var rows = document.querySelectorAll('tbody tr[data-external-key]');
+        rows.forEach(function(row, i) {
+            var key = row.dataset.externalKey;
+            var cell = row.querySelector('.ai-suggestion-cell');
+            var suggestions = suggestionsByKey[key];
+
+            if (!suggestions || !suggestions.length) {
+                cell.innerHTML = '<span class="text-muted small">ไม่มีตัวเลือก</span>';
+                return;
+            }
+
+            var top = suggestions[0];
+            var confPct = Math.round(top.confidence * 100);
+            // Use data-key/data-pid to avoid inline-onclick HTML quoting issues
+            var html = '<div class="d-flex align-items-center gap-1 flex-wrap">'
+                + '<span class="ai-suggestion-chip" title="' + escHtml(top.reason) + '">'
+                + '🎯 ' + escHtml(top.name)
+                + ' <span class="conf-badge">' + confPct + '%</span>'
+                + '</span>'
+                + '<button class="btn-ai-confirm" data-key="' + escHtml(key) + '" data-pid="' + top.product_id + '">'
+                + '✓ ยืนยัน</button>'
+                + '</div>';
+
+            // Show alt suggestions if any
+            if (suggestions.length > 1) {
+                html += '<div class="mt-1 d-flex gap-1 flex-wrap">';
+                for (var j = 1; j < suggestions.length; j++) {
+                    var s = suggestions[j];
+                    var sp = Math.round(s.confidence * 100);
+                    html += '<span class="ai-suggestion-chip" style="font-size:0.68rem;opacity:0.75;" title="' + escHtml(s.reason) + '">'
+                        + escHtml(s.sku) + ' <span class="conf-badge">' + sp + '%</span></span>';
+                }
+                html += '</div>';
+            }
+
+            cell.innerHTML = html;
+        });
+    }
+
+    // ── Quick confirm via hidden form ─────────────────────────────────────────
+    window.confirmSuggestion = function(externalKey, productId) {
+        document.getElementById('confirmExternalKey').value = externalKey;
+        document.getElementById('confirmProductId').value = productId;
+        document.getElementById('confirmForm').submit();
+    };
+
+    // ── Populate modal AI chips ───────────────────────────────────────────────
+    function populateModalChips(externalKey) {
+        var suggestions = _suggestionsByKey[externalKey];
+        var container = document.getElementById('modalAiSuggestions');
+        var chipsEl = document.getElementById('modalAiChips');
+
+        if (!suggestions || !suggestions.length) {
+            container.classList.add('d-none');
+            return;
+        }
+
+        var html = '';
+        suggestions.forEach(function(s) {
+            var pct = Math.round(s.confidence * 100);
+            html += '<span class="modal-ai-chip" title="' + escHtml(s.reason) + '" data-pid="' + s.product_id + '">'
+                + '🎯 ' + escHtml(s.name)
+                + ' <span class="conf-badge">' + pct + '%</span>'
+                + '</span>';
+        });
+
+        chipsEl.innerHTML = html;
+        container.classList.remove('d-none');
+    }
+
+    // Event delegation for modal chips
+    document.getElementById('modalAiChips').addEventListener('click', function(e) {
+        var chip = e.target.closest('.modal-ai-chip');
+        if (chip) selectModalProduct(parseInt(chip.dataset.pid, 10));
+    });
+
+    window.selectModalProduct = function(productId) {
+        $('#systemProductSelect').val(productId).trigger('change');
+    };
+
+    // ── Toast helper ──────────────────────────────────────────────────────────
+    function showToast(msg, type) {
+        var div = document.createElement('div');
+        div.className = 'toast align-items-center text-bg-' + type + ' border-0 show position-fixed';
+        div.style.cssText = 'bottom:5rem;right:1.5rem;z-index:9999;min-width:260px;';
+        div.setAttribute('role', 'alert');
+        div.innerHTML = '<div class="d-flex"><div class="toast-body">' + escHtml(msg) + '</div>'
+            + '<button type="button" class="btn-close btn-close-white me-2 m-auto" onclick="this.closest(\'.toast\').remove()"></button></div>';
+        document.body.appendChild(div);
+        setTimeout(function() { div.remove(); }, 5000);
+    }
+
+    function escHtml(str) {
+        return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+})();
+</script>
+
 {% endblock %}

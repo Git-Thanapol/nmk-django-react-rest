@@ -1,0 +1,344 @@
+{% extends "base.html" %}
+
+{% block title %}VAT Orders Tracking{% endblock %}
+{% block page_title %}ระบบจัดการ VAT คงเหลือ (VAT Orders Tracking){% endblock %}
+
+{% block content %}
+<div class="card bg-dark border-secondary shadow-sm">
+    <div class="card-body p-4">
+
+        <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+            <div class="d-flex align-items-center gap-2">
+                <h5 class="mb-0 text-light"><i class="bi bi-box-seam me-2"></i>จัดการข้อมูล VAT ซื้อ-ขาย</h5>
+            </div>
+            <div class="d-flex gap-2">
+                <label class="btn btn-outline-primary btn-sm m-0">
+                    <i class="bi bi-download"></i> นำเข้าข้อมูล ซื้อ
+                    <input type="file" id="uploadBuyBtn" accept=".xls,.xlsx" hidden>
+                </label>
+                <label class="btn btn-outline-success btn-sm m-0">
+                    <i class="bi bi-upload"></i> นำเข้าข้อมูล ขาย
+                    <input type="file" id="uploadSaleBtn" accept=".xls,.xlsx" hidden>
+                </label>
+                <button class="btn btn-success btn-sm" id="exportExcelBtn" disabled>
+                    <i class="bi bi-file-earmark-spreadsheet"></i> Export Excel
+                </button>
+            </div>
+        </div>
+
+        <!-- Alert Message -->
+        <div id="alertPlaceholder"></div>
+
+        <!-- Filters -->
+        <div class="row g-3 mb-4">
+            <div class="col-md-3">
+                <label class="form-label small text-secondary">ค้นหาสินค้า (Serial/ชื่อ)</label>
+                <input type="text" id="filterQuery"
+                    class="form-control form-control-sm bg-dark text-light border-secondary" placeholder="คำค้นหา...">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small text-secondary">บริษัท VAT</label>
+                <select id="filterVatCompany" class="form-select form-select-sm bg-dark text-light border-secondary">
+                    <option value="all">ทั้งหมด (All)</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small text-secondary">ตั้งแต่วันที่ (ซื้อ)</label>
+                <input type="date" id="filterStartDate"
+                    class="form-control form-control-sm bg-dark text-light border-secondary">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small text-secondary">ถึงวันที่ (ซื้อ)</label>
+                <input type="date" id="filterEndDate"
+                    class="form-control form-control-sm bg-dark text-light border-secondary">
+            </div>
+        </div>
+
+        <!-- Table -->
+        <div class="table-responsive">
+            <table class="table table-dark table-hover table-bordered align-middle text-nowrap"
+                style="font-size: 0.85rem;" id="vatTable">
+                <thead>
+                    <tr>
+                        <th colspan="8" class="text-center text-primary"
+                            style="background-color: rgba(13, 110, 253, 0.1);">ฝั่งซื้อ (Buy In)</th>
+                        <th colspan="5" class="text-center text-success"
+                            style="background-color: rgba(25, 135, 84, 0.1);">ฝั่งขาย (Sale Out)</th>
+                    </tr>
+                    <tr>
+                        <!-- Buy -->
+                        <th>Serial No.</th>
+                        <th>สินค้า</th>
+                        <th>วันที่ซื้อ</th>
+                        <th>เลขที่เอกสาร</th>
+                        <th class="text-end">ราคาซื้อ</th>
+                        <th>บริษัท VAT</th>
+                        <th style="width: 120px;">ชำระ (เข้า)</th>
+                        <th style="width: 120px;" class="border-end border-primary">ธนาคาร</th>
+                        <!-- Sale -->
+                        <th>วันที่ขาย</th>
+                        <th>เลขที่เอกสาร</th>
+                        <th>ลูกค้า</th>
+                        <th class="text-end">ราคาขาย</th>
+                        <th style="width: 120px;">ชำระ (ออก)</th>
+                    </tr>
+                </thead>
+                <tbody id="vatTableBody">
+                    <tr>
+                        <td colspan="12" class="text-center py-4 text-secondary">กำลังโหลดข้อมูล...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+
+        let tableData = [];
+
+        // Elements
+        const uploadBuyBtn = document.getElementById('uploadBuyBtn');
+        const uploadSaleBtn = document.getElementById('uploadSaleBtn');
+        const exportExcelBtn = document.getElementById('exportExcelBtn');
+        const tableBody = document.getElementById('vatTableBody');
+        const alertPlaceholder = document.getElementById('alertPlaceholder');
+
+        // Filter Elements
+        const filterQuery = document.getElementById('filterQuery');
+        const filterVatCompany = document.getElementById('filterVatCompany');
+        const filterStartDate = document.getElementById('filterStartDate');
+        const filterEndDate = document.getElementById('filterEndDate');
+
+        // Default date range = today
+        const today = new Date().toISOString().slice(0, 10);
+        filterStartDate.value = today;
+        filterEndDate.value = today;
+
+        // --- Helpers ---
+        function showAlert(message, type) {
+            alertPlaceholder.innerHTML = `<div class="alert alert-${type} alert-dismissible fade show py-2" role="alert">
+            ${message}
+            <button type="button" class="btn-close py-2" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>`;
+        }
+
+        function getCookie(name) {
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                const cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i].trim();
+                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
+                    }
+                }
+            }
+            return cookieValue;
+        }
+        const csrftoken = getCookie('csrftoken');
+
+        // --- API Calls ---
+        async function fetchReport() {
+            tableBody.innerHTML = '<tr><td colspan="12" class="text-center py-4 text-muted"><div class="spinner-border spinner-border-sm text-primary" role="status"></div> กำลังโหลดข้อมูล...</td></tr>';
+
+            try {
+                const params = new URLSearchParams();
+                if (filterQuery.value) params.append('q', filterQuery.value);
+                if (filterVatCompany.value !== 'all') params.append('vat_company', filterVatCompany.value);
+                if (filterStartDate.value) params.append('start_date', filterStartDate.value);
+                if (filterEndDate.value) params.append('end_date', filterEndDate.value);
+
+                const response = await fetch(`/api/vat/report/?${params.toString()}`, {
+                    method: 'GET',
+                    credentials: 'same-origin',
+                    headers: { 'Accept': 'application/json' }
+                });
+
+                if (!response.ok) throw new Error('Network response was not ok');
+
+                tableData = await response.json();
+                populateVatFilter();
+                renderTable();
+            } catch (error) {
+                console.error(error);
+                tableBody.innerHTML = '<tr><td colspan="12" class="text-center py-4 text-danger">เกิดข้อผิดพลาดในการโหลดข้อมูล</td></tr>';
+            }
+        }
+
+        async function uploadFile(file, type) {
+            showAlert('กำลังนำเข้าข้อมูล...', 'info');
+
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('type', type);
+
+            try {
+                const response = await fetch('/api/vat/import/', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    body: formData,
+                    headers: { 'X-CSRFToken': csrftoken }
+                });
+                const data = await response.json();
+
+                console.log("Upload Response:", data);
+
+                if (response.ok) {
+                    if (data.errors && data.errors.length > 0) {
+                        showAlert(`นำเข้าสำเร็จ: ${data.success || 0} รายการ, ข้อผิดพลาดบางส่วน: ${data.errors[0]}`, 'warning');
+                    } else {
+                        showAlert(`นำเข้าข้อมูลสำเร็จ: ${data.success || 0} รายการ`, 'success');
+                    }
+                    fetchReport();
+                } else {
+                    const errorMsg = data.error || data.detail || JSON.stringify(data);
+                    showAlert(`Error: ${errorMsg}`, 'danger');
+                }
+            } catch (error) {
+                console.error("Upload Error Exception:", error);
+                showAlert('เกิดข้อผิดพลาดในการนำเข้าข้อมูล (อาจเป็น HTML Error จาก 500)', 'danger');
+            }
+        }
+
+        async function inlineEdit(itemType, id, field, value) {
+            try {
+                const response = await fetch('/api/vat/report/', {
+                    method: 'PUT',
+                    credentials: 'same-origin',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': csrftoken
+                    },
+                    body: JSON.stringify({ item_type: itemType, id: id, [field]: value })
+                });
+                if (!response.ok) {
+                    showAlert('บันทึกข้อมูลไม่สำเร็จ', 'danger');
+                    fetchReport(); // revert
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        // --- Populate VAT Company filter from data ---
+        function populateVatFilter() {
+            const currentVal = filterVatCompany.value;
+            const names = [...new Set(tableData.map(item => item.supplier_name).filter(n => n && n.trim()))];
+            names.sort();
+            
+            // Keep "All" option, rebuild the rest
+            filterVatCompany.innerHTML = '<option value="all">ทั้งหมด (All)</option>';
+            names.forEach(name => {
+                const opt = document.createElement('option');
+                opt.value = name;
+                opt.textContent = name;
+                filterVatCompany.appendChild(opt);
+            });
+            
+            // Restore previous selection if still exists
+            if ([...filterVatCompany.options].some(o => o.value === currentVal)) {
+                filterVatCompany.value = currentVal;
+            }
+        }
+
+        // --- Render Logic ---
+        function renderTable() {
+            if (tableData.length === 0) {
+                tableBody.innerHTML = '<tr><td colspan="12" class="text-center py-4 text-muted">ไม่พบข้อมูล</td></tr>';
+                exportExcelBtn.disabled = true;
+                return;
+            }
+
+            exportExcelBtn.disabled = false;
+            let html = '';
+
+            tableData.forEach(item => {
+                const numBuyPrice = item.purchase_price ? parseFloat(item.purchase_price).toLocaleString(undefined, { minimumFractionDigits: 2 }) : '';
+                const sale = item.sale_match || {};
+                const numSalePrice = sale.sale_price ? parseFloat(sale.sale_price).toLocaleString(undefined, { minimumFractionDigits: 2 }) : '';
+
+                html += `<tr>
+                <!-- Buy Side -->
+                <td>${item.serial_no || ''}</td>
+                <td>${item.product_name || ''}</td>
+                <td>${item.date || ''}</td>
+                <td class="text-muted small">${item.document_no || ''}</td>
+                <td class="text-end fw-semibold">${numBuyPrice}</td>
+                <td class="text-truncate" style="max-width: 150px;" title="${item.supplier_name}">${item.supplier_name || ''}</td>
+                <td><input type="text" class="form-control form-control-sm inline-input" data-type="buy" data-id="${item.id}" data-field="payment_method_in" value="${item.payment_method_in || ''}"></td>
+                <td class="border-end border-primary"><input type="text" class="form-control form-control-sm inline-input" data-type="buy" data-id="${item.id}" data-field="bank_in" value="${item.bank_in || ''}"></td>
+                
+                <!-- Sale Side -->
+                ${item.sale_match ? `
+                    <td class="bg-success bg-opacity-10">${sale.date || ''}</td>
+                    <td class="bg-success bg-opacity-10 text-muted small">${sale.document_no || ''}</td>
+                    <td class="bg-success bg-opacity-10 text-truncate" style="max-width: 150px;">${sale.customer_name || ''}</td>
+                    <td class="bg-success bg-opacity-10 text-end fw-semibold text-success">${numSalePrice}</td>
+                    <td class="bg-success bg-opacity-10"><input type="text" class="form-control form-control-sm inline-input" data-type="sale" data-id="${sale.id}" data-field="payment_method_out" value="${sale.payment_method_out || ''}"></td>
+                ` : `
+                    <td colspan="5" class="text-center bg-danger bg-opacity-10 text-danger small"><i class="bi bi-clock-history"></i> ยังไม่ได้ขาย</td>
+                `}
+            </tr>`;
+            });
+
+            tableBody.innerHTML = html;
+
+            // Attach blur events for inline editing
+            document.querySelectorAll('.inline-input').forEach(input => {
+                input.addEventListener('change', function (e) {
+                    const type = this.getAttribute('data-type');
+                    const id = this.getAttribute('data-id');
+                    const field = this.getAttribute('data-field');
+                    const val = this.value;
+                    inlineEdit(type, id, field, val);
+                });
+            });
+        }
+
+        // --- Events ---
+        uploadBuyBtn.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) uploadFile(e.target.files[0], 'buy');
+            e.target.value = '';
+        });
+
+        uploadSaleBtn.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) uploadFile(e.target.files[0], 'sale');
+            e.target.value = '';
+        });
+
+        // Filter triggers
+        [filterQuery, filterVatCompany, filterStartDate, filterEndDate].forEach(el => {
+            el.addEventListener('change', fetchReport);
+            if (el.tagName === 'INPUT' && el.type === 'text') {
+                el.addEventListener('keyup', (e) => {
+                    if (e.key === 'Enter') fetchReport();
+                });
+            }
+        });
+
+        exportExcelBtn.addEventListener('click', () => {
+            const params = new URLSearchParams();
+            if (filterQuery.value) params.append('q', filterQuery.value);
+            if (filterVatCompany.value !== 'all') params.append('vat_company', filterVatCompany.value);
+            if (filterStartDate.value) params.append('start_date', filterStartDate.value);
+            if (filterEndDate.value) params.append('end_date', filterEndDate.value);
+            window.open('/api/vat/export/?' + params.toString(), '_blank');
+        });
+
+        // Custom CSS for inline inputs
+        const style = document.createElement('style');
+        style.innerHTML = `
+        .inline-input { border: 1px solid transparent; background: transparent; transition: all 0.2s; box-shadow: none !important; padding: 0.1rem 0.3rem;}
+        .inline-input:hover, .inline-input:focus { border-color: #dee2e6; background: #fff; }
+    `;
+        document.head.appendChild(style);
+
+        // Initial Load
+        fetchReport();
+    });
+</script>
+{% endblock %}

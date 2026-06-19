@@ -21,27 +21,40 @@
     </div>
 
     <div class="card-body">
-      <form method="POST">
+      <form method="POST" enctype="multipart/form-data">
         {% csrf_token %}
         <div class="row g-3">
           
-          <div class="col-md-3">
+          <div class="col-md-4">
             <label class="form-label text-secondary small">หมายเลขธุรกรรม</label>
             {{ form.transaction_number }}
           </div>
-          <div class="col-md-3">
+          <div class="col-md-4">
+            <label class="form-label text-secondary small">หมายเลขอ้างอิง</label>
+            {{ form.reference }}
+          </div>
+          <div class="col-md-4">
             <label class="form-label text-secondary small">วันที่</label>
             {{ form.transaction_date }}
           </div>
-          <div class="col-md-3">
-            <label class="form-label text-secondary small">รายรับ / รายจ่าย</label>
-            {{ form.type }}
-          </div>
-          <div class="col-md-3">
+
+          <div class="col-md-4">
             <label class="form-label text-secondary small">ประเภท</label>
             {{ form.category }}
           </div>
+          <div class="col-md-4">
+            <label class="form-label text-secondary small">ผู้ขาย / ผู้จัดหา</label>
+            {{ form.vendor }}
+          </div>
+          <div class="col-4">
+            <label class="form-label text-secondary small">นำเข้าสู่บริษัท</label>
+            {{ form.company }}
+          </div>
 
+          <div class="col-md-4">
+            <label class="form-label text-secondary small">รายรับ / รายจ่าย</label>
+            {{ form.type }}
+          </div>
           <div class="col-md-4">
             <label class="form-label text-secondary small">จำนวนเงินทั้งสิ้น</label>
             <div class="input-group">
@@ -49,12 +62,36 @@
                 {{ form.amount }}
             </div>
           </div>
-          <div class="col-md-8">
-            <label class="form-label text-secondary small">หมายเลขอ้างอิง</label>
-            {{ form.reference }}
+
+          <div class="col-md-4">
+            <label class="form-label text-secondary small"><i class="bi bi-paperclip me-1"></i>แนบไฟล์ (รูปภาพ, PDF, เอกสาร)</label>
+            <input type="file" name="attachments" class="form-control bg-dark border-secondary text-light" multiple accept="image/*,.pdf,.xlsx,.xls,.doc,.docx">
+            <div class="form-text text-secondary small">อัปโหลดได้หลายไฟล์พร้อมกัน</div>
           </div>
 
+          {% if is_editing and attachments %}
           <div class="col-12">
+            <label class="form-label text-secondary small">ไฟล์แนบที่มีอยู่</label>
+            <div class="d-flex flex-wrap gap-2">
+              {% for att in attachments %}
+              <div class="d-flex align-items-center gap-2 px-3 py-2 rounded border border-secondary bg-dark bg-opacity-50">
+                <i class="bi bi-file-earmark-text text-info"></i>
+                <a href="{{ att.file.url }}" target="_blank" class="text-light text-decoration-none small text-truncate" style="max-width:200px;" title="{{ att.filename }}">
+                  {{ att.filename }}
+                </a>
+                <a href="{% url 'transaction_attachment_delete' att.pk %}"
+                   class="btn btn-sm btn-link text-danger p-0 ms-1"
+                   onclick="return confirm('ลบไฟล์ {{ att.filename }} ออกหรือไม่?')"
+                   title="ลบไฟล์">
+                  <i class="bi bi-x-lg"></i>
+                </a>
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+          {% endif %}
+
+          <div class="col-6">
             <label class="form-label text-secondary small">คำอธิบายรายการ</label>
             {{ form.description }}
           </div>
@@ -134,6 +171,7 @@
             <th>ประเภท</th>
             <th>คำอธิบายรายการ</th>
             <th class="text-end">จำนวนเงินทั้งสิ้น</th>
+            <th class="text-center">ไฟล์แนบ</th>
             <th class="text-end pe-4">แก้ไข</th>
           </tr>
         </thead>
@@ -163,6 +201,17 @@
             <td class="text-end fw-bold {% if txn.type == 'INCOME' %}text-success{% else %}text-danger{% endif %}">
                 {% if txn.type == 'INCOME' %}+{% else %}-{% endif %} {{ txn.amount|floatformat:2|intcomma  }}
             </td>
+            <td class="text-center">
+              {% with count=txn.attachments.count %}
+              {% if count %}
+                <a href="{% url 'transaction_edit' txn.id %}" class="text-info text-decoration-none small" title="{{ count }} ไฟล์">
+                  <i class="bi bi-paperclip"></i> {{ count }}
+                </a>
+              {% else %}
+                <span class="text-secondary small">—</span>
+              {% endif %}
+              {% endwith %}
+            </td>
             <td class="text-end pe-4">
               <a href="{% url 'transaction_edit' txn.id %}" class="btn btn-sm btn-ghost" title="Edit">
                 <i class="bi bi-pencil"></i>
@@ -171,9 +220,9 @@
           </tr>
           {% empty %}
           <tr>
-            <td colspan="7" class="text-center py-5 text-secondary">
+            <td colspan="8" class="text-center py-5 text-secondary">
               <i class="bi bi-receipt fs-1 d-block mb-3"></i>
-              No transactions found matching your criteria.
+              ไม่พบรายการธุรกรรมที่ตรงกับเงื่อนไขของคุณ
             </td>
           </tr>
           {% endfor %}

@@ -6,6 +6,8 @@ import NotFound from './pages/NotFound'
 import Home from './pages/Home'
 import ProtectedRoute from './components/ProtectedRoute'
 
+import VatTracking from './pages/VatTracking/VatTracking'
+
 // import About from './pages/About'
 // import Contact from './pages/Contact'
 // import Navbar from './components/Navbar'
@@ -23,6 +25,8 @@ function App() {
     <BrowserRouter>
       <Routes>
         <Route path ="/" element = {<ProtectedRoute> <Home /> </ProtectedRoute> } />
+        <Route path="/vat-tracking" element={<ProtectedRoute> <VatTracking /> </ProtectedRoute>} />
+        
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
         <Route path="/logout" element={<Logout />} />

@@ -1,4 +1,5 @@
 # Django core
+import json
 import os
 
 from django import forms
@@ -8,10 +9,12 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from django.core.files.storage import FileSystemStorage
 from django.db import transaction
-from django.db.models import Count, Q
+from django.db.models import Count, F, Q
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string,get_template
+from django.http import JsonResponse,HttpResponseRedirect
+from django.utils import timezone
 
 # Third-party
 import weasyprint
@@ -19,11 +22,14 @@ from xhtml2pdf import pisa
 from rest_framework import generics
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from pybaht import bahttext
+import openpyxl
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from datetime import datetime
+import threading
 
 # Local apps – models
 from .models import (
     Company,
-    Customer,
     Invoice,
     InvoiceItem,
     Note,
@@ -31,13 +37,18 @@ from .models import (
     ProductAlias,
     PurchaseItem,
     PurchaseOrder,
+    PurchaseAttachment,
     Transaction,
+    TransactionAttachment,
     Vendor,
+    ImportLog,
+    WithholdingTaxCert,
+    BugReport,
+    BugReportImage,
 )
 
 # Local apps – forms
 from .forms import (
-    CustomerForm,
     ImportFileForm,
     InvoiceForm,
     InvoiceItemFormSet,
@@ -47,6 +58,7 @@ from .forms import (
     ReportFilterForm,
     TransactionForm,
     VendorForm,
+    CompanyForm,
 )
 
 # Local apps – serializers
@@ -54,7 +66,8 @@ from .serializers import NoteSerializer, UserSerializer
 
 # Local apps – utilities
 from .utils_import_core import universal_invoice_import
-from .utils_pdf import link_callback
+from .utils_pdf import link_callback, generate_wht_pdf_4_copies
+from .utils_wht import generate_wht_xlsx
 from .utils_processors import (
     process_lazada_orders,
     process_shopee_orders,
@@ -64,7 +77,64 @@ from .utils_reports import (
     generate_purchase_tax_report,
     generate_sales_tax_report,
     generate_stock_report,
+    generate_combined_tax_report,
 )
+from .tasks import run_import_background # Import the function from step 2
+from .utils_llm import chat as llm_chat, help_ask as llm_help_ask, suggest_product_matches, LLMUnavailable
+from .utils_dashboard import (
+    resolve_date_range,
+    get_kpi_summary,
+    get_sales_trend,
+    get_top_skus,
+    get_purchase_vs_sales,
+    get_stock_alerts,
+)
+
+
+def _apply_cancel_suffix(obj, fields):
+    """Suffix specified fields with -Cancelled-DDMMYYHHMMSSffffff to free up unique keys."""
+    now = timezone.localtime()
+    suffix = f"-Cancelled-{now.strftime('%d%m%y%H%M%S')}{now.microsecond:06d}"
+    for field_name in fields:
+        val = getattr(obj, field_name, None)
+        if val and '-Cancelled-' not in val:
+            max_len = obj._meta.get_field(field_name).max_length or 255
+            # Truncate original value first so suffix is never cut off
+            setattr(obj, field_name, val[:max_len - len(suffix)] + suffix)
+
+
+def _reverse_po_stock(po):
+    """Cancel PO → subtract back the qty that was added when PO was created."""
+    for item in po.purchase_items.select_for_update().order_by('id'):
+        if item.remaining_quantity < item.quantity:
+            raise Exception(
+                f"ไม่สามารถยกเลิก: สินค้า '{item.product.name}' มีการขายไปแล้วบางส่วน "
+                f"(เหลือ {item.remaining_quantity}/{item.quantity}). "
+                f"กรุณายกเลิกใบขายที่ใช้ batch นี้ก่อน"
+            )
+        # Use .update() to bypass PurchaseItem.save() which triggers PO recalc cascade
+        PurchaseItem.objects.filter(pk=item.pk).update(remaining_quantity=item.remaining_quantity - item.quantity)
+
+
+def _restore_invoice_stock(invoice):
+    """Cancel Invoice → add qty back to the source purchase batch."""
+    for inv_item in invoice.invoice_items.select_related('purchase_item').order_by('id'):
+        if inv_item.purchase_item_id:
+            # Use .update() to bypass PurchaseItem.save() which triggers PO recalc cascade
+            PurchaseItem.objects.select_for_update().filter(pk=inv_item.purchase_item_id).update(
+                remaining_quantity=F('remaining_quantity') + inv_item.quantity
+            )
+
+
+def _apply_cancellation(obj, request, suffix_fields, stock_reverser):
+    """Orchestrate cancellation: set audit fields → suffix keys → save → reverse stock."""
+    obj.cancelled_at = timezone.now()
+    obj.cancelled_by = request.user
+    obj.cancel_reason = request.POST.get('cancel_reason', '')[:255]
+    _apply_cancel_suffix(obj, suffix_fields)
+    obj.save()
+    stock_reverser(obj)
+
 
 
 
@@ -102,9 +172,252 @@ def home(request):
     return render(request, 'base.html')
 
 def help(request):
-    # Get all Posts
-    # Render app template with context
     return render(request, 'help.html')
+
+
+@login_required
+def help_ask_view(request):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+    import json as _json
+    try:
+        body = _json.loads(request.body)
+    except _json.JSONDecodeError:
+        return JsonResponse({'error': 'invalid JSON'}, status=400)
+    question = body.get('question', '').strip()
+    if not question:
+        return JsonResponse({'error': 'question required'}, status=400)
+    try:
+        result = llm_help_ask(question)
+        return JsonResponse(result)
+    except LLMUnavailable as e:
+        from django.conf import settings as dj_settings
+        resp = {'degraded': True, 'answer': 'ขออภัย ระบบ AI ไม่พร้อมใช้งานตอนนี้ กรุณาดูคำตอบในคู่มือด้านบนได้เลย'}
+        if dj_settings.DEBUG:
+            resp['debug_reason'] = str(e)
+        return JsonResponse(resp)
+
+
+# ─── Dashboard ──────────────────────────────────────────────────────────────
+
+@login_required
+def dashboard_view(request):
+    companies = Company.objects.filter(is_active=True).order_by('name')
+    return render(request, 'api/dashboard.html', {'companies': companies})
+
+
+@login_required
+def dashboard_kpi_summary(request):
+    company_id = request.GET.get('company') or None
+    period = request.GET.get('period', 'this_month')
+    from_date_str = request.GET.get('from')
+    to_date_str = request.GET.get('to')
+    from_date_obj = None
+    to_date_obj = None
+    if from_date_str:
+        try:
+            from datetime import date
+            from_date_obj = date.fromisoformat(from_date_str)
+        except ValueError:
+            pass
+    if to_date_str:
+        try:
+            from datetime import date
+            to_date_obj = date.fromisoformat(to_date_str)
+        except ValueError:
+            pass
+    start, end = resolve_date_range(period, from_date_obj, to_date_obj)
+    data = get_kpi_summary(company_id=company_id, from_date=start, to_date=end)
+    return JsonResponse(data)
+
+
+@login_required
+def dashboard_sales_trend(request):
+    company_id = request.GET.get('company') or None
+    try:
+        days = int(request.GET.get('days', 30))
+    except ValueError:
+        days = 30
+    data = get_sales_trend(company_id=company_id, days=days)
+    return JsonResponse(data, safe=False)
+
+
+@login_required
+def dashboard_top_skus(request):
+    company_id = request.GET.get('company') or None
+    period = request.GET.get('period', 'this_month')
+    from_date_str = request.GET.get('from')
+    to_date_str = request.GET.get('to')
+    from_date_obj = to_date_obj = None
+    if from_date_str:
+        try:
+            from datetime import date
+            from_date_obj = date.fromisoformat(from_date_str)
+        except ValueError:
+            pass
+    if to_date_str:
+        try:
+            from datetime import date
+            to_date_obj = date.fromisoformat(to_date_str)
+        except ValueError:
+            pass
+    start, end = resolve_date_range(period, from_date_obj, to_date_obj)
+    try:
+        limit = int(request.GET.get('limit', 10))
+    except ValueError:
+        limit = 10
+    data = get_top_skus(company_id=company_id, from_date=start, to_date=end, limit=limit)
+    return JsonResponse(data, safe=False)
+
+
+@login_required
+def dashboard_purchase_vs_sales(request):
+    company_id = request.GET.get('company') or None
+    try:
+        months = int(request.GET.get('months', 6))
+    except ValueError:
+        months = 6
+    data = get_purchase_vs_sales(company_id=company_id, months=months)
+    return JsonResponse(data, safe=False)
+
+
+@login_required
+def dashboard_stock_alerts(request):
+    company_id = request.GET.get('company') or None
+    try:
+        threshold = int(request.GET.get('threshold', 5))
+    except ValueError:
+        threshold = 5
+    data = get_stock_alerts(company_id=company_id, threshold=threshold)
+    return JsonResponse(data, safe=False)
+
+
+# ─── Bug / Feature Request ───────────────────────────────────────────────────
+
+@login_required
+def bug_report_chat(request):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+    import json as _json
+    try:
+        body = _json.loads(request.body)
+    except _json.JSONDecodeError:
+        return JsonResponse({'degraded': True})
+    history = body.get('history', [])
+    message = body.get('message', '').strip()
+    if not message:
+        return JsonResponse({'degraded': True})
+    try:
+        result = llm_chat(history, message)
+        return JsonResponse(result)
+    except LLMUnavailable as e:
+        from django.conf import settings as dj_settings
+        resp = {'degraded': True}
+        if dj_settings.DEBUG:
+            resp['debug_reason'] = str(e)
+        return JsonResponse(resp)
+
+
+@login_required
+def bug_report_upload_image(request):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+    image_file = request.FILES.get('image')
+    if not image_file:
+        return JsonResponse({'error': 'no image'}, status=400)
+    img = BugReportImage.objects.create(
+        image=image_file,
+        session_key=request.session.session_key or '',
+    )
+    return JsonResponse({'id': img.pk, 'url': img.image.url})
+
+
+@login_required
+def bug_report_submit(request):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+    import json as _json
+    try:
+        body = _json.loads(request.body)
+    except _json.JSONDecodeError:
+        return JsonResponse({'error': 'invalid JSON'}, status=400)
+
+    title = body.get('title', '').strip()
+    summary = body.get('summary', '').strip()
+    report_type = body.get('type', 'BUG')
+    conversation = body.get('conversation', [])
+    is_degraded = body.get('degraded', False)
+    image_ids = body.get('image_ids', [])
+
+    if not title or not summary:
+        return JsonResponse({'error': 'title and summary required'}, status=400)
+
+    report = BugReport.objects.create(
+        title=title,
+        summary=summary,
+        report_type=report_type if report_type in ('BUG', 'FEATURE') else 'BUG',
+        conversation=conversation,
+        degraded=bool(is_degraded),
+        created_by=request.user,
+    )
+
+    # Link uploaded images; delete orphans from this session
+    session_key = request.session.session_key or ''
+    if image_ids:
+        BugReportImage.objects.filter(pk__in=image_ids).update(bug_report=report, session_key='')
+    # Clean up other uploads from this session that weren't chosen
+    if session_key:
+        BugReportImage.objects.filter(session_key=session_key, bug_report__isnull=True).delete()
+
+    return JsonResponse({'id': report.pk, 'url': f'/bug-reports/{report.pk}/'})
+
+
+@login_required
+def bug_report_list(request):
+    status_filter = request.GET.get('status', '')
+    if request.user.is_staff:
+        qs = BugReport.objects.all()
+    else:
+        qs = BugReport.objects.filter(created_by=request.user)
+    if status_filter:
+        qs = qs.filter(status=status_filter)
+    return render(request, 'api/bug_reports/list.html', {
+        'reports': qs,
+        'status_filter': status_filter,
+    })
+
+
+@login_required
+def bug_report_detail(request, pk):
+    if request.user.is_staff:
+        report = get_object_or_404(BugReport, pk=pk)
+    else:
+        report = get_object_or_404(BugReport, pk=pk, created_by=request.user)
+    return render(request, 'api/bug_reports/detail.html', {
+        'report': report,
+        'status_choices': BugReport.STATUS_CHOICES,
+    })
+
+
+@login_required
+def bug_report_update_status(request, pk):
+    if not request.user.is_staff:
+        return JsonResponse({'error': 'forbidden'}, status=403)
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+    report = get_object_or_404(BugReport, pk=pk)
+    new_status = request.POST.get('status')
+    admin_notes = request.POST.get('admin_notes', '')
+    if new_status in dict(BugReport.STATUS_CHOICES):
+        report.status = new_status
+    report.admin_notes = admin_notes
+    if new_status == 'RESOLVED' and not report.resolved_at:
+        from django.utils import timezone as tz
+        report.resolved_at = tz.now()
+    report.save()
+    messages.success(request, 'อัปเดตสถานะเรียบร้อยแล้ว')
+    return redirect('bug_report_detail', pk=pk)
+
 
 def login_view(request):
     if request.method == 'POST':
@@ -113,7 +426,7 @@ def login_view(request):
         user = authenticate(request, username=username, password=password)
         if user is not None:
             login(request, user)
-            return redirect('help')
+            return redirect('dashboard')
         else:
             messages.error(request, 'Username หรือ Password ไม่ถูกต้อง')
     return render(request, 'login.html')
@@ -122,143 +435,67 @@ def logout_view(request):
     logout(request)
     return redirect('login')
 
+
+# ─── Global Search ───────────────────────────────────────────────────────────
+
+@login_required
+def global_search_view(request):
+    q = request.GET.get('q', '').strip()
+    if len(q) < 2:
+        return JsonResponse({
+            'products': [], 'vendors': [], 'invoices': [], 'purchases': [], 'companies': []
+        })
+
+    def _fmt_products():
+        qs = Product.objects.filter(
+            Q(sku__icontains=q) | Q(name__icontains=q) | Q(category__icontains=q)
+        ).order_by('-created_at')[:5]
+        return [{'id': p.pk, 'label': f'{p.sku} — {p.name}', 'url': f'/products/edit/{p.pk}/'} for p in qs]
+
+    def _fmt_vendors():
+        qs = Vendor.objects.filter(
+            Q(name__icontains=q) | Q(phone__icontains=q)
+        ).order_by('-created_at')[:5]
+        return [{'id': v.pk, 'label': v.name, 'url': f'/vendors/edit/{v.pk}/'} for v in qs]
+
+    def _fmt_invoices():
+        qs = Invoice.objects.filter(
+            Q(invoice_number__icontains=q) | Q(recipient_name__icontains=q) | Q(vendor__name__icontains=q)
+        ).order_by('-invoice_date')[:5]
+        return [{'id': i.pk, 'label': f'{i.invoice_number} — {i.recipient_name or ""}', 'url': f'/invoices/edit/{i.pk}/'} for i in qs]
+
+    def _fmt_purchases():
+        qs = PurchaseOrder.objects.filter(
+            Q(po_number__icontains=q) | Q(vendor__name__icontains=q)
+        ).order_by('-order_date')[:5]
+        return [{'id': p.pk, 'label': f'{p.po_number} — {p.vendor.name}', 'url': f'/purchases/edit/{p.pk}/'} for p in qs]
+
+    def _fmt_companies():
+        qs = Company.objects.filter(name__icontains=q).order_by('name')[:5]
+        return [{'id': c.pk, 'label': c.name, 'url': f'/companies/{c.pk}/edit/'} for c in qs]
+
+    return JsonResponse({
+        'products': _fmt_products(),
+        'vendors': _fmt_vendors(),
+        'invoices': _fmt_invoices(),
+        'purchases': _fmt_purchases(),
+        'companies': _fmt_companies(),
+    })
+
+@login_required
 def purchase_form(request):
     return render(request, 'purchase_form.html')
 
+@login_required
 def invoice_form(request):
     """Render the invoice form page."""
     return render(request, 'invoice_form.html')
 
+@login_required
 def transaction_form(request):
     return render(request, 'transaction_form.html')
 
-#@login_required
-def customer_list(request):
-    # ---------------------------------------------------------
-    # 1. Context Setup (Multi-company logic)
-    # ---------------------------------------------------------
-    # Assuming you have a way to get the current user's company. 
-    # For now, we'll just pick the first one or None if not set.
-    # In a real app, this might come from request.session['company_id']
-    current_company = Company.objects.first() 
-    
-    # ---------------------------------------------------------
-    # 2. Handle Form Submission (POST)
-    # ---------------------------------------------------------
-    if request.method == 'POST':
-        form = CustomerForm(request.POST)
-        if form.is_valid():
-            customer = form.save(commit=False)
-            if current_company:
-                customer.company = current_company
-            customer.save()
-            return redirect('customer_list')
-    else:
-        form = CustomerForm()
-
-    # ---------------------------------------------------------
-    # 3. Get Data & Filter (GET)
-    # ---------------------------------------------------------
-    customers = Customer.objects.all().order_by('-created_at')
-    
-    # Filter by Company (Multi-tenancy)
-    if current_company:
-        customers = customers.filter(company=current_company)
-
-    # Search Logic
-    search_query = request.GET.get('q')
-    if search_query:
-        customers = customers.filter(
-            Q(name__icontains=search_query) | 
-            Q(phone__icontains=search_query) | 
-            Q(tax_id__icontains=search_query) |
-            Q(email__icontains=search_query)
-        )
-
-    # Status Filter
-    status_filter = request.GET.get('status')
-    if status_filter == 'active':
-        customers = customers.filter(is_active=True)
-    elif status_filter == 'inactive':
-        customers = customers.filter(is_active=False)
-
-    context = {
-        'form': form,
-        'customers': customers,
-        'search_query': search_query
-    }
-    return render(request, 'customer_list.html', context)
-
-#@login_required
-def customer_view(request, pk=None):
-    # ---------------------------------------------------------
-    # 1. Determine Context (Create vs Edit)
-    # ---------------------------------------------------------
-    if pk:
-        customer_instance = get_object_or_404(Customer, pk=pk)
-        is_editing = True
-    else:
-        customer_instance = None
-        is_editing = False
-
-    # Get current company (logic placeholder)
-    current_company = Company.objects.first()
-
-    # ---------------------------------------------------------
-    # 2. Handle Form Submission (POST)
-    # ---------------------------------------------------------
-    if request.method == 'POST':
-        # Pass 'instance' to update existing record, otherwise creates new
-        form = CustomerForm(request.POST, instance=customer_instance)
-        
-        if form.is_valid():
-            customer = form.save(commit=False)
-            
-            # If creating a new customer, assign the company
-            if not is_editing and current_company:
-                customer.company = current_company
-            
-            customer.save()
-            return redirect('customer_list')
-    else:
-        # Load form with data (if editing) or blank (if creating)
-        form = CustomerForm(instance=customer_instance)
-
-    # ---------------------------------------------------------
-    # 3. Get Data & Filter (GET)
-    # ---------------------------------------------------------
-    customers = Customer.objects.all().order_by('-created_at')
-    
-    if current_company:
-        customers = customers.filter(company=current_company)
-
-    # Search Logic
-    search_query = request.GET.get('q')
-    if search_query:
-        customers = customers.filter(
-            Q(name__icontains=search_query) | 
-            Q(phone__icontains=search_query) | 
-            Q(tax_id__icontains=search_query) |
-            Q(email__icontains=search_query)
-        )
-
-    # Status Filter
-    status_filter = request.GET.get('status')
-    if status_filter == 'active':
-        customers = customers.filter(is_active=True)
-    elif status_filter == 'inactive':
-        customers = customers.filter(is_active=False)
-
-    context = {
-        'form': form,
-        'customers': customers,
-        'search_query': search_query,
-        'is_editing': is_editing,             # Flag for Template
-        'editing_customer': customer_instance # Object for Template
-    }
-    return render(request, 'customer_list.html', context)
-
-#@login_required
+@login_required
 def vendor_list(request):
     # 1. Handle Form Submission (POST)
     if request.method == 'POST':
@@ -314,7 +551,7 @@ def vendor_list(request):
     }
     return render(request, 'vendor_list.html', context)
 
-#@login_required
+@login_required
 def vendor_view(request, pk=None):
     # 1. Determine Context (Create vs Edit)
     if pk:
@@ -378,7 +615,7 @@ def vendor_view(request, pk=None):
     }
     return render(request, 'vendor_list.html', context)
 
-#@login_required
+@login_required
 def product_view(request, pk=None):
     # ---------------------------------------------------------
     # 1. Determine Context (Create vs Edit)
@@ -441,7 +678,7 @@ def product_view(request, pk=None):
     }
     return render(request, 'product_list.html', context)
 
-#@login_required
+@login_required
 def transaction_view(request, pk=None):
     # ---------------------------------------------------------
     # 1. Determine Context (Create vs Edit)
@@ -460,10 +697,12 @@ def transaction_view(request, pk=None):
         form = TransactionForm(request.POST, instance=transaction_instance)
         if form.is_valid():
             transaction = form.save(commit=False)
-            # Assign current user/company logic
-            transaction.created_by = request.user 
-            transaction.company = Company.objects.first() # Placeholder logic
+            transaction.created_by = request.user
+            transaction.company = Company.objects.first()
             transaction.save()
+            for f in request.FILES.getlist('attachments'):
+                TransactionAttachment.objects.create(transaction=transaction, file=f)
+            messages.success(request, "บันทึกรายการเรียบร้อยแล้ว")
             return redirect('transaction_list')
     else:
         form = TransactionForm(instance=transaction_instance)
@@ -508,6 +747,8 @@ def transaction_view(request, pk=None):
     type_choices = Transaction.TRANSACTION_TYPES
     category_choices = Transaction.CATEGORY_CHOICES
 
+    attachments = transaction_instance.attachments.all() if transaction_instance else []
+
     context = {
         'form': form,
         'transactions': transactions,
@@ -515,12 +756,20 @@ def transaction_view(request, pk=None):
         'type_choices': type_choices,
         'category_choices': category_choices,
         'is_editing': is_editing,
-        'editing_transaction': transaction_instance
+        'editing_transaction': transaction_instance,
+        'attachments': attachments,
     }
     return render(request, 'transaction_list.html', context)
 
+@login_required
+def transaction_attachment_delete(request, pk):
+    attachment = get_object_or_404(TransactionAttachment, pk=pk)
+    transaction_pk = attachment.transaction.pk
+    attachment.file.delete(save=False)
+    attachment.delete()
+    return redirect('transaction_edit', pk=transaction_pk)
 
-#@login_required
+@login_required
 def purchase_order_view(request, pk=None):
     # 1. Setup Context
     if pk:
@@ -529,6 +778,7 @@ def purchase_order_view(request, pk=None):
     else:
         po_instance = None
         is_editing = False
+    old_status = po_instance.status if is_editing else None
 
     # --- RULE 1: If CANCELLED -> Completely Locked (Read-Only) ---
     if is_editing and po_instance.status == 'CANCELLED': # 'Cancelled' in Thai
@@ -539,48 +789,93 @@ def purchase_order_view(request, pk=None):
 
     # 2. Handle POST (Save Data)
     if request.method == 'POST':
-        form = PurchaseOrderForm(request.POST, instance=po_instance)
-        # Note: We don't load formset yet because we might reject the save immediately
-        #formset = PurchaseItemFormSet(request.POST, instance=po_instance)
-        
-        if form.is_valid():
-            # --- RULE 2: If 'Paid'/'RECEIVED' -> Allow ONLY 'CANCELLED' ---
-            if is_editing and po_instance.status == 'RECEIVED': # Change 'RECEIVED' to 'Paid' if needed
-                new_status = form.cleaned_data.get('status')
-                
-                if new_status != 'CANCELLED':
-                    messages.error(request, "Paid/Received orders can only be changed to 'CANCELLED'. Other edits are forbidden.")
-                    return redirect('purchase_edit', pk=pk)
-            
-            # --- Normal Save Logic Continues ---
-            formset = PurchaseItemFormSet(request.POST, instance=po_instance)
+        form = PurchaseOrderForm(request.POST, request.FILES, instance=po_instance)
+        formset = PurchaseItemFormSet(request.POST, request.FILES, instance=po_instance)
 
-            if form.is_valid() and formset.is_valid():
-                try:
-                    with transaction.atomic(): # Use atomic to ensure header & items save together
-                        # A. Save Header
-                        po = form.save(commit=False)
-                        if not is_editing:
-                            po.created_by = request.user
-                            po.company = Company.objects.first() # Placeholder logic
-                        po.save()
-                        
-                        # B. Save Items
-                        formset.instance = po
-                        formset.save()
-                        
-                        # C. Recalculate Totals (The model method we wrote earlier)
-                        po.calculate_totals()
-                        
+        if form.is_valid() and formset.is_valid():
+            # --- RULE 2: If 'PAID' -> Allow ONLY 'CANCELLED' or Adding Attachments ---
+            is_paid = is_editing and po_instance.status == 'PAID'
+            new_status = form.cleaned_data.get('status')
+            has_new_files = bool(request.FILES.getlist('attachments'))
+            
+            # If it's PAID and they changed something other than status to CANCELLED 
+            # (Note: adding files is handled separately below)
+            if is_paid and new_status != 'CANCELLED':
+                # Check if any other data changed besides status? 
+                # ModelForm.has_changed() checks all fields.
+                # If they ONLY added files, we want to allow it.
+                # But Django's form.save() will save everything.
+                # To be safe, if it's PAID, we only allow saving if status is CANCELLED OR they are just adding files.
+                # However, the user wants the record to update.
+                pass 
+
+            try:
+                with transaction.atomic():
+                    # A. Save Header
+                    po = form.save(commit=False)
+                    if not is_editing:
+                        po.created_by = request.user
+
+                    just_cancelled = is_editing and (new_status == 'CANCELLED' and old_status != 'CANCELLED')
+
+                    if just_cancelled:
+                        wht = getattr(po_instance, 'wht_cert', None)
+                        if wht and wht.status == 'ISSUED':
+                            raise Exception(
+                                f"ไม่สามารถยกเลิก: มีใบหัก ณ ที่จ่ายสถานะ ISSUED ผูกอยู่ "
+                                f"(เล่ม {wht.book_number} เลขที่ {wht.cert_number}). กรุณาจัดการ WHT ก่อน"
+                            )
+                        _apply_cancellation(po, request,
+                                            suffix_fields=['po_number', 'tax_sequence_number'],
+                                            stock_reverser=_reverse_po_stock)
+                        messages.success(request, "ยกเลิกรายการซื้อเรียบร้อย — Stock ถูกลดกลับแล้ว")
                         return redirect('purchase_list')
-                except Exception as e:
-                    messages.error(request, str(e))
+
+                    po.save()
+
+                    # B. Save Items
+                    formset.instance = po
+                    formset.save()
+
+                    # B2. Save Attachments (Always process if present)
+                    files = request.FILES.getlist('attachments')
+                    for f in files:
+                        PurchaseAttachment.objects.create(purchase_order=po, file=f)
+                    
+                    # C. Recalculate Totals
+                    po.calculate_totals()
+                    
+                    if files:
+                        messages.success(request, f"เพิ่มไฟล์แนบ {len(files)} ไฟล์ และบันทึกข้อมูลเรียบร้อยแล้ว")
+                    else:
+                        messages.success(request, f"บันทึกข้อมูล '{po.po_number}' เรียบร้อยแล้ว")
+                        
+                    return redirect('purchase_list')
+            except Exception as e:
+                messages.error(request, f"เกิดข้อผิดพลาดในการบันทึก: {str(e)}")
+        else:
+            # Better error reporting
+            for error in form.non_field_errors():
+                messages.error(request, f"Form error: {error}")
+            for field, errors in form.errors.items():
+                for error in errors:
+                    messages.error(request, f"{field}: {error}")
+            
+            if not formset.is_valid():
+                for error in formset.non_form_errors():
+                    messages.error(request, f"Items error: {error}")
+                for i, f in enumerate(formset.forms):
+                    for field, errors in f.errors.items():
+                        for error in errors:
+                            messages.error(request, f"รายการที่ {i+1} - {field}: {error}")
     else:
         form = PurchaseOrderForm(instance=po_instance)
         formset = PurchaseItemFormSet(instance=po_instance)
 
     # 3. List View Logic (If viewing list)
     orders = PurchaseOrder.objects.all().order_by('-order_date')
+    if request.GET.get('show_cancelled') != '1':
+        orders = orders.exclude(status='CANCELLED')
     
     # Simple Filters
     if request.GET.get('q'):
@@ -592,127 +887,12 @@ def purchase_order_view(request, pk=None):
         'formset': formset,
         'orders': orders,
         'is_editing': is_editing,
-        'editing_po': po_instance
+        'editing_po': po_instance,
+        'attachments': po_instance.attachments.all() if po_instance else []
     }
     return render(request, 'purchase_form.html', context)
 
-
-#@login_required
-# def invoice_view(request, pk=None):
-#     if pk:
-#         invoice_instance = get_object_or_404(Invoice, pk=pk)
-#         is_editing = True
-#     else:
-#         invoice_instance = None
-#         is_editing = False
-
-#     if request.method == 'POST':
-#         form = InvoiceForm(request.POST, instance=invoice_instance)
-#         formset = InvoiceItemFormSet(request.POST, instance=invoice_instance)
-        
-#         if form.is_valid() and formset.is_valid():
-#             try:
-#                 with transaction.atomic():
-#                     # 1. Save Header
-#                     invoice = form.save(commit=False)
-#                     if not is_editing:
-#                         invoice.created_by = request.user
-#                         # Assign default company if not set
-#                         invoice.company = Company.objects.first() 
-#                     invoice.save()
-                    
-#                     # 2. Process Items
-#                     items = formset.save(commit=False)
-                    
-#                     # A. Handle Deletions (Restore Stock)
-#                     for obj in formset.deleted_objects:
-#                         if obj.purchase_item:
-#                             obj.purchase_item.remaining_quantity += obj.quantity
-#                             obj.purchase_item.save()
-#                         obj.delete()
-
-#                     # B. Handle Updates/Inserts
-#                     for item in items:
-#                         selected_batch = item.purchase_item # Might be None (if user left blank)
-#                         selected_product = item.product     # Always set (required by form)
-                        
-#                         # --- SCENARIO A: User left Batch BLANK (Auto-Assign FIFO) ---
-#                         if not selected_batch:
-#                             # Find oldest batch for this product with stock
-#                             stock_batch = PurchaseItem.objects.filter(
-#                                 product=selected_product, 
-#                                 remaining_quantity__gt=0
-#                             ).order_by('id').first()
-                            
-#                             if not stock_batch:
-#                                 raise Exception(f"No stock available for Product: {selected_product.name}")
-                            
-#                             # Check if that batch has enough for this requested amount
-#                             if item.quantity > stock_batch.remaining_quantity:
-#                                 raise Exception(f"Auto-assign failed. Batch {stock_batch} only has {stock_batch.remaining_quantity} left, but you requested {item.quantity}.")
-                                
-#                             item.purchase_item = stock_batch
-                            
-#                         # --- SCENARIO B: User SELECTED a specific Batch ---
-#                         else:
-#                             # Integrity check: Does batch match product?
-#                             if selected_batch.product != selected_product:
-#                                 raise Exception(f"Mismatch: Batch {selected_batch} does not belong to product {selected_product.name}")
-                            
-#                             # If editing, we need to revert the *original* quantity first to check math
-#                             # (Otherwise we might falsely flag "not enough stock")
-#                             if item.pk:
-#                                 original_item = InvoiceItem.objects.get(pk=item.pk)
-#                                 # Only restore if the batch hasn't changed
-#                                 if original_item.purchase_item == selected_batch:
-#                                     selected_batch.remaining_quantity += original_item.quantity
-
-#                             if item.quantity > selected_batch.remaining_quantity:
-#                                 raise Exception(f"Not enough stock in selected batch {selected_batch}. Available: {selected_batch.remaining_quantity}")
-
-#                             item.purchase_item = selected_batch
-
-#                         # Deduct Stock & Save
-#                         item.purchase_item.remaining_quantity -= item.quantity
-#                         item.purchase_item.save()
-                        
-#                         item.invoice = invoice
-#                         item.save()
-                    
-#                     # 3. Final Totals
-#                     invoice.calculate_totals()
-                    
-#                     messages.success(request, "Invoice saved successfully.")
-#                     return redirect('invoice_list')
-
-#             except Exception as e:
-#                 # If anything fails, transaction rolls back automatically
-#                 messages.error(request, f"Error: {str(e)}")
-#         else:
-#             messages.error(request, "Please check the form for errors.")
-#     else:
-#         form = InvoiceForm(instance=invoice_instance)
-#         formset = InvoiceItemFormSet(instance=invoice_instance)
-
-#     # List View Logic
-#     invoices = Invoice.objects.all().order_by('-invoice_date')
-    
-#     if request.GET.get('q'):
-#         q = request.GET.get('q')
-#         invoices = invoices.filter(
-#             Q(invoice_number__icontains=q) | 
-#             Q(customer__name__icontains=q)
-#         )
-
-#     context = {
-#         'form': form,
-#         'formset': formset,
-#         'invoices': invoices,
-#         'is_editing': is_editing,
-#         'editing_invoice': invoice_instance
-#     }
-#     return render(request, 'invoice_form.html', context)
-
+@login_required
 def invoice_view(request, pk=None):
     """
     Combined List + Create + Edit View.
@@ -725,6 +905,7 @@ def invoice_view(request, pk=None):
     else:
         invoice_instance = None
         is_editing = False
+    old_status = invoice_instance.status if is_editing else None
 
     # 2. Handle Form Submission
     if request.method == 'POST':
@@ -738,102 +919,143 @@ def invoice_view(request, pk=None):
                     invoice = form.save(commit=False)
                     if not is_editing:
                         invoice.created_by = request.user
-                        # Assign default company if not set
                         if not invoice.company:
-                            invoice.company = Company.objects.first() 
+                            invoice.company = Company.objects.first()
+
+                    new_status = form.cleaned_data.get('status')
+                    just_cancelled = is_editing and (new_status == 'CANCELLED' and old_status != 'CANCELLED')
+
+                    if just_cancelled:
+                        _apply_cancellation(invoice, request,
+                                            suffix_fields=['invoice_number', 'tax_sequence_number'],
+                                            stock_reverser=_restore_invoice_stock)
+                        messages.success(request, "ยกเลิกใบกำกับเรียบร้อย — Stock คืนกลับให้แล้ว")
+                        return redirect('invoice_list')
+
                     invoice.save()
-                    
-                    # --- B. Process Items (The "Service" Layer Logic) ---
-                    items = formset.save(commit=False)
-                    
+
+                    # --- B. Process Items ---
+                    # Use a dictionary to track batch updates in memory before final save
+                    # to ensure multiple items for the same batch work correctly.
+                    # Dictionary structure: {purchase_item_id: purchase_item_object}
+                    batch_cache = {}
+
+                    def get_locked_batch(batch_id):
+                        if batch_id not in batch_cache:
+                            batch_cache[batch_id] = PurchaseItem.objects.select_for_update().get(id=batch_id)
+                        return batch_cache[batch_id]
+
+                    # B1+B2. Call save(commit=False) first — this populates
+                    # formset.deleted_objects and returns new/changed items.
+                    items_to_save = formset.save(commit=False)
+
                     # B1. Handle Deletions (Restore Stock)
                     for obj in formset.deleted_objects:
-                        if obj.purchase_item:
-                            obj.purchase_item.remaining_quantity += obj.quantity
-                            obj.purchase_item.save()
+                        if obj.pk and obj.purchase_item:
+                            batch = get_locked_batch(obj.purchase_item.id)
+                            batch.remaining_quantity += obj.quantity
                         obj.delete()
-
-                    # B2. Handle Updates/Inserts
-                    for item in items:
-                        selected_batch = item.purchase_item # Might be None (if user left blank)
-                        selected_product = item.product     # Always set (required by form)
+                    
+                    for item in items_to_save:
+                        selected_product = item.product
                         
+                        # --- SKIP STOCK LOGIC FOR IMPORTED ITEMS WITHOUT PRODUCT ---
+                        if not selected_product:
+                            item.invoice = invoice
+                            item.save()
+                            continue
+
+                        # If editing an existing item, restore its original stock first
+                        if item.pk:
+                            original_item = InvoiceItem.objects.get(pk=item.pk)
+                            if original_item.purchase_item:
+                                old_batch = get_locked_batch(original_item.purchase_item.id)
+                                old_batch.remaining_quantity += original_item.quantity
+
                         # --- SCENARIO 1: User left Batch BLANK (Auto-Assign FIFO) ---
-                        if not selected_batch:
-                            # Find oldest batch for this product with stock
-                            stock_batch = PurchaseItem.objects.filter(
+                        if not item.purchase_item:
+                            requested_qty = item.quantity
+                            
+                            # Find all batches for this product with stock, ordered by ID (oldest first)
+                            # We must exclude the cache updates? No, better to fetch all and then adjust from cache.
+                            available_batches = PurchaseItem.objects.filter(
                                 product=selected_product, 
                                 remaining_quantity__gt=0
-                            ).order_by('id').first()
+                            ).select_for_update().order_by('id')
+
+                            # We need to handle splitting one line item into multiple batches if one isn't enough.
+                            # BUT the model only allows 1 batch per InvoiceItem.
+                            # So for now, we find the first batch that can satisfy the WHOLE amount.
+                            # In a more advanced system, we would create multiple InvoiceItems.
                             
-                            if not stock_batch:
-                                raise Exception(f"No stock available for Product: {selected_product.name}")
-                            
-                            # Check if that batch has enough
-                            if item.quantity > stock_batch.remaining_quantity:
-                                raise Exception(f"Auto-assign failed. Batch {stock_batch} only has {stock_batch.remaining_quantity} left, but you requested {item.quantity}.")
+                            found_batch = None
+                            for b in available_batches:
+                                # Sync with cache if exists
+                                if b.id in batch_cache:
+                                    b.remaining_quantity = batch_cache[b.id].remaining_quantity
                                 
-                            item.purchase_item = stock_batch
+                                if b.remaining_quantity >= requested_qty:
+                                    found_batch = b
+                                    batch_cache[b.id] = b
+                                    break
                             
+                            if not found_batch:
+                                raise Exception(f"No single batch has enough stock for {selected_product.name} (Need {requested_qty})")
+                            
+                            item.purchase_item = found_batch
+                            found_batch.remaining_quantity -= requested_qty
+
                         # --- SCENARIO 2: User SELECTED a specific Batch ---
                         else:
-                            # Integrity check: Does batch match product?
+                            selected_batch = get_locked_batch(item.purchase_item.id)
+                            
                             if selected_batch.product != selected_product:
                                 raise Exception(f"Mismatch: Batch {selected_batch} does not belong to product {selected_product.name}")
                             
-                            # If editing, we need to revert the *original* quantity first to check math
-                            if item.pk:
-                                original_item = InvoiceItem.objects.get(pk=item.pk)
-                                # Only restore if the batch hasn't changed (or logic gets too complex)
-                                if original_item.purchase_item == selected_batch:
-                                    selected_batch.remaining_quantity += original_item.quantity
-
                             if item.quantity > selected_batch.remaining_quantity:
-                                raise Exception(f"Not enough stock in selected batch {selected_batch}. Available: {selected_batch.remaining_quantity}")
+                                raise Exception(f"Not enough stock in selected batch {selected_batch.id}. Available: {selected_batch.remaining_quantity}, Requested: {item.quantity}")
 
+                            selected_batch.remaining_quantity -= item.quantity
                             item.purchase_item = selected_batch
 
-                        # --- C. Deduct Stock & Save ---
-                        # Note: Ensure InvoiceItem.save() in models.py DOES NOT deduct stock again.
-                        item.purchase_item.remaining_quantity -= item.quantity
-                        item.purchase_item.save()
-                        
                         item.invoice = invoice
-                        item.save() # This triggers calculate_totals via Model, but that's fine.
+                        item.save()
+
+                    # Save all modified batches
+                    for batch in batch_cache.values():
+                        batch.save()
                     
                     # --- D. Final Totals ---
                     invoice.calculate_totals()
-                    
-                    messages.success(request, "Invoice saved successfully.")
-                    return redirect('invoice_list') # Redirect to clear POST data
+
+                    messages.success(request, "บันทึกใบกำกับภาษีเรียบร้อยแล้ว")
+                    return redirect('invoice_list')
 
             except Exception as e:
-                # If anything fails, transaction rolls back automatically
-                messages.error(request, f"Error: {str(e)}")
+                messages.error(request, f"เกิดข้อผิดพลาด: {str(e)}")
         else:
-            messages.error(request, "Please check the form for errors.")
+            messages.error(request, "กรุณาตรวจสอบข้อมูลในฟอร์ม")
     
-    # 3. Handle GET Request (Display Form)
+    # 3. Handle GET Request
     else:
         form = InvoiceForm(instance=invoice_instance)
         formset = InvoiceItemFormSet(instance=invoice_instance)
 
-    # 4. Fetch Recent Data for the Table
-    # Optimized with select_related to prevent N+1 queries on Customer
-    invoices = Invoice.objects.select_related('customer').order_by('-invoice_date', '-created_at')
-    
-    # Optional Server-Side Search (in addition to JS filter)
+    # 4. Fetch Recent Data
+    invoices = Invoice.objects.select_related('vendor').order_by('-invoice_date', '-created_at')
+    if request.GET.get('show_cancelled') != '1':
+        invoices = invoices.exclude(status='CANCELLED')
+
     if request.GET.get('q'):
         q = request.GET.get('q')
-        invoices = invoices.filter(
-            Q(invoice_number__icontains=q) | 
-            Q(customer__name__icontains=q)
-        )
+        invoices = invoices.filter(Q(invoice_number__icontains=q) | Q(vendor__name__icontains=q))
     
-    # Limit to last 1000 for performance
     invoices = invoices[:1000]
-    # get second element (display labels) from STATUS_CHOICES
-    schoices = [label for _, label in Invoice.STATUS_CHOICES]
+
+    product_costs = json.dumps({
+        str(p['id']): float(p['cost_price'])
+        for p in Product.objects.filter(is_active=True).values('id', 'cost_price')
+    })
 
     context = {
         'form': form,
@@ -841,156 +1063,61 @@ def invoice_view(request, pk=None):
         'invoices': invoices,
         'is_editing': is_editing,
         'editing_invoice': invoice_instance,
-        'status_choices': [1,2,3]
+        'product_costs': product_costs,
     }
     return render(request, 'invoice_form.html', context)
 
-
-# @login_required
-# def platform_import_view(request):
-#     """
-#     View for importing TikTok/Shopee data via CSV.
-#     """
-#     context = {
-#         'page_title': 'Platform Data Import',
-#         'form': ImportFileForm()
-#     }
-
-#     if request.method == 'POST':
-#         form = ImportFileForm(request.POST, request.FILES)
-        
-#         if form.is_valid():
-#             uploaded_file = request.FILES['import_file']
-#             platform = form.cleaned_data['platform']
-            
-#             if platform == 'tiktok':
-#                 try:
-#                     # Save temp file
-#                     fs = FileSystemStorage()
-#                     filename = fs.save(f"temp_{uploaded_file.name}", uploaded_file)
-#                     file_path = fs.path(filename)
-                    
-#                     # Process & Import
-#                     # 1. Parse CSV/Excel
-#                     header_df, items_df = process_tiktok_orders(file_path)
-                    
-#                     # 2. Save to DB
-#                     # TODO: Make company dynamic based on user profile
-#                     company_id = 1 
-#                     result = import_tiktok_invoices(header_df, items_df, company_id, request.user.id)
-                    
-#                     # Cleanup
-#                     os.remove(file_path)
-
-#                     if result['status'] == 'completed':
-#                         msg = f"Import Successful! Imported {result['imported']} orders. Failed: {result['failed']}."
-#                         if result['failed'] > 0:
-#                             msg += f" First error: {result['error_log'][0]}"
-#                         messages.success(request, msg)
-#                     else:
-#                         messages.error(request, f"Import Error: {result['message']}")
-
-#                 except Exception as e:
-#                     messages.error(request, f"Critical Error: {str(e)}")
-            
-#             else:
-#                 messages.warning(request, f"Import for {platform} is coming soon!")
-                
-#             return redirect('platform_import')
-            
-#         else:
-#             messages.error(request, "Invalid file format.")
-
-#     return render(request, 'platforms.html', context)
-
-#@login_required
+@login_required
 def platform_import_view(request):
+    # Fetch History for the table
+    import_history = ImportLog.objects.filter(user=request.user).order_by('-created_at')[:10]
+    companies = Company.objects.filter(is_active=True)
+
     context = {
         'page_title': 'Platform Data Import',
-        'form': ImportFileForm()
+        'companies': companies,
+        'import_history': import_history # Pass history to template
     }
 
     if request.method == 'POST':
-        form = ImportFileForm(request.POST, request.FILES)
-        
-        if form.is_valid():
-            uploaded_file = request.FILES['import_file']
-            platform = form.cleaned_data['platform']
-            
-            # --- 1. SAVE FILE TEMPORARILY ---
-            # We must save to disk first because pandas needs a file path
-            try:
-                fs = FileSystemStorage()
-                # Clean filename to avoid OS issues
-                clean_name = f"temp_{platform}_{uploaded_file.name.replace(' ', '_')}"
-                filename = fs.save(clean_name, uploaded_file)
-                file_path = fs.path(filename)
-            except Exception as e:
-                messages.error(request, f"File upload failed: {str(e)}")
-                return redirect('platform_import')
+        uploaded_file = request.FILES.get('import_file')
+        platform = request.POST.get('platform')
+        company_id = request.POST.get('company_id')
 
-            # --- 2. PROCESS & IMPORT ---
-            try:
-                header_df = None
-                items_df = None
-                company_id = 1 # TODO: Make dynamic e.g. request.user.company_id
-
-                # A. Select Processor based on Platform
-                if platform == 'tiktok':
-                    header_df, items_df = process_tiktok_orders(file_path)
-                    target_platform_name = 'TikTok Shop'
-                    
-                elif platform == 'shopee':
-                    header_df, items_df = process_shopee_orders(file_path)
-                    target_platform_name = 'Shopee'
-                
-                elif platform == 'lazada':
-                    header_df, items_df = process_lazada_orders(file_path)
-                    target_platform_name = 'Lazada'
-
-                else:
-                    raise ValueError(f"Platform '{platform}' is not yet supported.")
-
-                # B. Run Universal Import
-                if header_df is not None and items_df is not None:
-                    result = universal_invoice_import(
-                        header_df, 
-                        items_df, 
-                        company_id, 
-                        request.user.id, 
-                        platform_name=target_platform_name
-                    )
-
-                    # C. Feedback
-                    if result['status'] == 'completed':
-                        msg = f"Import Successful! Imported {result['imported']} orders. Failed: {result['failed']}."
-                        if result['failed'] > 0:
-                            msg += f" First error: {result['error_log'][0]}"
-                        messages.success(request, msg)
-                    else:
-                        messages.error(request, f"Import Error: {result['message']}")
-                else:
-                    messages.error(request, "Data Processing returned empty results.")
-
-            except Exception as e:
-                # Catch processing errors (e.g. wrong columns in CSV)
-                messages.error(request, f"Processing Error: {str(e)}")
-
-            finally:
-                # --- 3. CLEANUP ---
-                # Always remove the temp file, even if import fails
-                if os.path.exists(file_path):
-                    os.remove(file_path)
-            
+        if not uploaded_file or not platform or not company_id:
+            messages.error(request, "Missing data.")
             return redirect('platform_import')
 
-        else:
-            messages.error(request, "Invalid form submission. Please check your file type.")
+        # 1. Save file temporarily
+        fs = FileSystemStorage()
+        clean_name = f"bg_{platform}_{uploaded_file.name.replace(' ', '_')}"
+        filename = fs.save(clean_name, uploaded_file)
+        file_path = fs.path(filename)
+
+        # 2. Create Log Entry (PENDING)
+        log = ImportLog.objects.create(
+            user=request.user,
+            platform=platform,
+            filename=uploaded_file.name,
+            status='PENDING'
+        )
+
+        # 3. Start Background Thread
+        # We pass arguments so the thread can work independently
+        thread = threading.Thread(
+            target=run_import_background,
+            args=(log.id, file_path, company_id, request.user.id, platform)
+        )
+        thread.daemon = True # Ensures thread dies if main process dies
+        thread.start()
+
+        # 4. Immediate Response
+        messages.info(request, "Import started in background! Check the history table below for status.")
+        return redirect('platform_import')
 
     return render(request, 'platforms.html', context)
 
-
-#@login_required
+@login_required
 def product_mapping_view(request):
     """
     Dashboard to map Unknown External Keys to Internal Products.
@@ -1034,37 +1161,106 @@ def product_mapping_view(request):
     return render(request, 'product_mapping.html', context)
 
 
+@login_required
+def product_mapping_suggest_view(request):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+
+    import json as _json
+    from django.conf import settings as dj_settings
+
+    try:
+        body = _json.loads(request.body)
+        items = body.get('items', [])
+    except (_json.JSONDecodeError, Exception):
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    if not items:
+        return JsonResponse({'suggestions': {}, 'degraded': False})
+
+    candidates = list(Product.objects.filter(is_active=True).values('id', 'sku', 'name'))
+
+    try:
+        result = suggest_product_matches(items, candidates)
+        return JsonResponse(result)
+    except LLMUnavailable as e:
+        resp = {'degraded': True, 'suggestions': {}}
+        if dj_settings.DEBUG:
+            resp['debug_reason'] = str(e)
+        return JsonResponse(resp)
+
+
 def report_dashboard_view(request):
     form = ReportFilterForm(request.POST or None)
     
     if request.method == 'POST' and form.is_valid():
         report_type = request.POST.get('report_type')
-        company = form.cleaned_data['company']
+        company_id = form.cleaned_data['company']
         start_date = form.cleaned_data['start_date']
         end_date = form.cleaned_data['end_date']
+        report_basis = form.cleaned_data['report_basis']
+
+        # --- 1. Handle "All Companies" Logic ---
+        target_company = None
+        if company_id == 'all':
+            company_filter = {} # Empty dict means no filter (All)
+            company_name_for_report = "รวมทุกบริษัท (All Companies)"
+        else:
+            target_company = Company.objects.get(pk=company_id)
+            company_filter = {'company': target_company}
+            company_name_for_report = target_company.name
 
         # --- Report 1: Purchase Tax ---
         if report_type == 'purchase_tax':
-            queryset = PurchaseOrder.objects.filter(
-                company=company,
-                order_date__range=[start_date, end_date]
-            ).order_by('order_date')
-            return generate_purchase_tax_report(queryset, company, start_date, end_date)
+            queryset = PurchaseOrder.objects.filter(status='PAID', **company_filter)
+
+            if report_basis == 'create_date':
+                queryset = queryset.filter(order_date__range=[start_date, end_date]).order_by('order_date')
+            else:
+                queryset = queryset.filter(tax_sender_date__range=[start_date, end_date]) \
+                                   .exclude(tax_sender_date__isnull=True) \
+                                   .order_by('tax_sender_date')
+
+            return generate_purchase_tax_report(queryset, company_name_for_report, start_date, end_date, report_basis)
             
-        # --- Report 2: Sales Tax (NEW) ---
+        # --- Report 2: Sales Tax ---
         elif report_type == 'sales_tax':
-            # Filter invoices for specific company, date range, and ensure they are finalized (BILLED)
-            queryset = Invoice.objects.filter(
-                #company=company,
-                #status='BILLED',  # Only include finalized tax invoices
-                invoice_date__range=[start_date, end_date]
-            ).order_by('invoice_date', 'invoice_number')
+            queryset = Invoice.objects.filter(status='BILLED', **company_filter)
+
+            if report_basis == 'create_date':
+                queryset = queryset.filter(invoice_date__range=[start_date, end_date]).order_by('invoice_date', 'invoice_number')
+            else:
+                queryset = queryset.filter(tax_sender_date__range=[start_date, end_date]) \
+                                   .exclude(tax_sender_date__isnull=True) \
+                                   .order_by('tax_sender_date', 'invoice_number')
             
-            return generate_sales_tax_report(queryset, company, start_date, end_date)
-        
-        # --- NEW: Stock Report ---
+            return generate_sales_tax_report(queryset, company_name_for_report, start_date, end_date, report_basis)
+
+        # --- Report 3: Stock Report ---
         elif report_type == 'stock_report':
-            return generate_stock_report(company, start_date, end_date)
+            # Note: Stock report usually needs a specific company to make sense of 'Actual Stock'.
+            # If 'all', it aggregates everything.
+            return generate_stock_report(target_company, start_date, end_date) # target_company might be None
+
+        # --- Report 4: Combined Tax Report (NEW) ---
+        elif report_type == 'combined_tax':
+            # We fetch both lists here and pass them to the generator
+            
+            # A. Purchases
+            po_qs = PurchaseOrder.objects.filter(status='PAID', **company_filter)
+            
+            # B. Sales
+            inv_qs = Invoice.objects.filter(status='BILLED', **company_filter)
+
+            # Apply Date Filters
+            if report_basis == 'create_date':
+                po_qs = po_qs.filter(order_date__range=[start_date, end_date])
+                inv_qs = inv_qs.filter(invoice_date__range=[start_date, end_date])
+            else:
+                po_qs = po_qs.filter(tax_sender_date__range=[start_date, end_date]).exclude(tax_sender_date__isnull=True)
+                inv_qs = inv_qs.filter(tax_sender_date__range=[start_date, end_date]).exclude(tax_sender_date__isnull=True)
+
+            return generate_combined_tax_report(po_qs, inv_qs, company_name_for_report, start_date, end_date, report_basis)
 
     context = {
         'form': form,
@@ -1072,30 +1268,823 @@ def report_dashboard_view(request):
     }
     return render(request, 'reports.html', context)
 
-
-#@login_required
+@login_required
 def invoice_pdf_view(request, pk):
     invoice = get_object_or_404(Invoice, pk=pk)
-    
+    is_abbreviated = bool(request.GET.get('abbr'))
+
+    if not invoice.is_printed:
+        invoice.is_printed = True
+        invoice.status = 'BILLED'
+    invoice.print_datetime = timezone.now()
+    invoice.save(update_fields=['is_printed', 'print_datetime', 'status'])
+
     context = {
         'invoice': invoice,
         'items': invoice.invoice_items.all(),
         'company': invoice.company,
+        'is_abbreviated': is_abbreviated,
     }
 
-    # 1. Render HTML
     html_string = render_to_string('pdf/invoice_print.html', context)
-
-    # 2. Base URL for static files
-    # WeasyPrint needs to know where to find /static/ files on disk
     base_url = request.build_absolute_uri('/')
-
-    # 3. Generate PDF
-    # WeasyPrint handles fonts and images automatically if base_url is correct
     pdf_file = weasyprint.HTML(string=html_string, base_url=base_url).write_pdf()
 
-    # 4. Return Response
     response = HttpResponse(pdf_file, content_type='application/pdf')
-    filename = f"Invoice_{invoice.invoice_number}.pdf"
+    suffix = '_Abbr' if is_abbreviated else ''
+    filename = f"Invoice_{invoice.invoice_number}{suffix}.pdf"
     response['Content-Disposition'] = f'attachment; filename="{filename}"'
     return response
+
+@login_required
+def company_list_view(request):
+    companies = Company.objects.all()
+    return render(request, 'company/company_list.html', {'companies': companies})
+
+@login_required
+def company_create_view(request):
+    if request.method == 'POST':
+        form = CompanyForm(request.POST)
+        if form.is_valid():
+            form.save()
+            messages.success(request, 'เพิ่มข้อมูลบริษัทเรียบร้อยแล้ว')
+            return redirect('company_list')
+    else:
+        form = CompanyForm()
+    
+    return render(request, 'company/company_form.html', {
+        'form': form,
+        'title': 'เพิ่มข้อมูลบริษัทใหม่'
+    })
+
+@login_required
+def company_edit_view(request, pk):
+    company = get_object_or_404(Company, pk=pk)
+    if request.method == 'POST':
+        form = CompanyForm(request.POST, instance=company)
+        if form.is_valid():
+            form.save()
+            messages.success(request, 'บันทึกข้อมูลเรียบร้อยแล้ว')
+            return redirect('company_list')
+    else:
+        form = CompanyForm(instance=company)
+    
+    return render(request, 'company/company_form.html', {
+        'form': form, 
+        'title': f'แก้ไขข้อมูล: {company.name}',
+        'is_editing': True
+    })
+
+from django.http import JsonResponse
+from django.db.models import Q
+from django.contrib.auth.decorators import login_required
+
+@login_required
+def check_duplicate_po_fields(request):
+    """
+    API endpoint to check if po_number or tax_sequence_number already exists,
+    excluding the current purchase order (if editing).
+    """
+    po_number = request.GET.get('po_number')
+    tax_sequence_number = request.GET.get('tax_sequence_number')
+    current_po_id = request.GET.get('current_po_id')
+    company_id = request.GET.get('company_id')
+
+    queryset = PurchaseOrder.objects.all()
+    if current_po_id:
+        queryset = queryset.exclude(id=current_po_id)
+    if company_id:
+        queryset = queryset.filter(company_id=company_id)
+
+    duplicate_po = False
+    duplicate_tax = False
+
+    if po_number:
+        duplicate_po = queryset.filter(po_number=po_number).exists()
+    if tax_sequence_number:
+        duplicate_tax = queryset.filter(tax_sequence_number=tax_sequence_number).exists()
+
+    return JsonResponse({
+        'duplicate_po_number': duplicate_po,
+        'duplicate_tax_sequence': duplicate_tax
+    })
+
+def wht_cert_list_view(request):
+    # ... (Keep your Fetch Lists code same as before) ...
+    companies = Company.objects.filter(is_active=True)
+    vendors = Vendor.objects.filter(is_active=True)
+    transactions = Transaction.objects.filter(type='EXPENSE', wht_cert__isnull=True).order_by('-transaction_date')
+    purchase_orders = PurchaseOrder.objects.filter(status='PAID', wht_cert__isnull=True).order_by('-order_date')
+    certs = WithholdingTaxCert.objects.all().order_by('-created_at')[:20]
+    
+    context = {
+        'companies': companies,
+        'vendors': vendors,
+        'transactions': transactions, # Ensure this is passed
+        'purchase_orders': purchase_orders,
+        'certs': certs,
+        'income_choices': WithholdingTaxCert.INCOME_TYPE_CHOICES,
+    }
+
+    if request.method == 'POST':
+        # --- DEBUG: Remove try/except block to see the REAL error on screen ---
+        # try:
+        
+        # 1. Get Basic Data
+
+        company_id = request.POST.get('company_id')
+        source_type = request.POST.get('source_type') # 'manual', 'po', 'trans'
+        source_id = request.POST.get('source_id')
+        user_cert_number = request.POST.get('cert_number', '').strip()
+        
+        # 2. Parse Date Correctly (Fixes Bug #3)
+        date_str = request.POST.get('date_issued')
+        date_obj = timezone.now().date()
+        if date_str:
+            date_obj = datetime.strptime(date_str, '%Y-%m-%d').date()
+
+        # 3. Initialize Object
+        cert = WithholdingTaxCert()
+        cert.company_id = company_id
+        cert.date_issued = date_obj 
+        
+        # Fix Bug #3: Force None if empty string so Model logic triggers
+        if user_cert_number:
+            cert.cert_number = user_cert_number
+        else:
+            cert.cert_number = None 
+            
+        cert.income_type = request.POST.get('income_type')
+        cert.income_description = request.POST.get('income_description', '')
+        
+        # 4. Handle Amounts
+        cert.amount_before_tax = float(request.POST.get('amount_before_tax', 0).replace(',', ''))
+        cert.tax_rate = float(request.POST.get('tax_rate', 3))
+        cert.tax_amount = float(request.POST.get('tax_amount', 0).replace(',', ''))
+
+        # 4b. Extra fields for Excel template
+        cert.sequence_no = request.POST.get('sequence_no', '').strip()
+        cert.provident_fund_amount = float(request.POST.get('provident_fund_amount', '0').replace(',', '') or 0)
+        cert.social_security_amount = float(request.POST.get('social_security_amount', '0').replace(',', '') or 0)
+        cert.social_security_id = request.POST.get('social_security_id', '').strip()
+
+        # 5. Fix Bug: Robust Linking Logic
+        if source_type == 'po' and source_id:
+            po = PurchaseOrder.objects.get(id=source_id)
+            cert.purchase_order = po
+            # PO always has a vendor, so this is safe
+            cert.vendor = po.vendor 
+            
+        elif source_type == 'trans' and source_id:
+            trans = Transaction.objects.get(id=source_id)
+            cert.transaction = trans
+            
+            # --- FIX HERE: Handle Transactions without Vendor ---
+            if trans.vendor:
+                cert.vendor = trans.vendor
+            else:
+                # If Transaction has no vendor, grab from the form dropdown
+                vendor_id = request.POST.get('vendor_id')
+                if not vendor_id:
+                    raise ValueError("รายการจ่ายนี้ไม่มี Vendor ในระบบ กรุณาเลือก Vendor ในแบบฟอร์ม")
+                cert.vendor_id = vendor_id
+                
+        else:
+            # Manual Mode
+            vendor_id = request.POST.get('vendor_id')
+            if not vendor_id:
+                    raise ValueError("กรุณาเลือกผู้ถูกหักภาษี (Vendor)")
+            cert.vendor_id = vendor_id
+
+        # 6. Save & Generate
+        is_issue = 'btn_issue' in request.POST
+        cert.status = 'ISSUED' if is_issue else 'DRAFT'
+        cert.save()
+
+        if is_issue:
+            xlsx_url = generate_wht_xlsx(cert)
+            messages.success(request, f"Issued Successfully: {cert.cert_number}")
+            return HttpResponseRedirect(xlsx_url)
+        else:
+            messages.info(request, "Draft Saved.")
+            return redirect('wht_list')
+
+        # except Exception as e:
+        #     messages.error(request, f"Error: {str(e)}")
+        #     return redirect('wht_list')
+
+    return render(request, 'wht_form.html', context)
+
+# API เพื่อดึงข้อมูลเมื่อผู้ใช้เลือก PO หรือ Transaction ใน Dropdown
+def get_source_details(request):
+    source_type = request.GET.get('type')
+    source_id = request.GET.get('id')
+    
+    data = {'amount': 0, 'vendor_id': None, 'vendor_name': ''}
+    
+    if source_type == 'po':
+        obj = PurchaseOrder.objects.get(id=source_id)
+        data['amount'] = obj.subtotal # ยอดก่อนภาษี
+        data['vendor_id'] = obj.vendor.id
+        data['vendor_name'] = obj.vendor.name
+    elif source_type == 'trans':
+        obj = Transaction.objects.get(id=source_id)
+        data['amount'] = obj.amount
+        data['vendor_id'] = obj.vendor.id if obj.vendor else None
+        data['vendor_name'] = obj.vendor.name if obj.vendor else ''
+        
+    return JsonResponse(data)
+
+
+# ---------------------------------------------------------------------------
+# VAT Orders Tracking APIs (Standalone)
+# ---------------------------------------------------------------------------
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from rest_framework.authentication import SessionAuthentication
+from rest_framework_simplejwt.authentication import JWTAuthentication
+from django.db.models import Q, Sum, Count
+from .models import VatOrderBuy, VatOrderBuyItem, VatOrderSaleItem
+from .serializers import VatOrderBuyItemSerializer, VatOrderSaleItemSerializer
+from .utils_vat_import import process_vat_buy_import, process_vat_sale_import
+
+
+class VatImportDataView(APIView):
+    authentication_classes = [SessionAuthentication, JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, format=None):
+        file_obj = request.FILES.get('file')
+        import_type = request.data.get('type')
+
+        if not file_obj:
+            return Response({'error': 'No file uploaded'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if import_type == 'buy':
+            result = process_vat_buy_import(file_obj)
+        elif import_type == 'sale':
+            result = process_vat_sale_import(file_obj)
+        else:
+            return Response({'error': 'Invalid import type'}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(result, status=status.HTTP_200_OK)
+
+
+class VatReportView(APIView):
+    authentication_classes = [SessionAuthentication, JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, format=None):
+        start_date = request.query_params.get('start_date')
+        end_date = request.query_params.get('end_date')
+        vat_company = request.query_params.get('vat_company')
+        product_query = request.query_params.get('q')
+
+        queryset = VatOrderBuyItem.objects.select_related('vat_order').all()
+
+        if start_date:
+            queryset = queryset.filter(vat_order__date__gte=start_date)
+        if end_date:
+            queryset = queryset.filter(vat_order__date__lte=end_date)
+        if vat_company and vat_company.lower() != 'all':
+            queryset = queryset.filter(vat_order__supplier_name__icontains=vat_company)
+        if product_query:
+            queryset = queryset.filter(
+                Q(product_name__icontains=product_query) |
+                Q(serial_no__icontains=product_query)
+            )
+
+        queryset = queryset.order_by('vat_order__date', 'vat_order__document_no')
+        serializer = VatOrderBuyItemSerializer(queryset, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def put(self, request, format=None):
+        item_type = request.data.get('item_type')
+        item_id = request.data.get('id')
+
+        if item_type == 'buy':
+            try:
+                item = VatOrderBuyItem.objects.get(id=item_id)
+            except VatOrderBuyItem.DoesNotExist:
+                return Response({'error': 'Item not found'}, status=status.HTTP_404_NOT_FOUND)
+
+            if 'vat_company' in request.data:
+                item.vat_company = request.data['vat_company']
+            if 'payment_method_in' in request.data:
+                item.payment_method_in = request.data['payment_method_in']
+            if 'bank_in' in request.data:
+                item.bank_in = request.data['bank_in']
+            item.save()
+
+        elif item_type == 'sale':
+            try:
+                item = VatOrderSaleItem.objects.get(id=item_id)
+            except VatOrderSaleItem.DoesNotExist:
+                return Response({'error': 'Item not found'}, status=status.HTTP_404_NOT_FOUND)
+
+            if 'payment_method_out' in request.data:
+                item.payment_method_out = request.data['payment_method_out']
+            if 'company_out' in request.data:
+                item.company_out = request.data['company_out']
+            item.save()
+        else:
+            return Response({'error': 'Invalid item type'}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response({'status': 'ok'}, status=status.HTTP_200_OK)
+
+
+class VatExportExcelView(APIView):
+    authentication_classes = [SessionAuthentication, JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, format=None):
+        from django.http import HttpResponse
+        from api.utils_vat_export import export_vat_report
+
+        start_date = request.query_params.get('start_date')
+        end_date = request.query_params.get('end_date')
+        vat_company = request.query_params.get('vat_company')
+        product_query = request.query_params.get('q')
+
+        queryset = VatOrderBuyItem.objects.select_related('vat_order').all()
+
+        if start_date:
+            queryset = queryset.filter(vat_order__date__gte=start_date)
+        if end_date:
+            queryset = queryset.filter(vat_order__date__lte=end_date)
+        if vat_company and vat_company.lower() != 'all':
+            queryset = queryset.filter(vat_order__supplier_name__icontains=vat_company)
+        if product_query:
+            queryset = queryset.filter(
+                Q(product_name__icontains=product_query) |
+                Q(serial_no__icontains=product_query)
+            )
+
+        queryset = queryset.order_by('vat_order__date', 'vat_order__document_no')
+
+        filepath, filename = export_vat_report(queryset)
+        if os.path.exists(filepath):
+            with open(filepath, 'rb') as f:
+                response = HttpResponse(
+                    f.read(),
+                    content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                )
+                response['Content-Disposition'] = f'attachment; filename={filename}'
+                return response
+        return Response({'error': 'Export failed'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@login_required
+def vat_tracking_view(request):
+    return render(request, 'vat_tracking.html')
+
+
+@login_required
+def vat_buy_summary_view(request):
+    return render(request, 'vat_buy_summary.html')
+
+
+class VatBuyOrderSummaryView(APIView):
+    """Returns VatOrderBuy headers with aggregated totals for the document-level summary view."""
+    authentication_classes = [SessionAuthentication, JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, format=None):
+        filter_date = request.query_params.get('date')
+        vat_status = request.query_params.get('vat_status')
+        product_query = request.query_params.get('q')
+
+        queryset = VatOrderBuy.objects.annotate(
+            total_buy_amount=Sum('items__purchase_price'),
+            item_count=Count('items')
+        )
+
+        if vat_status == 'vat_only':
+            queryset = queryset.filter(Q(supplier_name__iendswith='/kit') | Q(supplier_name__iendswith='/s16'))
+        elif vat_status == 'non_vat':
+            queryset = queryset.exclude(Q(supplier_name__iendswith='/kit') | Q(supplier_name__iendswith='/s16'))
+
+        if filter_date:
+            queryset = queryset.filter(date=filter_date)
+        if product_query:
+            queryset = queryset.filter(items__product_name__icontains=product_query).distinct()
+
+        queryset = queryset.order_by('-date', '-document_no')
+
+        data = []
+        for order in queryset:
+            supplier = order.supplier_name or ''
+            supplier_lower = supplier.lower().rstrip()
+            is_vat = supplier_lower.endswith('/kit') or supplier_lower.endswith('/s16')
+
+            data.append({
+                'id': order.id,
+                'document_no': order.document_no,
+                'date': order.date.isoformat() if order.date else None,
+                'supplier_name': supplier,
+                'is_vat_company': is_vat,
+                'total_buy_amount': float(order.total_buy_amount or 0),
+                'item_count': order.item_count or 0,
+            })
+
+        return Response(data, status=status.HTTP_200_OK)
+
+
+class VatBuySummaryExportExcelView(APIView):
+    """Exports Document-level VAT Buy Summaries to Excel."""
+    authentication_classes = [SessionAuthentication, JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, format=None):
+        from api.utils_vat_export import export_vat_buy_summary_report
+        from django.http import HttpResponse
+
+        filter_date = request.query_params.get('date')
+        vat_status = request.query_params.get('vat_status')
+        product_query = request.query_params.get('q')
+
+        queryset = VatOrderBuy.objects.annotate(
+            total_buy_amount=Sum('items__purchase_price'),
+            item_count=Count('items')
+        )
+
+        if vat_status == 'vat_only':
+            queryset = queryset.filter(Q(supplier_name__iendswith='/kit') | Q(supplier_name__iendswith='/s16'))
+        elif vat_status == 'non_vat':
+            queryset = queryset.exclude(Q(supplier_name__iendswith='/kit') | Q(supplier_name__iendswith='/s16'))
+
+        if filter_date:
+            queryset = queryset.filter(date=filter_date)
+        if product_query:
+            queryset = queryset.filter(items__product_name__icontains=product_query).distinct()
+
+        queryset = queryset.order_by('-date', '-document_no')
+
+        filepath, filename = export_vat_buy_summary_report(
+            queryset,
+            filter_date=filter_date,
+            vat_status=vat_status,
+            query=product_query,
+        )
+
+        if os.path.exists(filepath):
+            with open(filepath, 'rb') as f:
+                response = HttpResponse(f.read(), content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+                response['Content-Disposition'] = f'attachment; filename={filename}'
+                return response
+        else:
+            return Response({'error': 'Export failed'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class VatBuyOrderDetailView(APIView):
+    """Returns items for a specific VatOrderBuy by its pk."""
+    authentication_classes = [SessionAuthentication, JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk, format=None):
+        try:
+            order = VatOrderBuy.objects.get(pk=pk)
+        except VatOrderBuy.DoesNotExist:
+            return Response({'error': 'Order not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        items = VatOrderBuyItem.objects.filter(vat_order=order)
+        serializer = VatOrderBuyItemSerializer(items, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+import csv
+import urllib.request
+
+_THAI_FONT = 'TH Sarabun New'
+_THIN = Side(border_style='thin', color='000000')
+
+
+def _xl_font(size=11, bold=False):
+    return Font(name=_THAI_FONT, size=size, bold=bold)
+
+
+def _xl_border_range(ws, top_row, bottom_row, left_col, right_col):
+    """Apply outer thin border around a rectangular range (preserves inner borders)."""
+    for row in range(top_row, bottom_row + 1):
+        for col in range(left_col, right_col + 1):
+            cell = ws.cell(row=row, column=col)
+            existing = cell.border
+            top = _THIN if row == top_row else existing.top
+            bottom = _THIN if row == bottom_row else existing.bottom
+            left = _THIN if col == left_col else existing.left
+            right = _THIN if col == right_col else existing.right
+            cell.border = Border(top=top, bottom=bottom, left=left, right=right)
+
+
+def _xl_set(ws, row, col, value, *, font=None, align=None, fill=None, number_format=None, merge_to_col=None):
+    cell = ws.cell(row=row, column=col, value=value)
+    if font is not None:
+        cell.font = font
+    if align is not None:
+        cell.alignment = align
+    if fill is not None:
+        cell.fill = fill
+    if number_format is not None:
+        cell.number_format = number_format
+    if merge_to_col is not None and merge_to_col > col:
+        ws.merge_cells(start_row=row, start_column=col, end_row=row, end_column=merge_to_col)
+    return cell
+
+
+def _write_invoice_copy(ws, start_row, invoice, items, is_original, is_abbreviated):
+    """Render one copy (Original or Copy) of the invoice. Returns the row after the rendered block."""
+    company = invoice.company
+    vendor = invoice.vendor
+    gray = PatternFill('solid', fgColor='F0F0F0')
+    light_gray = PatternFill('solid', fgColor='F9F9F9')
+    right = Alignment(horizontal='right', vertical='center', wrap_text=True)
+    left = Alignment(horizontal='left', vertical='center', wrap_text=True)
+    center = Alignment(horizontal='center', vertical='center', wrap_text=True)
+
+    r = start_row
+
+    # --- Header: company info (A-E) | doc title (F-H) ---
+    _xl_set(ws, r, 1, company.name if company else "-",
+            font=_xl_font(16, True), align=left, merge_to_col=5)
+    title = "ใบเสร็จรับเงิน / ใบกำกับภาษี" + ("อย่างย่อ" if is_abbreviated else "")
+    _xl_set(ws, r, 6, title, font=_xl_font(12, True), align=right, merge_to_col=8)
+    ws.row_dimensions[r].height = 28
+
+    r += 1
+    _xl_set(ws, r, 1, (company.address if company and company.address else "-"),
+            font=_xl_font(11), align=left, merge_to_col=5)
+    _xl_set(ws, r, 6, ("ต้นฉบับ / Original" if is_original else "สำเนา / Copy"),
+            font=_xl_font(12), align=right, merge_to_col=8)
+    ws.row_dimensions[r].height = 30
+
+    r += 1
+    _xl_set(ws, r, 1, f"โทรศัพท์: {company.phone if company and company.phone else '-'}",
+            font=_xl_font(11), align=left, merge_to_col=5)
+
+    r += 1
+    tax_id = company.tax_id if company and company.tax_id else "-"
+    _xl_set(ws, r, 1, f"หมายเลขประจำตัวผู้เสียภาษี: {tax_id} / สำนักงานใหญ่",
+            font=_xl_font(11), align=left, merge_to_col=5)
+
+    r += 2  # blank spacer
+
+    # --- Info boxes: customer (A-D) | invoice info (E-H) ---
+    cust_company = vendor.company if vendor and vendor.company else (invoice.recipient_name or "-")
+    cust_name = vendor.name if vendor and vendor.name else (invoice.recipient_name or "-")
+    cust_address = vendor.address if vendor and vendor.address else (invoice.recipient_address or "-")
+    cust_taxid = vendor.tax_id if vendor and vendor.tax_id else "-"
+
+    customer_rows = [
+        ("รหัสลูกค้า:", str(cust_company)),
+        ("นามลูกค้า:", str(cust_name)),
+        ("ที่อยู่:", str(cust_address).replace('\r\n', ' ').replace('\n', ' ')),
+        ("เลขผู้เสียภาษี:", str(cust_taxid)),
+    ]
+    invoice_info_rows = [
+        ("วันที่:", invoice.invoice_date.strftime('%d/%m/%Y') if invoice.invoice_date else "-"),
+        ("เลขที่ใบกำกับภาษี:", invoice.invoice_number or "-"),
+        ("พนักงานขาย:", str(invoice.saleperson or "-")),
+        ("อ้างอิง:", str(invoice.platform_order_id or "-")),
+    ]
+
+    box_top = r
+    for i in range(4):
+        c_label, c_val = customer_rows[i]
+        i_label, i_val = invoice_info_rows[i]
+        _xl_set(ws, r, 1, c_label, font=_xl_font(11, True), align=left)
+        _xl_set(ws, r, 2, c_val, font=_xl_font(11), align=left, merge_to_col=4)
+        _xl_set(ws, r, 5, i_label, font=_xl_font(11, True), align=left)
+        _xl_set(ws, r, 6, i_val, font=_xl_font(11), align=left, merge_to_col=8)
+        ws.row_dimensions[r].height = 30 if i == 2 else 20  # address row taller
+        r += 1
+
+    _xl_border_range(ws, box_top, box_top + 3, 1, 4)
+    _xl_border_range(ws, box_top, box_top + 3, 5, 8)
+
+    r += 1  # blank spacer
+
+    # --- Items table ---
+    items_header_row = r
+    headers = [
+        ("#", 1, 1, center),
+        ("รหัสสินค้า", 2, 2, center),
+        ("รายการ", 3, 4, center),
+        ("จำนวน", 5, 5, center),
+        ("หน่วยละ", 6, 6, center),
+        ("ส่วนลด", 7, 7, center),
+        ("จำนวนเงิน", 8, 8, center),
+    ]
+    for label, col_start, col_end, align in headers:
+        _xl_set(ws, r, col_start, label, font=_xl_font(11, True), align=align,
+                fill=gray, merge_to_col=col_end if col_end > col_start else None)
+        for c in range(col_start, col_end + 1):
+            ws.cell(row=r, column=c).fill = gray
+            ws.cell(row=r, column=c).border = Border(top=_THIN, bottom=_THIN, left=_THIN, right=_THIN)
+            ws.cell(row=r, column=c).font = _xl_font(11, True)
+            ws.cell(row=r, column=c).alignment = align
+    ws.row_dimensions[r].height = 22
+
+    r += 1
+    item_count = len(items)
+    rows_to_render = max(item_count, 5)
+    items_first_row = r
+
+    for i in range(rows_to_render):
+        if i < item_count:
+            it = items[i]
+            sku = (it.product.sku if it.product else it.sku) or "-"
+            name = (it.product.name if it.product else it.item_name) or "-"
+            _xl_set(ws, r, 1, i + 1, font=_xl_font(11), align=center)
+            _xl_set(ws, r, 2, sku, font=_xl_font(11), align=left)
+            _xl_set(ws, r, 3, name, font=_xl_font(11), align=left, merge_to_col=4)
+            _xl_set(ws, r, 5, it.quantity, font=_xl_font(11), align=center)
+            _xl_set(ws, r, 6, float(it.unit_price), font=_xl_font(11), align=right, number_format='#,##0.00')
+            _xl_set(ws, r, 7, "-", font=_xl_font(11), align=right)
+            _xl_set(ws, r, 8, float(it.total_price), font=_xl_font(11), align=right, number_format='#,##0.00')
+        else:
+            ws.merge_cells(start_row=r, start_column=3, end_row=r, end_column=4)
+        ws.row_dimensions[r].height = 20
+        r += 1
+
+    items_last_row = r - 1
+    # Outer border around items area + vertical separators
+    _xl_border_range(ws, items_first_row, items_last_row, 1, 8)
+    for col in [2, 3, 5, 6, 7, 8]:
+        for row in range(items_first_row, items_last_row + 1):
+            cell = ws.cell(row=row, column=col)
+            existing = cell.border
+            cell.border = Border(top=existing.top, bottom=existing.bottom,
+                                 left=_THIN, right=existing.right)
+
+    r += 1  # blank spacer
+
+    # --- Bottom: baht text + totals (5 totals rows) ---
+    totals_top = r
+    baht_value = bahttext(invoice.grand_total) if invoice.grand_total is not None else "-"
+
+    _xl_set(ws, r, 1, f"ยอดเงินสุทธิ ({baht_value})",
+            font=_xl_font(11, True), align=left, fill=light_gray, merge_to_col=5)
+    _xl_set(ws, r, 6, "รวมเป็นเงิน", font=_xl_font(11), align=right, merge_to_col=7)
+    _xl_set(ws, r, 8, float(invoice.subtotal or 0), font=_xl_font(11), align=right,
+            number_format='#,##0.00')
+    ws.row_dimensions[r].height = 22
+
+    r += 1
+    if invoice.notes:
+        _xl_set(ws, r, 1, f"หมายเหตุ: {invoice.notes}",
+                font=Font(name=_THAI_FONT, size=10, color='C00000'), align=left, merge_to_col=5)
+    _xl_set(ws, r, 6, "ส่วนลด", font=_xl_font(11), align=right, merge_to_col=7)
+    _xl_set(ws, r, 8, float(invoice.discount_amount or 0), font=_xl_font(11), align=right,
+            number_format='#,##0.00')
+
+    r += 1
+    _xl_set(ws, r, 6, "ค่าขนส่ง", font=_xl_font(11), align=right, merge_to_col=7)
+    _xl_set(ws, r, 8, float(invoice.shipping_cost or 0), font=_xl_font(11), align=right,
+            number_format='#,##0.00')
+
+    r += 1
+    vat_pct = int(invoice.tax_percent or 0)
+    _xl_set(ws, r, 6, f"VAT {vat_pct}%", font=_xl_font(11), align=right, merge_to_col=7)
+    _xl_set(ws, r, 8, float(invoice.tax_amount or 0), font=_xl_font(11), align=right,
+            number_format='#,##0.00')
+
+    r += 1
+    _xl_set(ws, r, 6, "ยอดเงินสุทธิ", font=_xl_font(11, True), align=right,
+            fill=gray, merge_to_col=7)
+    cell = _xl_set(ws, r, 8, float(invoice.grand_total or 0),
+                   font=_xl_font(11, True), align=right, number_format='#,##0.00')
+    cell.fill = gray
+    ws.cell(row=r, column=6).fill = gray
+    ws.cell(row=r, column=7).fill = gray
+    totals_bottom = r
+
+    # Borders for totals table (right side cols F-H, all 5 rows)
+    for row in range(totals_top, totals_bottom + 1):
+        for col in range(6, 9):
+            ws.cell(row=row, column=col).border = Border(top=_THIN, bottom=_THIN, left=_THIN, right=_THIN)
+
+    # Border for baht-text box (just top row, A-E)
+    _xl_border_range(ws, totals_top, totals_top, 1, 5)
+
+    r += 2  # blank spacer
+
+    # --- Signature section: 4 boxes, each spans 2 cols ---
+    sig_labels = ["ผู้ส่งสินค้า", "ผู้รับสินค้า", "ผู้ตรวจสอบ", "ผู้อนุมัติ"]
+    sig_top = r
+    for i, label in enumerate(sig_labels):
+        col = 1 + i * 2
+        _xl_set(ws, r, col, label, font=_xl_font(11, True), align=center,
+                fill=gray, merge_to_col=col + 1)
+        ws.cell(row=r, column=col).fill = gray
+        ws.cell(row=r, column=col + 1).fill = gray
+    ws.row_dimensions[r].height = 22
+
+    # Signature space (2 tall rows)
+    ws.row_dimensions[r + 1].height = 32
+    ws.row_dimensions[r + 2].height = 32
+
+    # Date row
+    for i in range(4):
+        col = 1 + i * 2
+        _xl_set(ws, r + 3, col, "____________________\nวันที่ ..../..../....",
+                font=_xl_font(10), align=center, merge_to_col=col + 1)
+    ws.row_dimensions[r + 3].height = 32
+
+    # Borders for signature boxes
+    for i in range(4):
+        col_start = 1 + i * 2
+        _xl_border_range(ws, sig_top, sig_top + 3, col_start, col_start + 1)
+
+    return sig_top + 4
+
+
+@login_required
+def invoice_excel_view(request, pk):
+    invoice = get_object_or_404(Invoice, pk=pk)
+    items = list(invoice.invoice_items.all())
+    is_abbreviated = bool(request.GET.get('abbr'))
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    def _setup_sheet(sheet, invoice_number, is_original):
+        sheet.title = ("ต้นฉบับ" if is_original else "สำเนา")
+
+        sheet.page_setup.paperSize = sheet.PAPERSIZE_A4
+        sheet.page_setup.orientation = sheet.ORIENTATION_PORTRAIT
+        sheet.page_margins.left = 0.4
+        sheet.page_margins.right = 0.4
+        sheet.page_margins.top = 0.4
+        sheet.page_margins.bottom = 0.4
+        sheet.print_options.horizontalCentered = True
+        sheet.sheet_properties.pageSetUpPr.fitToPage = True
+        sheet.page_setup.fitToWidth = 1
+        sheet.page_setup.fitToHeight = 1
+
+        widths = {'B': 13, 'C': 18, 'D': 14, 'F': 11, 'G': 9, 'H': 12}
+        for col, w in widths.items():
+            sheet.column_dimensions[col].width = w
+
+        last_row = _write_invoice_copy(sheet, 1, invoice, items,
+                                       is_original=is_original, is_abbreviated=is_abbreviated)
+
+        for col_letter in ('A', 'E'):
+            sheet.column_dimensions[col_letter].width = 19
+            sheet.column_dimensions[col_letter].bestFit = True
+
+        sheet.print_area = f'A1:H{last_row - 1}'
+
+    # Sheet 1: Original
+    ws.title = "ต้นฉบับ"
+    _setup_sheet(ws, invoice.invoice_number, is_original=True)
+
+    # Sheet 2: Copy
+    ws_copy = wb.create_sheet()
+    _setup_sheet(ws_copy, invoice.invoice_number, is_original=False)
+
+    suffix = '_Abbr' if is_abbreviated else ''
+    response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    response['Content-Disposition'] = f'attachment; filename="Invoice_{invoice.invoice_number}{suffix}.xlsx"'
+    wb.save(response)
+    return response
+
+@login_required
+def sync_google_sheet_requests(request):
+    SHEET_URL = "https://docs.google.com/spreadsheets/d/10vSZIeyigc74uTkXmAO3AxaG6TNFA6uGSb39udH7JgI/export?format=csv&id=10vSZIeyigc74uTkXmAO3AxaG6TNFA6uGSb39udH7JgI&gid=0"
+    try:
+        req = urllib.request.Request(SHEET_URL, headers={'User-Agent': 'Mozilla/5.0'})
+        response = urllib.request.urlopen(req)
+        lines = [l.decode('utf-8') for l in response.readlines()]
+        reader = csv.reader(lines)
+        
+        # skip headers / empty rows until data (start at row 3, index 2)
+        for _ in range(2):
+            next(reader, None)
+            
+        sync_count = 0
+        for row in reader:
+            if len(row) < 8:
+                continue
+            # "ลำดับ หมายเลขคำสั่งซื้อ วันที่ ชื่อ สกุล ที่อยุ่ปัจจุบัน หมายเลขประจำตัวผู้เสียภาษี เบอร์โทร Email ช่องทางการสั่งซื้อ สถานะ"
+            # 0: ลำดับ, 1: order id, 2: date, 3: name, 4: address, 5: tax_id, 6: phone
+            order_id = row[1].strip()
+            if not order_id:
+                continue
+                
+            invoices = Invoice.objects.filter(platform_order_id=order_id)
+            for inv in invoices:
+                if not inv.tax_invoice_requested:
+                    inv.tax_invoice_requested = True
+                    inv.recipient_name = row[3].strip() if len(row) > 3 else inv.recipient_name
+                    inv.recipient_address = row[4].strip() if len(row) > 4 else inv.recipient_address
+                    inv.recipient_phone = row[6].strip() if len(row) > 6 else inv.recipient_phone
+                    
+                    if inv.vendor and len(row) > 5:
+                        inv.vendor.tax_id = row[5].strip()
+                        inv.vendor.save()
+                    inv.save()
+                    sync_count += 1
+                    
+        return JsonResponse({'success': True, 'count': sync_count, 'message': f'พบคำขอและซิงค์ข้อมูลแล้ว {sync_count} รายการ'})
+    except Exception as e:
+        return JsonResponse({'success': False, 'message': str(e)})

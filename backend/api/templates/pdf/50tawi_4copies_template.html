@@ -1,0 +1,302 @@
+{% load humanize %}
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <title>หนังสือรับรองการหักภาษี ณ ที่จ่าย (50 ทวิ)</title>
+    <style>
+        /* 1. Page Setup - A4 Standard Margins for Thai Gov Forms */
+        @page {
+            size: A4;
+            margin: 1.0cm 1.0cm 0.5cm 1.0cm; /* Top, Right, Bottom, Left */
+        }
+
+        /* 2. Global Font - TH Sarabun New is Mandatory */
+        body {
+            font-family: 'TH Sarabun New', sans-serif;
+            font-size: 13pt; /* Official form usually uses approx 13-14pt */
+            line-height: 1.1;
+            color: #000;
+        }
+
+        /* 3. Utility Classes */
+        .page-break { page-break-after: always; }
+        .text-center { text-align: center; }
+        .text-right { text-align: right; }
+        .text-left { text-align: left; }
+        .text-bold { font-weight: bold; }
+        .no-border { border: none !important; }
+        .w-100 { width: 100%; }
+        .valign-top { vertical-align: top; }
+        .valign-bottom { vertical-align: bottom; }
+        .valign-middle { vertical-align: middle; }
+
+        /* 4. Table Styling - Exact Grid */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            border-spacing: 0;
+            margin-bottom: 4px;
+        }
+        td, th {
+            border: 1px solid #000;
+            padding: 2px 4px;
+            vertical-align: top;
+        }
+
+        /* 5. Specific Borders */
+        .border-bottom-dotted { border-bottom: 1px dotted #000; display: inline-block; text-align: center; }
+        .border-double-bottom { border-bottom: 3px double #000 !important; }
+        .border-left-none { border-left: none !important; }
+        .border-right-none { border-right: none !important; }
+        .border-top-none { border-top: none !important; }
+        .border-bottom-none { border-bottom: none !important; }
+
+        /* 6. Tax ID Box Styling (Official 13 Digits) */
+        .tax-id-wrapper {
+            display: inline-flex;
+            align-items: center;
+            position: relative;
+            top: 2px;
+        }
+        .digit-box {
+            width: 13px;
+            height: 17px;
+            border: 1px solid #000;
+            text-align: center;
+            line-height: 15px;
+            font-size: 12pt;
+            margin-right: -1px; /* Overlap borders */
+            background: #fff;
+            z-index: 1;
+        }
+        .spacer { width: 5px; } /* Gap between ID groups */
+
+        /* 7. Checkbox Styling (Square Box) */
+        .checkbox-box {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border: 1px solid #000;
+            text-align: center;
+            line-height: 10px;
+            font-size: 10pt;
+            margin-right: 4px;
+        }
+        .checked::after { content: "X"; font-weight: bold; }
+
+        /* Small text helper */
+        .small-text { font-size: 10pt; }
+    </style>
+</head>
+<body>
+
+{% for label in copy_labels %}
+<div class="page-container {% if not forloop.last %}page-break{% endif %}" style="position: relative;">
+
+    <div style="position: absolute; top: -20px; right: 0; font-size: 11pt; text-align: right;">
+        <strong>{{ label }}</strong>
+    </div>
+
+    <div class="text-center" style="margin-bottom: 5px;">
+        <div style="font-size: 20pt; font-weight: bold; line-height: 1;">หนังสือรับรองการหักภาษี ณ ที่จ่าย</div>
+        <div style="font-size: 14pt; font-weight: bold;">ตามมาตรา 50 ทวิ แห่งประมวลรัษฎากร</div>
+    </div>
+
+    <table class="no-border" style="margin-bottom: 2px;">
+        <tr class="no-border">
+            <td class="no-border" width="60%"></td>
+            <td class="no-border text-right valign-bottom">
+                <strong>เล่มที่</strong> &nbsp;<span class="border-bottom-dotted" style="width: 70px;">{{ cert.book_number }}</span>&nbsp;&nbsp;
+                <strong>เลขที่</strong> &nbsp;<span class="border-bottom-dotted" style="width: 90px;">{{ cert.cert_number }}</span>
+            </td>
+        </tr>
+    </table>
+
+    <table style="border: 1px solid #000;">
+        <tr style="background-color: #f0f0f0;">
+            <td colspan="2" class="text-bold" style="padding: 1px 4px;">1. ผู้มีหน้าที่หักภาษี ณ ที่จ่าย</td>
+        </tr>
+        <tr>
+            <td width="65%" class="no-border border-right-none">
+                <strong>ชื่อ</strong> {{ company.name }}
+            </td>
+            <td class="no-border border-left-none text-right">
+                <strong>เลขประจำตัวผู้เสียภาษีอากร (13 หลัก)*</strong>
+            </td>
+        </tr>
+        <tr>
+            <td class="no-border border-right-none valign-top">
+                <strong>ที่อยู่</strong> {{ company.address }}
+            </td>
+            <td class="no-border border-left-none text-right valign-top">
+                <div class="tax-id-wrapper" style="justify-content: flex-end;">
+                    {% for digit in company.tax_id|make_list %}
+                        <span class="digit-box">{{ digit }}</span>
+                        {% if forloop.counter == 1 or forloop.counter == 5 or forloop.counter == 10 or forloop.counter == 12 %}<span class="spacer"></span>{% endif %}
+                    {% endfor %}
+                </div>
+            </td>
+        </tr>
+    </table>
+
+    <table style="border: 1px solid #000; border-top: none;">
+        <tr style="background-color: #f0f0f0;">
+            <td colspan="2" class="text-bold" style="padding: 1px 4px;">2. ผู้ถูกหักภาษี ณ ที่จ่าย</td>
+        </tr>
+        <tr>
+            <td width="65%" class="no-border border-right-none">
+                <strong>ชื่อ</strong> {{ vendor.name }}
+            </td>
+            <td class="no-border border-left-none text-right">
+                <strong>เลขประจำตัวผู้เสียภาษีอากร (13 หลัก)*</strong>
+            </td>
+        </tr>
+        <tr>
+            <td class="no-border border-right-none valign-top">
+                <strong>ที่อยู่</strong> {{ vendor.address|default:"-" }}
+            </td>
+            <td class="no-border border-left-none text-right valign-top">
+                <div class="tax-id-wrapper" style="justify-content: flex-end;">
+                    {% for digit in vendor.tax_id|make_list %}
+                        <span class="digit-box">{{ digit }}</span>
+                        {% if forloop.counter == 1 or forloop.counter == 5 or forloop.counter == 10 or forloop.counter == 12 %}<span class="spacer"></span>{% endif %}
+                    {% endfor %}
+                </div>
+            </td>
+        </tr>
+        <tr>
+            <td colspan="2" class="no-border border-top-none" style="padding-top: 5px;">
+                <strong>ลำดับที่</strong> ในแบบ &nbsp;
+                <span class="border-bottom-dotted" style="width: 50px;">&nbsp;</span>&nbsp;&nbsp;
+                <span class="checkbox-box"></span> (1) ภ.ง.ด.1ก &nbsp;
+                <span class="checkbox-box"></span> (2) ภ.ง.ด.1ก พิเศษ &nbsp;
+                <span class="checkbox-box"></span> (3) ภ.ง.ด.2 &nbsp;
+                <span class="checkbox-box {% if '4' in cert.income_type or '5' in cert.income_type or '6' in cert.income_type or '7' in cert.income_type or '8' in cert.income_type %}checked{% endif %}"></span> (4) ภ.ง.ด.3 &nbsp;
+                <span class="checkbox-box {% if 'company' in vendor.name|lower %}checked{% endif %}"></span> (5) ภ.ง.ด.53
+            </td>
+        </tr>
+    </table>
+
+    <table style="margin-top: 4px;">
+        <thead>
+            <tr class="text-center text-bold" style="background-color: #e0e0e0; height: 35px;">
+                <th width="56%" class="valign-middle">ประเภทเงินได้พึงประเมินที่จ่าย</th>
+                <th width="14%" class="valign-middle">วัน เดือน หรือปี<br>ภาษี ที่จ่าย</th>
+                <th width="15%" class="valign-middle">จำนวนเงินที่จ่าย</th>
+                <th width="15%" class="valign-middle">ภาษีที่หัก<br>และนำส่งไว้</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td class="valign-bottom">1. เงินเดือน ค่าจ้าง เบี้ยเลี้ยง โบนัส ฯลฯ ตามมาตรา 40(1)</td>
+                <td class="text-center valign-bottom">{% if cert.income_type == '1' %}{{ cert.date_issued|date:"d/m/Y" }}{% endif %}</td>
+                <td class="text-right valign-bottom">{% if cert.income_type == '1' %}{{ cert.amount_before_tax|intcomma }}{% endif %}</td>
+                <td class="text-right valign-bottom">{% if cert.income_type == '1' %}{{ cert.tax_amount|intcomma }}{% endif %}</td>
+            </tr>
+            <tr>
+                <td class="valign-bottom">2. ค่าธรรมเนียม ค่านายหน้า ฯลฯ ตามมาตรา 40(2)</td>
+                <td class="text-center valign-bottom">{% if cert.income_type == '2' %}{{ cert.date_issued|date:"d/m/Y" }}{% endif %}</td>
+                <td class="text-right valign-bottom">{% if cert.income_type == '2' %}{{ cert.amount_before_tax|intcomma }}{% endif %}</td>
+                <td class="text-right valign-bottom">{% if cert.income_type == '2' %}{{ cert.tax_amount|intcomma }}{% endif %}</td>
+            </tr>
+            <tr>
+                <td class="valign-bottom">3. ค่าแห่งลิขสิทธิ์ ฯลฯ ตามมาตรา 40(3)</td>
+                <td class="text-center valign-bottom">{% if cert.income_type == '3' %}{{ cert.date_issued|date:"d/m/Y" }}{% endif %}</td>
+                <td class="text-right valign-bottom">{% if cert.income_type == '3' %}{{ cert.amount_before_tax|intcomma }}{% endif %}</td>
+                <td class="text-right valign-bottom">{% if cert.income_type == '3' %}{{ cert.tax_amount|intcomma }}{% endif %}</td>
+            </tr>
+            <tr>
+                <td class="valign-bottom">4. (ก) ดอกเบี้ย ฯลฯ (ข) เงินปันผล เงินส่วนแบ่งกำไร ฯลฯ (40(4))</td>
+                <td class="text-center valign-bottom">{% if '4' in cert.income_type %}{{ cert.date_issued|date:"d/m/Y" }}{% endif %}</td>
+                <td class="text-right valign-bottom">{% if '4' in cert.income_type %}{{ cert.amount_before_tax|intcomma }}{% endif %}</td>
+                <td class="text-right valign-bottom">{% if '4' in cert.income_type %}{{ cert.tax_amount|intcomma }}{% endif %}</td>
+            </tr>
+            <tr style="height: 60px;">
+                <td class="valign-top" style="position: relative;">
+                    5. การจ่ายเงินได้ที่ต้องหักภาษี ณ ที่จ่าย ตามคำสั่งกรมสรรพากรที่ออกตามมาตรา 3 เตรส
+                    <div style="margin-left: 12px; margin-top: 2px;" class="small-text">
+                        (เช่น ค่าเช่าอาคาร, ค่าสอบบัญชี, ค่าออกแบบ, ค่าก่อสร้างโรงเรียน, ค่าขนส่ง, ค่าบริการ, ฯลฯ)
+                    </div>
+                    <div style="position: absolute; bottom: 2px; left: 4px; width: 98%;">
+                        &nbsp;&nbsp;&nbsp; <span class="text-bold">ระบุ:</span> &nbsp;
+                        <span class="border-bottom-dotted" style="width: 75%; text-align: left; padding-left: 5px;">
+                        {% if cert.income_type in '5,6,7,8' %}
+                           {{ cert.get_income_type_display }} {{ cert.income_description }}
+                        {% endif %}
+                        </span>
+                    </div>
+                </td>
+                <td class="text-center valign-bottom">{% if cert.income_type in '5,6,7,8' %}{{ cert.date_issued|date:"d/m/Y" }}{% endif %}</td>
+                <td class="text-right valign-bottom">{% if cert.income_type in '5,6,7,8' %}{{ cert.amount_before_tax|intcomma }}{% endif %}</td>
+                <td class="text-right valign-bottom">{% if cert.income_type in '5,6,7,8' %}{{ cert.tax_amount|intcomma }}{% endif %}</td>
+            </tr>
+            <tr>
+                <td class="valign-bottom">6. อื่นๆ (ระบุ) .....................................................................</td>
+                <td></td><td></td><td></td>
+            </tr>
+            <tr style="background-color: #f0f0f0;">
+                <td class="text-right text-bold">รวมเงินที่จ่ายและภาษีที่หักนำส่ง</td>
+                <td class="text-center text-bold">{{ cert.date_issued|date:"d/m/Y" }}</td>
+                <td class="text-right text-bold border-double-bottom">{{ cert.amount_before_tax|intcomma }}</td>
+                <td class="text-right text-bold border-double-bottom">{{ cert.tax_amount|intcomma }}</td>
+            </tr>
+            <tr>
+                <td colspan="4" style="padding: 4px;">
+                    <span class="text-bold">รวมเงินภาษีที่หักนำส่ง (ตัวอักษร)</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+                    ( {{ baht_text }} )
+                </td>
+            </tr>
+        </tbody>
+    </table>
+
+    <table style="border: 1px solid #000; margin-top: 0;">
+        <tr>
+            <td width="55%" class="valign-top border-right-none">
+                <div style="border-bottom: 1px solid #000; padding-bottom: 5px; margin-bottom: 5px;">
+                    <strong>เงินที่จ่ายเข้า กบข./กสจ./กองทุนสงเคราะห์ครูเอกชน</strong><br>
+                    จำนวน <span class="border-bottom-dotted" style="width: 150px;">&nbsp;</span> บาท
+                </div>
+                <div>
+                    <strong>ผู้มีหน้าที่หักภาษี ณ ที่จ่าย:</strong><br>
+                    <div style="margin-left: 5px; margin-top: 2px;">
+                        <span class="checkbox-box checked"></span> (1) หัก ณ ที่จ่าย <br>
+                        <span class="checkbox-box"></span> (2) ออกให้ตลอดไป <br>
+                        <span class="checkbox-box"></span> (3) ออกให้ครั้งเดียว <br>
+                        <span class="checkbox-box"></span> (4) อื่นๆ (ระบุ) ........................
+                    </div>
+                </div>
+            </td>
+
+            <td class="text-center valign-top border-left-none" style="padding-left: 10px;">
+                <div style="margin-bottom: 20px; font-size: 12pt;">
+                    ขอรับรองว่าข้อความและตัวเลขข้างต้น<br>
+                    ถูกต้องตรงความจริงทุกประการ
+                </div>
+                
+                <div style="margin-top: 15px;">
+                    ลงชื่อ <span class="border-bottom-dotted" style="width: 150px;">&nbsp;</span> ผู้จ่ายเงิน
+                </div>
+                <div style="margin-top: 5px;">
+                    ( {{ company.name }} )
+                </div>
+                <div style="margin-top: 5px;">
+                    ตำแหน่ง <span class="border-bottom-dotted" style="width: 150px;">&nbsp;</span>
+                </div>
+                <div style="margin-top: 5px;">
+                    วันที่ {{ cert.date_issued|date:"d/m/Y" }}
+                </div>
+            </td>
+        </tr>
+    </table>
+    
+    <div style="font-size: 10pt; margin-top: 2px;">
+        * หมายถึง 1. กรณีบุคคลธรรมดาไทย ให้ระบุเลขประจำตัวประชาชน<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 2. กรณีนิติบุคคลฯ ให้ระบุเลขประจำตัวผู้เสียภาษีอากร
+    </div>
+
+</div>
+{% endfor %}
+
+</body>
+</html>

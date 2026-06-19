@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}รายการรายงาน{% endblock %}
+{% block page_title %}รายการ Bug / Feature Request{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-4 py-3">
+
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div class="d-flex gap-2 flex-wrap">
+      <a href="?status=" class="btn btn-sm {% if not status_filter %}btn-primary{% else %}btn-outline-secondary{% endif %}">ทั้งหมด</a>
+      <a href="?status=NEW" class="btn btn-sm {% if status_filter == 'NEW' %}btn-primary{% else %}btn-outline-secondary{% endif %}">ใหม่</a>
+      <a href="?status=IN_PROGRESS" class="btn btn-sm {% if status_filter == 'IN_PROGRESS' %}btn-primary{% else %}btn-outline-secondary{% endif %}">กำลังดำเนินการ</a>
+      <a href="?status=RESOLVED" class="btn btn-sm {% if status_filter == 'RESOLVED' %}btn-primary{% else %}btn-outline-secondary{% endif %}">แก้ไขแล้ว</a>
+    </div>
+  </div>
+
+  <div class="card shadow-sm">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>ประเภท</th>
+            <th>หัวเรื่อง</th>
+            <th>ผู้รายงาน</th>
+            <th>สถานะ</th>
+            <th>วันที่</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in reports %}
+          <tr>
+            <td class="text-muted small">{{ r.pk }}</td>
+            <td>
+              {% if r.report_type == 'BUG' %}
+                <span class="badge bg-danger">🐛 บั๊ก</span>
+              {% else %}
+                <span class="badge bg-info">✨ ฟีเจอร์</span>
+              {% endif %}
+              {% if r.degraded %}<span class="badge bg-secondary ms-1" title="ส่งแบบฟอร์มธรรมดา">📋</span>{% endif %}
+            </td>
+            <td><a href="{% url 'bug_report_detail' r.pk %}" class="text-decoration-none">{{ r.title }}</a></td>
+            <td class="small text-muted">{{ r.created_by.username|default:"—" }}</td>
+            <td>
+              {% if r.status == 'NEW' %}<span class="badge bg-primary">ใหม่</span>
+              {% elif r.status == 'IN_PROGRESS' %}<span class="badge bg-warning text-dark">กำลังดำเนินการ</span>
+              {% elif r.status == 'RESOLVED' %}<span class="badge bg-success">แก้ไขแล้ว</span>
+              {% else %}<span class="badge bg-secondary">{{ r.get_status_display }}</span>{% endif %}
+            </td>
+            <td class="small text-muted">{{ r.created_at|date:"d/m/Y H:i" }}</td>
+            <td><a href="{% url 'bug_report_detail' r.pk %}" class="btn btn-sm btn-outline-secondary">ดู</a></td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="7" class="text-center text-muted py-4">ไม่มีรายการ</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

@@ -1,0 +1,55 @@
+# /etc/nginx/sites-available/nmk
+
+server {
+    listen 443 ssl;
+    server_name your-domain.com your-ip-address;
+
+    # SSL Configuration (Placeholders for Certbot/Managed SSL)
+    # ssl_certificate /etc/letsencrypt/live/your-domain.com/fullchain.pem;
+    # ssl_certificate_key /etc/letsencrypt/live/your-domain.com/privkey.pem;
+    # include /etc/letsencrypt/options-ssl-nginx.conf;
+    # ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+    # Static files for Django (Admin/Templates)
+    location /static/ {
+        alias /var/www/nmk/backend/staticfiles/;
+    }
+
+    # Media files for Django (Uploads, PDFs)
+    location /media/ {
+        alias /var/www/nmk/backend/media/;
+    }
+
+    # Proxy all other requests to Django/Gunicorn
+    location / {
+        include proxy_params;
+        proxy_pass http://unix:/tmp/gunicorn.nmk.sock;
+
+        # Standard proxy headers
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Security
+    client_max_body_size 50M;
+
+    # Logs
+    access_log /var/log/nginx/nmk_access.log;
+    error_log /var/log/nginx/nmk_error.log;
+}
+
+# Redirect HTTP to HTTPS
+server {
+    listen 80;
+    server_name your-domain.com your-ip-address;
+
+    # Redirect to HTTPS (uncomment when SSL is ready)
+    # if ($host = your-domain.com) {
+    #     return 301 https://$host$request_uri;
+    # }
+
+    # Default behavior if not redirected
+    return 404;
+}

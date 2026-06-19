@@ -1,4 +1,5 @@
 import React from "react";
+import { Link } from "react-router-dom";
 import api from "../api.js";
 import Notes from "../components/Notes.jsx";
 import "../styles/form.css";
@@ -56,6 +57,9 @@ function Home() {
 
   return (    
     <div>
+      <div style={{ padding: '10px', background: '#eef2ff', marginBottom: '20px' }}>
+         <Link to="/vat-tracking" style={{ fontSize: '18px', fontWeight: 'bold', color: '#4f46e5', textDecoration: 'none' }}>📦 ไปที่ระบบจัดการ VAT คงเหลือ (VAT Orders Tracking)</Link>
+      </div>
       <h1>Welcome to the Home Page</h1>
       <div>
         <h1>Your Notes</h1>

@@ -4,7 +4,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>NAMKANG • {% block title %}Accounting System{% endblock %}</title>
+    <title>{% block title %}Accounting System{% endblock %}</title>
 
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -39,7 +39,7 @@
         </button>
 
         <div class="d-flex align-items-center gap-2 mb-4">
-          <div class="brand h5 mb-0">Namkang Phone</div>
+          <div class="brand h5 mb-0">Accounting System</div>
         </div>
 
         <div class="d-flex align-items-center gap-2 mb-4">
@@ -64,6 +64,15 @@
 
         <nav class="nav nav-pills flex-column gap-1">
           <a
+            class="nav-link {% if request.path == '/dashboard/' %}active{% endif %}"
+            href="{% url 'dashboard' %}"
+          >
+            <i class="bi bi-speedometer2 me-2"></i>Dashboard
+          </a>
+
+          <hr class="my-1"/>
+
+          <a
             class="nav-link {% if request.path == '/purchase_list/' %}active{% endif %}"
             href="{% url 'purchase_list' %}"
           >
@@ -84,12 +93,12 @@
             <i class="bi bi-graph-up me-2"></i>ค่าใช้จ่ายอื่นๆ
           </a>
 
-          <a 
+          {% comment %} <a 
             class="nav-link {% if request.path == '/customer_list/' %}active{% endif %}"
             href="{% url 'customer_list' %}"
           >
             <i class="bi bi-file-person-fill me-2"></i>ผู้ซื้อ
-          </a>          
+          </a>           {% endcomment %}
 
           <a 
             class="nav-link {% if request.path == '/vendor_list/' %}active{% endif %}"
@@ -118,6 +127,28 @@
           >
             <i class="bi bi-receipt me-2"></i>รายงานต่างๆ
           </a>
+          
+          <a 
+            class="nav-link {% if request.path == '/vat_tracking/' %}active{% endif %}"
+            href="{% url 'vat_tracking' %}"
+          >
+            <i class="bi bi-boxes me-2"></i>ระบบจัดการ VAT
+          </a>
+
+          <a 
+            class="nav-link {% if request.path == '/vat-buy-summary/' %}active{% endif %}"
+            href="{% url 'vat_buy_summary' %}"
+            style="padding-left: 2.2rem; font-size: 0.9em;"
+          >
+            <i class="bi bi-receipt-cutoff me-2"></i>สรุปเอกสารซื้อ
+          </a>
+
+          <a 
+            class="nav-link {% if request.path == '/wht_list/' %}active{% endif %}"
+            href="{% url 'wht_list' %}"
+          >
+            <i class="bi bi-record-circle me-2"></i>ทวิ 50
+          </a>
 
           <a 
             class="nav-link {% if request.path == '/import/platforms/' %}active{% endif %}"
@@ -127,6 +158,14 @@
           </a>
 
           <hr />
+          
+          <a 
+            class="nav-link {% if request.path == '/company_list/' %}active{% endif %}"
+            href="{% url 'company_list' %}"
+          >
+            <i class="bi bi-building"></i> ข้อมูลบริษัท
+          </a>
+       
 
           <a 
             class="nav-link {% if request.path == '/admin/' %}active{% endif %}"
@@ -147,8 +186,8 @@
           >
             <i class="bi bi-box-arrow-right me-2"></i>ออกจากระบบ
           </a>
-          <a class="info">
-            <i class="bi bi-date-icon me-2"></i>Update 2025-12-14
+          <a class="content">
+            <i class="bi bi-date-icon me-2"></i>Update 2026-05-03
           </a>
         </nav>
       </aside>
@@ -158,16 +197,366 @@
           <div class="h5 mb-0">
             {% block page_title %}Dashboard{% endblock %}
           </div>
+          <div class="d-flex align-items-center gap-2">
+            <button id="global-search-btn"
+                    class="btn btn-outline-secondary btn-sm d-flex align-items-center gap-1"
+                    title="ค้นหา (Ctrl+K)">
+              <i class="bi bi-search"></i>
+              <span class="d-none d-md-inline small text-muted">ค้นหาทั้งหมด (Ctrl+K)</span>
+            </button>
+            <button id="bug-report-trigger"
+                    class="btn btn-warning btn-sm d-flex align-items-center gap-1"
+                    title="รายงานบั๊ก / ขอฟีเจอร์">
+              <i class="bi bi-bug-fill"></i>
+              <span class="d-none d-md-inline small">รายงาน</span>
+            </button>
+          </div>
         </div>
 
         <div class="content">
+          {% if messages %}
+            <div class="container-fluid mt-3 px-4">
+              {% for message in messages %}
+                <div class="alert alert-{{ message.tags }} alert-dismissible fade show shadow-sm" role="alert">
+                  {% if message.tags == 'success' %}
+                    <i class="bi bi-check-circle-fill me-2"></i>
+                  {% elif message.tags == 'error' or message.tags == 'danger' %}
+                    <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                  {% elif message.tags == 'warning' %}
+                    <i class="bi bi-exclamation-circle-fill me-2"></i>
+                  {% else %}
+                    <i class="bi bi-info-circle-fill me-2"></i>
+                  {% endif %}
+                  {{ message }}
+                  <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+              {% endfor %}
+            </div>
+          {% endif %}
+
           {% block content %} 
             {% endblock %}
         </div>
       </main>
     </div>
 
+    <!-- Global Search Modal -->
+    <div class="modal fade" id="global-search-modal" tabindex="-1" aria-label="ค้นหา">
+      <div class="modal-dialog modal-dialog-centered" style="max-width:560px">
+        <div class="modal-content shadow-lg border-0">
+          <div class="modal-body p-0">
+            <div class="d-flex align-items-center border-bottom px-3 py-2 gap-2">
+              <i class="bi bi-search text-muted fs-5"></i>
+              <input id="global-search-input"
+                     type="text"
+                     class="form-control border-0 shadow-none bg-transparent"
+                     placeholder="ค้นหาสินค้า ใบขาย ใบซื้อ ผู้ขาย..."
+                     autocomplete="off">
+              <span id="global-search-spinner" class="spinner-border spinner-border-sm text-muted d-none"></span>
+              <kbd class="text-muted small d-none d-md-inline" style="font-size:.7rem">Esc</kbd>
+            </div>
+            <div id="global-search-results"
+                 style="max-height:380px;overflow-y:auto;min-height:60px">
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <style>
+      .search-result-item { color: inherit; transition: background .1s; }
+      .search-result-item:hover, .search-result-item.active { background: rgba(255,255,255,.07); color: inherit; }
+      .search-category-header { border-top: 1px solid rgba(255,255,255,.08); margin-top:.25rem; }
+      .search-category-header:first-child { border-top: none; margin-top:0; }
+    </style>
+
+    <!-- Bug Report Modal -->
+    <div class="modal fade" id="bug-report-modal" tabindex="-1" aria-label="รายงานปัญหา">
+      <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content shadow-lg border-0">
+          <div class="modal-header py-2 border-bottom">
+            <div class="d-flex align-items-center gap-2">
+              <select id="br-type-select" class="form-select form-select-sm" style="width:auto">
+                <option value="BUG">🐛 รายงานบั๊ก</option>
+                <option value="FEATURE">✨ ขอฟีเจอร์</option>
+              </select>
+            </div>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+
+          <!-- Chat pane -->
+          <div id="br-chat-pane">
+            <div class="modal-body p-0">
+              <div class="px-3 py-2 border-bottom">
+                <input id="br-chat-title" type="text" class="form-control form-control-sm border-0 shadow-none bg-transparent"
+                       placeholder="หัวเรื่อง (ระบุสั้น ๆ)..." autocomplete="off">
+              </div>
+              <div id="br-chat-messages"
+                   style="height:260px;overflow-y:auto;padding:1rem"
+                   class="d-flex flex-column gap-2">
+                <div class="br-msg br-msg--assistant mb-2">
+                  <div class="br-bubble">สวัสดี! กรุณาอธิบายปัญหาหรือฟีเจอร์ที่ต้องการสั้น ๆ แล้วกด Enter</div>
+                </div>
+              </div>
+              <div id="br-summary-section" class="px-3 py-2 border-top d-none">
+                <label class="form-label small text-muted mb-1">สรุปรายละเอียด (แก้ไขได้)</label>
+                <textarea id="br-summary-text" class="form-control form-control-sm" rows="3"></textarea>
+              </div>
+            </div>
+            <div class="modal-footer py-2 flex-column gap-2 align-items-stretch">
+              <div class="d-flex gap-2">
+                <input id="br-user-input" type="text" class="form-control form-control-sm"
+                       placeholder="พิมพ์ข้อความ... (Enter ส่ง)">
+                <button id="br-send-btn" class="btn btn-primary btn-sm">ส่ง</button>
+              </div>
+              <div class="d-flex align-items-center gap-2">
+                <label class="btn btn-outline-secondary btn-sm mb-0" style="cursor:pointer">
+                  <i class="bi bi-image me-1"></i>แนบรูป
+                  <input id="br-image-input" type="file" accept="image/*" multiple class="d-none">
+                </label>
+                <span class="text-muted small d-none d-sm-inline" style="font-size:.72rem">
+                  หรือ <kbd>Ctrl+V</kbd> วางจากคลิปบอร์ด
+                </span>
+                <div id="br-image-strip" class="d-flex gap-1 flex-wrap"></div>
+                <button id="br-chat-submit" class="btn btn-success btn-sm ms-auto" disabled>
+                  <i class="bi bi-send me-1"></i>ส่งรายงาน
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Plain form pane (fallback) -->
+          <div id="br-plain-pane" style="display:none">
+            <div class="modal-body">
+              <div id="br-degraded-notice" class="alert alert-warning py-2 small d-none">
+                <i class="bi bi-exclamation-circle me-1"></i>
+                ระบบแนะนำคำถามอัตโนมัติไม่พร้อมใช้งานชั่วคราว — กรอกรายละเอียดและส่งได้เลย
+              </div>
+              <div class="mb-2">
+                <select id="br-plain-type-select" class="form-select form-select-sm mb-2" style="width:auto">
+                  <option value="BUG">🐛 รายงานบั๊ก</option>
+                  <option value="FEATURE">✨ ขอฟีเจอร์</option>
+                </select>
+                <input id="br-plain-title" type="text" class="form-control form-control-sm"
+                       placeholder="หัวเรื่อง *">
+              </div>
+              <textarea id="br-plain-description" class="form-control" rows="5"
+                        placeholder="อธิบายปัญหา / ฟีเจอร์ที่ต้องการ *"></textarea>
+              <div class="d-flex align-items-center gap-2 mt-2">
+                <label class="btn btn-outline-secondary btn-sm mb-0" style="cursor:pointer">
+                  <i class="bi bi-image me-1"></i>แนบรูป
+                  <input type="file" accept="image/*" multiple class="d-none"
+                         onchange="document.getElementById('br-image-input').files = this.files; document.getElementById('br-image-input').dispatchEvent(new Event('change'))">
+                </label>
+                <div class="d-flex gap-1 flex-wrap" id="br-image-strip-plain"></div>
+              </div>
+            </div>
+            <div class="modal-footer py-2">
+              <button id="br-plain-submit" class="btn btn-success btn-sm">
+                <i class="bi bi-send me-1"></i>ส่งรายงาน
+              </button>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <style>
+      .br-bubble { background: rgba(255,255,255,.08); border-radius:.75rem; padding:.5rem .75rem; font-size:.875rem; max-width:90%; display:inline-block; }
+      .br-msg--user { text-align:right; }
+      .br-msg--user .br-bubble { background: rgba(124,58,237,.35); }
+    </style>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="{% static 'js/global_search.js' %}"></script>
+    <script src="{% static 'js/bug_report.js' %}"></script>
+
+    {% block extra_js %}{% endblock %}
+
+    {% if user.is_authenticated %}
+    <!-- ─── AI Help Chat Widget ─────────────────────────────────────────── -->
+    <style>
+      .ai-chat-btn {
+        position: fixed; bottom: 1.5rem; right: 1.5rem; z-index: 500;
+        height: 38px; padding: 0 16px; border-radius: 999px;
+        background: linear-gradient(135deg, #63b3ed, #9f7aea);
+        border: none; color: #fff; font-size: 0.85rem; font-weight: 600;
+        display: flex; align-items: center; gap: 6px; cursor: pointer;
+        box-shadow: 0 4px 16px rgba(99,179,237,0.35);
+        transition: transform 0.15s, box-shadow 0.15s;
+        font-family: inherit;
+      }
+      .ai-chat-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(99,179,237,0.45); }
+      .ai-chat-btn.panel-open { background: linear-gradient(135deg, #4a9fd4, #7c5cc4); }
+
+      .ai-chat-panel {
+        position: fixed; bottom: 5rem; right: 1.5rem; z-index: 499;
+        width: 340px; border-radius: 14px;
+        background: #1a202c; border: 1px solid rgba(99,179,237,0.25);
+        box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+        display: flex; flex-direction: column;
+        transform: translateY(12px) scale(0.97); opacity: 0; pointer-events: none;
+        transition: all 0.18s ease; max-height: 480px;
+      }
+      .ai-chat-panel.open { transform: translateY(0) scale(1); opacity: 1; pointer-events: auto; }
+
+      .ai-chat-header {
+        padding: 11px 14px; border-bottom: 1px solid rgba(255,255,255,0.08);
+        display: flex; align-items: center; justify-content: space-between; flex-shrink: 0;
+      }
+      .ai-chat-header .ai-title { color: #fff; font-weight: 600; font-size: 0.88rem; }
+      .ai-chat-header .ai-subtitle { color: #777; font-size: 0.73rem; }
+      .ai-close-btn { background: none; border: none; color: #555; cursor: pointer; font-size: 0.9rem; padding: 3px 7px; border-radius: 4px; line-height: 1; }
+      .ai-close-btn:hover { background: rgba(255,255,255,0.08); color: #fff; }
+
+      #aiChatMessages {
+        flex: 1; overflow-y: auto; padding: 12px;
+        display: flex; flex-direction: column; gap: 10px;
+        min-height: 180px; max-height: 310px;
+      }
+      #aiChatMessages::-webkit-scrollbar { width: 3px; }
+      #aiChatMessages::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+
+      .ai-msg { max-width: 92%; font-size: 0.82rem; line-height: 1.6; padding: 7px 11px; border-radius: 10px; }
+      .ai-msg-user { align-self: flex-end; background: rgba(99,179,237,0.2); color: #e2e8f0; border-radius: 10px 10px 2px 10px; }
+      .ai-msg-bot  { align-self: flex-start; background: rgba(255,255,255,0.06); color: #cbd5e0; border-radius: 10px 10px 10px 2px; }
+
+      .ai-help-link {
+        display: inline-block; margin-top: 7px; padding: 3px 9px; border-radius: 6px;
+        background: rgba(99,179,237,0.12); color: #63b3ed; font-size: 0.76rem;
+        text-decoration: none; border: 1px solid rgba(99,179,237,0.2);
+      }
+      .ai-help-link:hover { background: rgba(99,179,237,0.22); color: #90cdf4; }
+
+      .ai-chat-input-row {
+        padding: 9px 11px; border-top: 1px solid rgba(255,255,255,0.08);
+        display: flex; gap: 7px; align-items: center; flex-shrink: 0;
+      }
+      #aiChatInput {
+        flex: 1; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 8px; padding: 6px 10px; color: #fff; font-size: 0.82rem; outline: none; font-family: inherit;
+      }
+      #aiChatInput:focus { border-color: rgba(99,179,237,0.5); }
+      #aiChatInput::placeholder { color: #555; }
+      #aiChatSend {
+        width: 30px; height: 30px; border-radius: 7px; border: none;
+        background: rgba(99,179,237,0.22); color: #63b3ed; cursor: pointer;
+        display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+      }
+      #aiChatSend:hover:not(:disabled) { background: rgba(99,179,237,0.38); }
+      #aiChatSend:disabled { opacity: 0.35; cursor: default; }
+
+      .ai-typing { display: inline-flex; gap: 4px; align-items: center; padding: 3px 0; }
+      .ai-typing span { width: 5px; height: 5px; border-radius: 50%; background: #63b3ed; animation: aiDot 1.2s infinite; }
+      .ai-typing span:nth-child(2) { animation-delay: 0.2s; }
+      .ai-typing span:nth-child(3) { animation-delay: 0.4s; }
+      @keyframes aiDot { 0%,80%,100% { opacity: 0.2; transform: scale(0.8); } 40% { opacity: 1; transform: scale(1); } }
+
+      .ai-welcome { color: #666; font-size: 0.78rem; text-align: center; padding: 8px 4px; line-height: 1.6; }
+
+      @media (max-width: 480px) {
+        .ai-chat-panel { width: calc(100vw - 2rem); right: 1rem; }
+        .ai-chat-btn { right: 1rem; bottom: 1rem; }
+      }
+    </style>
+
+    <button class="ai-chat-btn" id="aiChatBtn">
+      <i class="bi bi-stars" style="font-size:0.9rem"></i>ถาม AI
+    </button>
+
+    <div class="ai-chat-panel" id="aiChatPanel">
+      <div class="ai-chat-header">
+        <div>
+          <div class="ai-title"><i class="bi bi-stars me-1" style="color:#9f7aea"></i>ผู้ช่วย AI</div>
+          <div class="ai-subtitle">ถามเกี่ยวกับการใช้งานระบบได้เลย</div>
+        </div>
+        <button class="ai-close-btn" id="aiChatClose"><i class="bi bi-x-lg"></i></button>
+      </div>
+      <div id="aiChatMessages">
+        <div class="ai-welcome">💬 ถามได้เลย เช่น<br>"import Shopee แล้ว error ทำยังไง"<br>"tax_sender_date คืออะไร"</div>
+      </div>
+      <div class="ai-chat-input-row">
+        <input type="text" id="aiChatInput" placeholder="พิมพ์คำถาม..." autocomplete="off">
+        <button id="aiChatSend"><i class="bi bi-send-fill" style="font-size:0.75rem"></i></button>
+      </div>
+    </div>
+
+    <script>
+    (function () {
+      const HELP_ASK_URL = '{% url "help_ask" %}';
+      const CSRF_TOKEN   = document.cookie.match(/csrftoken=([^;]+)/)?.[1] || '';
+
+      const chatBtn      = document.getElementById('aiChatBtn');
+      const chatPanel    = document.getElementById('aiChatPanel');
+      const chatClose    = document.getElementById('aiChatClose');
+      const chatInput    = document.getElementById('aiChatInput');
+      const chatSend     = document.getElementById('aiChatSend');
+      const chatMessages = document.getElementById('aiChatMessages');
+
+      chatBtn.addEventListener('click', () => {
+        const isOpen = chatPanel.classList.toggle('open');
+        chatBtn.classList.toggle('panel-open', isOpen);
+        if (isOpen) chatInput.focus();
+      });
+      chatClose.addEventListener('click', () => {
+        chatPanel.classList.remove('open');
+        chatBtn.classList.remove('panel-open');
+      });
+
+      function appendMsg(role, html) {
+        const div = document.createElement('div');
+        div.className = `ai-msg ai-msg-${role}`;
+        div.innerHTML = html;
+        chatMessages.appendChild(div);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+        return div;
+      }
+
+      function escHtml(s) {
+        return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+      }
+
+      function buildHelpLink(anchor, title) {
+        if (!anchor) return '';
+        const href = '/help/#' + anchor;
+        return `<a href="${href}" class="ai-help-link"><i class="bi bi-book me-1"></i>อ่านเพิ่มเติม: ${escHtml(title || anchor)}</a>`;
+      }
+
+      async function sendQuestion() {
+        const q = chatInput.value.trim();
+        if (!q) return;
+        chatInput.value = '';
+        chatSend.disabled = true;
+
+        appendMsg('user', escHtml(q));
+        const loading = appendMsg('bot', '<span class="ai-typing"><span></span><span></span><span></span></span>');
+
+        try {
+          const res = await fetch(HELP_ASK_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF_TOKEN },
+            body: JSON.stringify({ question: q }),
+          });
+          const data = await res.json();
+          const answer = data.answer || 'ขออภัย ไม่สามารถตอบได้ตอนนี้';
+          const link   = buildHelpLink(data.help_anchor, data.help_title);
+          loading.innerHTML = `<div>${escHtml(answer)}</div>${link}`;
+        } catch {
+          loading.innerHTML = 'เกิดข้อผิดพลาด กรุณาลองใหม่';
+        } finally {
+          chatSend.disabled = false;
+          chatInput.focus();
+        }
+      }
+
+      chatSend.addEventListener('click', sendQuestion);
+      chatInput.addEventListener('keydown', e => {
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendQuestion(); }
+      });
+    })();
+    </script>
+    {% endif %}
 
     <script>
       document.addEventListener("DOMContentLoaded", function () {

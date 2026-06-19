@@ -3,258 +3,309 @@
 {% load humanize %}
 
 {% block title %}Purchase Orders{% endblock %}
-{% block page_title %}Purchase Management{% endblock %}
+{% block page_title %}รายการซื้อเข้า{% endblock %}
 
 {% block content %}
 <div class="container-fluid p-0">
 
-  <div class="card rounded-xl mb-4 shadow-sm {% if is_editing %}border-warning{% endif %}">
-    <div class="card-header bg-transparent border-secondary py-3">
-      <h5 class="mb-0 text-white">
-        {% if is_editing %}
-            <i class="bi bi-pencil-square me-2 text-warning"></i>แก้ไขคำสั่งซื้อ: <span class="text-warning">{{ editing_po.po_number }}</span>
-        {% else %}
-            <i class="bi bi-cart-plus me-2"></i>สร้างคำสั่งซื้อใหม่
-        {% endif %}
-      </h5>
-    </div>
-
-
-
-    <div class="card-body">
-        <form method="POST" id="poForm">
-            {% csrf_token %}
-            
-            {% if is_editing and editing_po.status == 'CANCELLED' %}
-                <fieldset disabled="disabled">
-            {% endif %}
-
-            <div class="row g-3 mb-4">
-                <div class="col-md-3">
-                    <label class="form-label text-secondary small">เลขที่ใบกำกับ</label>
-                    {{ form.po_number }}
-                </div>
-                <div class="col-md-3">
-                    <label class="form-label text-secondary small">เจ้าหนี้</label>
-                    {{ form.vendor }}
-                </div>
-                <div class="col-md-3">
-                    <label class="form-label text-secondary small">วันที่สั่งซื้อ</label>
-                    {{ form.order_date }}
-                </div>
-                
-                <div class="col-md-3">
-                    <label class="form-label text-secondary small">สถานะคำสั่งซื้อ</label>
-                    {{ form.status }}
-                </div>
-
-                <div class="col-md-3">
-                    <label class="form-label text-secondary small">วิธีการชำระ</label>
-                    {{ form.purchase_type }}
-                </div>
-                <div class="col-md-3">
-                    <label class="form-label text-secondary small">วันที่ครบกำหนด</label>
-                    {{ form.expected_delivery_date }}
-                </div>
-                <div class="col-md-3">
-                    <label class="form-label text-secondary small">วันที่กำหนดส่งภาษี</label>
-                    {{ form.tax_sender_date }}
-                </div>
-                <div class="col-md-3">
-                    <label class="form-label text-secondary small">เลขที่ลำดับภาษี</label>
-                    {{ form.tax_sequence_number }}
-                </div>
-                <div class="col-md-6">
-                    <label class="form-label text-secondary small">หมายเหตุ</label>
-                    {{ form.notes }}
-                </div>
-            </div>
-
-            <hr class="border-secondary">
-
-            <div class="table-responsive mb-4">
-                {{ formset.management_form }} 
-                <table class="table table-darkish table-bordered align-middle" id="itemsTable">
-                    <thead>
-                        <tr class="text-secondary small text-uppercase">
-                            <th style="width: 40%">สินค้า</th>
-                            <th style="width: 15%">จำนวน</th>
-                            <th style="width: 20%">ราคาต่อหน่วย</th>
-                            <th style="width: 20%" class="text-end">ยอดรวมรายการ</th>
-                            <th style="width: 5%"></th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for item_form in formset %}
-                        <tr class="item-row">
-                            {% for hidden in item_form.hidden_fields %}{{ hidden }}{% endfor %}
-                            
-                            <td>{{ item_form.product }}</td>
-                            <td>{{ item_form.quantity }}</td>
-                            <td>{{ item_form.unit_cost }}</td>
-                            <td class="text-end">
-                                <span class="row-total fw-bold">0.00</span>
-                            </td>
-                            <td class="text-center">
-                                <div class="d-none">{{ item_form.DELETE }}</div> 
-                                <button type="button" class="btn btn-sm btn-outline-danger remove-row"><i class="bi bi-trash"></i></button>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-                
-                <button type="button" class="btn btn-sm btn-outline-primary" id="add-row">
-                    <i class="bi bi-plus-lg me-1"></i> เพิ่มรายการสินค้า
-                </button>
-            </div>
-
-            <div class="row justify-content-end">
-                <div class="col-md-5 col-lg-4">
-                    <div class="card bg-dark border-secondary p-3">
-                        <div class="d-flex justify-content-between mb-2">
-                            <span class="text-secondary">ยอดรวมสินค้า:</span>
-                            <span id="displaySubtotal" class="fw-bold">0.00</span>
-                        </div>
-                        
-                        <div class="d-flex align-items-center justify-content-between mb-2">
-                            <div class="d-flex align-items-center gap-2">
-                                <span class="text-secondary">ภาษี</span>
-                                <div class="form-check form-switch mb-0">
-                                    {{ form.tax_include }}
-                                </div>
-                                <div style="width: 70px;">
-                                    {{ form.tax_percent }} 
-                                </div>
-                                <span class="text-secondary small">%</span>
-                            </div>
-                            <span id="displayTax" class="fw-bold">0.00</span>
-                        </div>
-
-                        <div class="border-top border-secondary my-2"></div>
-                        
-                        <div class="d-flex justify-content-between align-items-center">
-                            <span class="h5 mb-0 text-white">ยอดรวมสุทธิ:</span>
-                            <span id="displayGrandTotal" class="h4 mb-0 text-success fw-bold">0.00</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            {% if is_editing and editing_po.status == 'CANCELLED' %}
-                </fieldset>
-            {% endif %}
-
-            <div class="d-flex justify-content-end gap-2 mt-4">
+    <div class="card rounded-xl mb-4 shadow-sm {% if is_editing %}border-warning{% endif %}">
+        <div class="card-header bg-transparent border-secondary py-3">
+            <h5 class="mb-0 text-white">
                 {% if is_editing %}
-                    <a href="{% url 'purchase_list' %}" class="btn btn-ghost px-4">ย้อนกลับ</a>
-                    
-                    {% if editing_po.status == 'CANCELLED' %}
-                        <button type="button" class="btn btn-secondary px-4" disabled>
-                            <i class="bi bi-lock-fill me-2"></i>Locked
-                        </button>
-                    {% elif editing_po.status == 'RECEIVED' %}
-                        <button type="submit" class="btn btn-danger px-4 fw-bold">
-                            <i class="bi bi-x-circle me-2"></i>Cancel Order
-                        </button>
-                    {% else %}
-                        <button type="submit" class="btn btn-warning px-4 fw-bold">อัพเดทคำสั่งซื้อ</button>
+                <i class="bi bi-pencil-square me-2 text-warning"></i>แก้ไขคำสั่งซื้อ: <span class="text-warning">
+                    {{editing_po.po_number}}</span>
+                {% else %}
+                <i class="bi bi-cart-plus me-2"></i>สร้างคำสั่งซื้อใหม่
+                {% endif %}
+            </h5>
+        </div>
+
+
+
+        <div class="card-body">
+            <form method="POST" id="poForm" enctype="multipart/form-data">
+                {% csrf_token %}
+
+                {% if is_editing and editing_po.status == 'CANCELLED' %}
+                <fieldset disabled="disabled">
                     {% endif %}
 
-                {% else %}
-                    <button type="submit" class="btn btn-brand px-4">บันทึกคำสั่งซื้อ</button>
+                    <div class="row g-3 mb-4">
+                        <div class="col-md-3">
+                            <label class="form-label text-secondary small">เลขที่ใบกำกับ</label>
+                            {{ form.po_number }}
+                            <small id="po_number_error" class="text-danger mt-1 d-none"><i
+                                    class="bi bi-exclamation-triangle-fill"></i> เลขที่ใบกำกับนี้มีในระบบแล้ว</small>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label text-secondary small">เจ้าหนี้</label>
+                            {{ form.vendor }}
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label text-secondary small">วันที่สั่งซื้อ</label>
+                            {{ form.order_date }}
+                        </div>
+
+                        <div class="col-md-3">
+                            <label class="form-label text-secondary small">สถานะคำสั่งซื้อ</label>
+                            {{ form.status }}
+                        </div>
+
+                        <div class="col-md-3" id="cancel-reason-block" style="display:none;">
+                            <label class="form-label text-secondary small">เหตุผลการยกเลิก</label>
+                            <input type="text" name="cancel_reason" maxlength="255" class="form-control form-control-sm" placeholder="ระบุเหตุผล (ถ้ามี)">
+                        </div>
+
+                        <div class="col-md-3">
+                            <label class="form-label text-secondary small">วิธีการชำระ</label>
+                            {{ form.purchase_type }}
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label text-secondary small">วันที่ครบกำหนด</label>
+                            {{ form.expected_delivery_date }}
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label text-secondary small">เลขที่ลำดับภาษี</label>
+                            {{ form.tax_sequence_number }}
+                            <small id="tax_sequence_error" class="text-danger mt-1 d-none"><i
+                                    class="bi bi-exclamation-triangle-fill"></i> เลขที่ลำดับภาษีนี้มีในระบบแล้ว</small>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label text-secondary small">วันที่กำหนดส่งภาษี</label>
+                            {{ form.tax_sender_date }}
+                        </div>
+
+                        <div class="col-md-3">
+                            <label class="form-label text-secondary small">หมายเหตุ</label>
+                            {{ form.notes }}
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label text-secondary small">นำเข้าสู่บริษัท*</label>
+                            {{ form.company }}
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label text-secondary small">แนบไฟล์ (หลายไฟล์ได้)</label>
+                            <input type="file" name="attachments" class="form-control" multiple>
+                            {% if is_editing and attachments %}
+                            <div class="mt-2">
+                                <small class="text-secondary">ไฟล์แนบเดิม:</small>
+                                <ul class="list-unstyled mb-0">
+                                    {% for attachment in attachments %}
+                                    <li>
+                                        <a href="{{ attachment.file.url }}" target="_blank"
+                                            class="text-info text-decoration-none small">
+                                            <i class="bi bi-paperclip"></i>
+                                            {{ attachment.file.name|slice:"25:" }}
+                                        </a>
+                                    </li>
+                                    {% endfor %}
+                                </ul>
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <hr class="border-secondary">
+
+                    <div class="table-responsive mb-4">
+                        {{ formset.management_form }}
+                        <table class="table table-darkish table-bordered align-middle" id="itemsTable">
+                            <thead>
+                                <tr class="text-secondary small text-uppercase">
+                                    <th style="width: 40%">สินค้า</th>
+                                    <th style="width: 15%">จำนวน</th>
+                                    <th style="width: 20%">ราคาต่อหน่วย</th>
+                                    <th style="width: 20%" class="text-end">ยอดรวมรายการ</th>
+                                    <th style="width: 5%"></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for item_form in formset %}
+                                <tr class="item-row">
+                                    {% for hidden in item_form.hidden_fields %}{{ hidden }}{% endfor %}
+
+                                    <td>{{ item_form.product }}</td>
+                                    <td>{{ item_form.quantity }}</td>
+                                    <td>{{ item_form.unit_cost }}</td>
+                                    <td class="text-end">
+                                        <span class="row-total fw-bold">0.00</span>
+                                    </td>
+                                    <td class="text-center">
+                                        <div class="d-none">{{ item_form.DELETE }}</div>
+                                        <button type="button" class="btn btn-sm btn-outline-danger remove-row"><i
+                                                class="bi bi-trash"></i></button>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+
+                        <button type="button" class="btn btn-sm btn-outline-primary" id="add-row">
+                            <i class="bi bi-plus-lg me-1"></i> เพิ่มรายการสินค้า
+                        </button>
+                    </div>
+
+                    <div class="row justify-content-end">
+                        <div class="col-md-5 col-lg-4">
+                            <div class="card bg-dark border-secondary p-3">
+                                <div class="d-flex justify-content-between mb-2">
+                                    <span class="text-secondary">ยอดรวมสินค้า:</span>
+                                    <span id="displaySubtotal" class="fw-bold">0.00</span>
+                                </div>
+
+                                <div class="d-flex align-items-center justify-content-between mb-2">
+                                    <div class="d-flex align-items-center gap-2">
+                                        <span class="text-secondary">ภาษี</span>
+                                        <div class="form-check form-switch mb-0">
+                                            {{ form.tax_include }}
+                                        </div>
+                                        <div style="width: 70px;">
+                                            {{ form.tax_percent }}
+                                        </div>
+                                        <span class="text-secondary small">%</span>
+                                    </div>
+                                    <span id="displayTax" class="fw-bold">0.00</span>
+                                </div>
+
+                                <div class="border-top border-secondary my-2"></div>
+
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <span class="h5 mb-0 text-white">ยอดรวมสุทธิ:</span>
+                                    <span id="displayGrandTotal" class="h4 mb-0 text-success fw-bold">0.00</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {% if is_editing and editing_po.status == 'CANCELLED' %}
+                </fieldset>
                 {% endif %}
-            </div>
-        </form>
+
+                <div class="d-flex justify-content-end gap-2 mt-4">
+                    {% if is_editing %}
+                    <a href="{% url 'purchase_list' %}" class="btn btn-ghost px-4">ย้อนกลับ</a>
+
+                    {% if editing_po.status == 'CANCELLED' %}
+                    <button type="button" class="btn btn-secondary px-4" disabled>
+                        <i class="bi bi-lock-fill me-2"></i>Locked
+                    </button>
+                    {% else %}
+                    <button type="submit" class="btn btn-warning px-4 fw-bold">อัพเดทคำสั่งซื้อ</button>
+                    {% endif %}
+
+                    {% else %}
+                    <button type="submit" class="btn btn-brand px-4">บันทึกคำสั่งซื้อ</button>
+                    {% endif %}
+                </div>
+            </form>
         </div>
     </div>
 
-    </div>
+</div>
 
 
-    </div>
+</div>
 
-    <div class="card rounded-xl shadow-sm mt-5 mb-5 border-0">
-        <div class="card-header bg-dark bg-gradient border-secondary py-3 d-flex justify-content-between align-items-center">
-            <div>
-                <h5 class="mb-0 text-white"><i class="bi bi-clock-history me-2"></i>รายการคำสั่งซื้อล่าสุด</h5>
-            </div>
-            <div class="input-group input-group-sm w-auto">
-                <span class="input-group-text bg-secondary border-secondary text-light"><i class="bi bi-search"></i></span>
-                <input type="text" id="globalSearch" class="form-control bg-dark border-secondary text-light" placeholder="ค้นหา...">
-            </div>
+<div class="card rounded-xl shadow-sm mt-5 mb-5 border-0">
+    <div
+        class="card-header bg-dark bg-gradient border-secondary py-3 d-flex justify-content-between align-items-center">
+        <div>
+            <h5 class="mb-0 text-white"><i class="bi bi-clock-history me-2"></i>รายการคำสั่งซื้อล่าสุด</h5>
         </div>
-
-        <div class="table-responsive">
-            <table class="table table-darkish table-hover align-middle mb-0" id="recentOrdersTable">
-                <thead>
-                    <tr class="text-secondary small text-uppercase bg-light bg-opacity-10">
-                        <th class="ps-4" style="width: 15%">วันที่สั่งซื้อ</th>
-                        <th style="width: 20%">หมายเลขคำสั่งซื้อ</th>
-                        <th style="width: 25%">ผู้ขาย</th>
-                        <th style="width: 15%">สถานะ</th>
-                        <th class="text-end" style="width: 15%">ยอดรวม</th>
-                        <th class="text-end pe-4" style="width: 10%">แก้ไข</th>
-                    </tr>
-                    <tr class="filter-row bg-dark">
-                        <th class="ps-4 p-2">
-                            <input type="text" class="form-control form-control-sm bg-dark border-secondary text-light col-filter" data-col="0" placeholder="กรองวันที่">
-                        </th>
-                        <th class="p-2">
-                            <input type="text" class="form-control form-control-sm bg-dark border-secondary text-light col-filter" data-col="1" placeholder="กรองเลขที่">
-                        </th>
-                        <th class="p-2">
-                            <input type="text" class="form-control form-control-sm bg-dark border-secondary text-light col-filter" data-col="2" placeholder="กรองผู้ขาย">
-                        </th>
-                        <th class="p-2">
-                            <select class="form-select form-select-sm bg-dark border-secondary text-light col-filter" data-col="3">
-                                <option value="">ทั้งหมด</option>
-                                <option value="DRAFT">Draft</option>
-                                <option value="ORDERED">Ordered</option>
-                                <option value="RECEIVED">Received</option>
-                                <option value="CANCELLED">Cancelled</option>
-                            </select>
-                        </th>
-                        <th class="p-2 text-end">
-                            <input type="text" class="form-control form-control-sm bg-dark border-secondary text-light col-filter text-end" data-col="4" placeholder="> ยอดเงิน">
-                        </th>
-                        <th></th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for order in orders %}
-                    <tr>
-                        <td class="ps-4 text-secondary">{{ order.order_date|date:"d/m/Y" }}</td>
-                        
-                        <td class="font-monospace text-white">{{ order.po_number }}</td>
-                        
-                        <td>{{ order.vendor.name }}</td>
-                        
-                        <td>
-                            <span class="badge bg-secondary bg-opacity-25 text-light border border-secondary border-opacity-50">
-                                {{ order.status }}
-                            </span>
-                        </td>
-                        
-                        <td class="text-end font-monospace text-info">{{ order.total_amount|floatformat:2|intcomma }}</td>
-                        
-                        <td class="text-end pe-4">
-                            <a href="{% url 'purchase_edit' order.id %}" class="btn btn-sm btn-ghost text-secondary hover-white">
-                                <i class="bi bi-pencil"></i>
-                            </a>
-                        </td>
-                    </tr>
-                    {% empty %}
-                    <tr id="noResultsRow">
-                        <td colspan="6" class="text-center py-5 text-muted">ไม่พบคำสั่งซื้อ</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+        <div class="input-group input-group-sm w-auto">
+            <span class="input-group-text bg-secondary border-secondary text-light"><i class="bi bi-search"></i></span>
+            <input type="text" id="globalSearch" class="form-control bg-dark border-secondary text-light"
+                placeholder="ค้นหา...">
         </div>
     </div>
 
+    <div class="table-responsive">
+        <table class="table table-darkish table-hover align-middle mb-0" id="recentOrdersTable">
+            <thead>
+                <tr class="text-secondary small text-uppercase bg-light bg-opacity-10">
+                    <th class="ps-4" style="width: 15%">วันที่สั่งซื้อ</th>
+                    <th style="width: 20%">หมายเลขคำสั่งซื้อ</th>
+                    <th style="width: 25%">ผู้ขาย</th>
+                    <th style="width: 15%">สถานะ</th>
+                    <th class="text-end" style="width: 15%">ยอดรวม</th>
+                    <th class="text-end pe-4" style="width: 10%">แก้ไข</th>
+                </tr>
+                <tr class="filter-row bg-dark">
+                    <th class="ps-4 p-2">
+                        <input type="text"
+                            class="form-control form-control-sm bg-dark border-secondary text-light col-filter"
+                            data-col="0" placeholder="กรองวันที่">
+                    </th>
+                    <th class="p-2">
+                        <input type="text"
+                            class="form-control form-control-sm bg-dark border-secondary text-light col-filter"
+                            data-col="1" placeholder="กรองเลขที่">
+                    </th>
+                    <th class="p-2">
+                        <input type="text"
+                            class="form-control form-control-sm bg-dark border-secondary text-light col-filter"
+                            data-col="2" placeholder="กรองผู้ขาย">
+                    </th>
+                    <th class="p-2">
+                        <select class="form-select form-select-sm bg-dark border-secondary text-light col-filter"
+                            data-col="3">
+                            <option value="">ทั้งหมด</option>
+                            <option value="PAID">ชำระแล้ว</option>
+                            <option value="CANCELLED">ยกเลิก</option>
+                        </select>
+                    </th>
+                    <th class="p-2 text-end">
+                        <input type="text"
+                            class="form-control form-control-sm bg-dark border-secondary text-light col-filter text-end"
+                            data-col="4" placeholder="> ยอดเงิน">
+                    </th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for order in orders %}
+                <tr>
+                    <td class="ps-4 text-secondary">{{ order.order_date|date:"d/m/Y" }}</td>
+
+                    <td class="font-monospace text-white">
+                        {{ order.po_number }}
+                        {% if order.attachments.exists %}
+                        <i class="bi bi-paperclip text-info ms-1" title="{{ order.attachments.count }} files attached"></i>
+                        {% endif %}
+                    </td>
+
+                    <td>{{ order.vendor.name }}</td>
+
+                    <td>
+                        {% if order.status == 'PAID' %}
+                            <span class="badge bg-success bg-opacity-25 text-success border border-success border-opacity-50">ชำระแล้ว</span>
+                        {% elif order.status == 'CANCELLED' %}
+                            <span class="badge bg-danger bg-opacity-25 text-danger border border-danger border-opacity-50">ยกเลิก</span>
+                        {% else %}
+                            <span class="badge bg-secondary bg-opacity-25 text-light border border-secondary border-opacity-50">{{ order.status }}</span>
+                        {% endif %}
+                    </td>
+
+                    <td class="text-end font-monospace text-info">{{ order.total_amount|floatformat:2|intcomma }}</td>
+
+                    <td class="text-end pe-4">
+                        <a href="{% url 'purchase_edit' order.id %}"
+                            class="btn btn-sm btn-ghost text-secondary hover-white">
+                            <i class="bi bi-pencil"></i>
+                        </a>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr id="noResultsRow">
+                    <td colspan="6" class="text-center py-5 text-muted">ไม่พบคำสั่งซื้อ</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </div>
+</div>
+
+</div>
 
 <table style="display:none;">
     <tr id="empty-row-template">
@@ -270,148 +321,215 @@
 </table>
 
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-    
-    // ==========================================
-    // 1. PURCHASE ORDER FORM LOGIC
-    // ==========================================
-    const tableBody = document.querySelector('#itemsTable tbody');
-    const totalForms = document.getElementById('id_purchase_items-TOTAL_FORMS');
-    const addRowBtn = document.getElementById('add-row');
-    const taxCheck = document.getElementById('id_tax_include');
-    const taxPercentInput = document.getElementById('id_tax_percent');
+    document.addEventListener('DOMContentLoaded', function () {
 
-    // Init Calc
-    calculateAll();
+        // ==========================================
+        // 1. PURCHASE ORDER FORM LOGIC
+        // ==========================================
+        const tableBody = document.querySelector('#itemsTable tbody');
+        const totalForms = document.getElementById('id_purchase_items-TOTAL_FORMS');
+        const addRowBtn = document.getElementById('add-row');
+        const taxCheck = document.getElementById('id_tax_include');
+        const taxPercentInput = document.getElementById('id_tax_percent');
 
-    // Listeners
-    tableBody.addEventListener('input', function(e) {
-        if (e.target.classList.contains('qty') || e.target.classList.contains('price')) {
-            calculateRow(e.target.closest('tr'));
-            calculateAll();
-        }
-    });
+        // Init Calc
+        calculateAll();
 
-    taxCheck.addEventListener('change', calculateAll);
-    taxPercentInput.addEventListener('input', calculateAll);
-
-    addRowBtn.addEventListener('click', function() {
-        const formIdx = totalForms.value;
-        const emptyRow = document.getElementById('empty-row-template').cloneNode(true);
-        emptyRow.innerHTML = emptyRow.innerHTML.replace(/__prefix__/g, formIdx);
-        emptyRow.removeAttribute('id');
-        emptyRow.classList.add('item-row');
-        tableBody.appendChild(emptyRow);
-        totalForms.value = parseInt(formIdx) + 1;
-    });
-
-    tableBody.addEventListener('click', function(e) {
-        if (e.target.closest('.remove-row')) {
-            const row = e.target.closest('tr');
-            const deleteBox = row.querySelector('input[name$="-DELETE"]');
-            if (deleteBox) {
-                deleteBox.checked = true;
-                row.style.display = 'none'; 
-                row.classList.remove('item-row');
-            } else {
-                row.remove();
+        // Listeners
+        tableBody.addEventListener('input', function (e) {
+            if (e.target.classList.contains('qty') || e.target.classList.contains('price')) {
+                calculateRow(e.target.closest('tr'));
+                calculateAll();
             }
-            calculateAll();
-        }
-    });
-
-    // Calc Functions
-    function calculateRow(row) {
-        const qty = parseFloat(row.querySelector('.qty').value) || 0;
-        const price = parseFloat(row.querySelector('.price').value) || 0;
-        const total = qty * price;
-        row.querySelector('.row-total').textContent = total.toFixed(2);
-        return total;
-    }
-
-    function calculateAll() {
-        let subtotal = 0;
-        document.querySelectorAll('tr.item-row').forEach(row => {
-            if (row.style.display !== 'none') subtotal += calculateRow(row);
         });
 
-        const taxPercent = parseFloat(taxPercentInput.value) || 0;
-        const isTaxIncluded = taxCheck.checked;
-        let taxAmount = 0;
-        let grandTotal = 0;
+        taxCheck.addEventListener('change', calculateAll);
+        taxPercentInput.addEventListener('input', calculateAll);
 
-        if (isTaxIncluded) {
-            taxAmount = subtotal - (subtotal / (1 + (taxPercent / 100)));
-            grandTotal = subtotal; 
-        } else {
-            taxAmount = subtotal * (taxPercent / 100);
-            grandTotal = subtotal + taxAmount;
+        addRowBtn.addEventListener('click', function () {
+            const formIdx = totalForms.value;
+            const emptyRow = document.getElementById('empty-row-template').cloneNode(true);
+            emptyRow.innerHTML = emptyRow.innerHTML.replace(/__prefix__/g, formIdx);
+            emptyRow.removeAttribute('id');
+            emptyRow.classList.add('item-row');
+            tableBody.appendChild(emptyRow);
+            totalForms.value = parseInt(formIdx) + 1;
+        });
+
+        tableBody.addEventListener('click', function (e) {
+            if (e.target.closest('.remove-row')) {
+                const row = e.target.closest('tr');
+                const deleteBox = row.querySelector('input[name$="-DELETE"]');
+                if (deleteBox) {
+                    deleteBox.checked = true;
+                    row.style.display = 'none';
+                    row.classList.remove('item-row');
+                } else {
+                    row.remove();
+                }
+                calculateAll();
+            }
+        });
+
+        // Calc Functions
+        function calculateRow(row) {
+            const qty = parseFloat(row.querySelector('.qty').value) || 0;
+            const price = parseFloat(row.querySelector('.price').value) || 0;
+            const total = qty * price;
+            row.querySelector('.row-total').textContent = total.toFixed(2);
+            return total;
         }
 
-        document.getElementById('displaySubtotal').textContent = subtotal.toFixed(2);
-        document.getElementById('displayTax').textContent = taxAmount.toFixed(2);
-        document.getElementById('displayGrandTotal').textContent = grandTotal.toFixed(2);
-    }
-
-    // ==========================================
-    // 2. RECENT ORDERS TABLE FILTERING
-    // ==========================================
-    const table = document.getElementById("recentOrdersTable");
-    const globalSearch = document.getElementById("globalSearch");
-    const colFilters = document.querySelectorAll(".col-filter");
-    const rows = table.querySelectorAll("tbody tr:not(#noResultsRow)");
-
-    function filterData() {
-        const globalTerm = globalSearch.value.toLowerCase();
-        let visibleCount = 0;
-
-        rows.forEach(row => {
-            const cells = row.cells;
-            let showRow = true;
-
-            // Column Filters
-            colFilters.forEach(filter => {
-                const colIndex = filter.getAttribute("data-col");
-                const filterVal = filter.value.toLowerCase();
-                const cellText = cells[colIndex].textContent.toLowerCase().trim();
-
-                if (filterVal !== "") {
-                    // Specific Logic for Status (Exact match via dropdown)
-                    if (filter.tagName === 'SELECT') {
-                         if (!cellText.includes(filterVal)) showRow = false;
-                    } 
-                    // Logic for Amount (> X)
-                    else if (colIndex === "4") { 
-                        const amount = parseFloat(cellText.replace(/,/g, ''));
-                        const filterAmount = parseFloat(filterVal);
-                        if (!isNaN(filterAmount) && amount < filterAmount) showRow = false;
-                    } 
-                    // Standard Text Search
-                    else {
-                        if (!cellText.includes(filterVal)) showRow = false;
-                    }
-                }
+        function calculateAll() {
+            let subtotal = 0;
+            document.querySelectorAll('tr.item-row').forEach(row => {
+                if (row.style.display !== 'none') subtotal += calculateRow(row);
             });
 
-            // Global Search
-            if (showRow && globalTerm !== "") {
-                if (!row.innerText.toLowerCase().includes(globalTerm)) showRow = false;
+            const taxPercent = parseFloat(taxPercentInput.value) || 0;
+            const isTaxIncluded = taxCheck.checked;
+            let taxAmount = 0;
+            let grandTotal = 0;
+
+            if (isTaxIncluded) {
+                taxAmount = subtotal - (subtotal / (1 + (taxPercent / 100)));
+                grandTotal = subtotal;
+            } else {
+                taxAmount = subtotal * (taxPercent / 100);
+                grandTotal = subtotal + taxAmount;
             }
 
-            row.style.display = showRow ? "" : "none";
-            if(showRow) visibleCount++;
-        });
-        
-        // Show "No Results" row if needed
-        const noResRow = document.getElementById("noResultsRow");
-        if(noResRow) noResRow.style.display = (visibleCount === 0) ? "" : "none";
-    }
+            document.getElementById('displaySubtotal').textContent = subtotal.toFixed(2);
+            document.getElementById('displayTax').textContent = taxAmount.toFixed(2);
+            document.getElementById('displayGrandTotal').textContent = grandTotal.toFixed(2);
+        }
 
-    globalSearch.addEventListener("input", filterData);
-    colFilters.forEach(input => {
-        input.addEventListener("input", filterData);
-        input.addEventListener("change", filterData);
+        // ==========================================
+        // 2. RECENT ORDERS TABLE FILTERING
+        // ==========================================
+        const table = document.getElementById("recentOrdersTable");
+        const globalSearch = document.getElementById("globalSearch");
+        const colFilters = document.querySelectorAll(".col-filter");
+        const rows = table.querySelectorAll("tbody tr:not(#noResultsRow)");
+
+        function filterData() {
+            const globalTerm = globalSearch.value.toLowerCase();
+            let visibleCount = 0;
+
+            rows.forEach(row => {
+                const cells = row.cells;
+                let showRow = true;
+
+                // Column Filters
+                colFilters.forEach(filter => {
+                    const colIndex = filter.getAttribute("data-col");
+                    const filterVal = filter.value.toLowerCase();
+                    const cellText = cells[colIndex].textContent.toLowerCase().trim();
+
+                    if (filterVal !== "") {
+                        // Specific Logic for Status (Exact match via dropdown)
+                        if (filter.tagName === 'SELECT') {
+                            if (!cellText.includes(filterVal)) showRow = false;
+                        }
+                        // Logic for Amount (> X)
+                        else if (colIndex === "4") {
+                            const amount = parseFloat(cellText.replace(/,/g, ''));
+                            const filterAmount = parseFloat(filterVal);
+                            if (!isNaN(filterAmount) && amount < filterAmount) showRow = false;
+                        }
+                        // Standard Text Search
+                        else {
+                            if (!cellText.includes(filterVal)) showRow = false;
+                        }
+                    }
+                });
+
+                // Global Search
+                if (showRow && globalTerm !== "") {
+                    if (!row.innerText.toLowerCase().includes(globalTerm)) showRow = false;
+                }
+
+                row.style.display = showRow ? "" : "none";
+                if (showRow) visibleCount++;
+            });
+
+            // Show "No Results" row if needed
+            const noResRow = document.getElementById("noResultsRow");
+            if (noResRow) noResRow.style.display = (visibleCount === 0) ? "" : "none";
+        }
+
+        globalSearch.addEventListener("input", filterData);
+        colFilters.forEach(input => {
+            input.addEventListener("input", filterData);
+            input.addEventListener("change", filterData);
+        });
+
+        // ==========================================
+        // 3. DUPLICATE CHECK
+        // ==========================================
+        const poNumberInput = document.getElementById('id_po_number');
+        const taxSequenceInput = document.getElementById('id_tax_sequence_number');
+        const companySelect = document.getElementById('id_company');
+        const currentPoId = '{{ editing_po.id|default:"" }}';
+
+        function checkDuplicates() {
+            const poNumber = poNumberInput ? poNumberInput.value : '';
+            const taxSequence = taxSequenceInput ? taxSequenceInput.value : '';
+            const companyId = companySelect ? companySelect.value : '';
+
+            if (!poNumber && !taxSequence) return;
+
+            let url = `/api/purchases/check-duplicate/?current_po_id=${currentPoId}`;
+            if (poNumber) url += `&po_number=${encodeURIComponent(poNumber)}`;
+            if (taxSequence) url += `&tax_sequence_number=${encodeURIComponent(taxSequence)}`;
+            if (companyId) url += `&company_id=${encodeURIComponent(companyId)}`;
+
+            fetch(url)
+                .then(res => res.json())
+                .then(data => {
+                    const poError = document.getElementById('po_number_error');
+                    if (data.duplicate_po_number && poNumber) {
+                        poError.classList.remove('d-none');
+                        poNumberInput.classList.add('is-invalid');
+                    } else {
+                        poError.classList.add('d-none');
+                        if (poNumberInput) poNumberInput.classList.remove('is-invalid');
+                    }
+
+                    const taxError = document.getElementById('tax_sequence_error');
+                    if (data.duplicate_tax_sequence && taxSequence) {
+                        taxError.classList.remove('d-none');
+                        taxSequenceInput.classList.add('is-invalid');
+                    } else {
+                        taxError.classList.add('d-none');
+                        if (taxSequenceInput) taxSequenceInput.classList.remove('is-invalid');
+                    }
+                })
+                .catch(err => console.error("Error checking duplicates:", err));
+        }
+
+        if (poNumberInput) {
+            poNumberInput.addEventListener('blur', checkDuplicates);
+            poNumberInput.addEventListener('input', checkDuplicates);
+        }
+        if (taxSequenceInput) {
+            taxSequenceInput.addEventListener('blur', checkDuplicates);
+            taxSequenceInput.addEventListener('input', checkDuplicates);
+        }
+        if (companySelect) {
+            companySelect.addEventListener('change', checkDuplicates);
+        }
     });
-});
+
+    // Show cancel reason box when status = CANCELLED
+    const statusSelect = document.querySelector('select[name="status"]');
+    const cancelBlock = document.getElementById('cancel-reason-block');
+    function toggleCancelReason() {
+        if (cancelBlock) cancelBlock.style.display = statusSelect.value === 'CANCELLED' ? 'block' : 'none';
+    }
+    if (statusSelect) {
+        statusSelect.addEventListener('change', toggleCancelReason);
+        toggleCancelReason();
+    }
 </script>
 {% endblock %}
