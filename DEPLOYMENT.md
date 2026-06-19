@@ -1,186 +1,135 @@
-# Deployment Guideline: NMK Project (Django + React + PostgreSQL)
+# Deployment Guide: NMK (Fully Dockerized)
 
-This document provides a step-by-step guide for deploying the NMK project on a **Ubuntu Server** using **Docker (PostgreSQL)**, **Gunicorn**, and **Nginx**.
+All services run in Docker: PostgreSQL, Django/Gunicorn, and Nginx.  
+The root `docker-compose.yml` is the single source of truth.
 
 ---
 
-## 1. Prerequisites
+## Prerequisites (VPS)
 
-### Update System & Install Dependencies
 ```bash
-sudo apt update && sudo apt upgrade -y
-sudo apt install -y python3-venv python3-pip nginx curl git libpq-dev
-```
-
-### Install Docker (For PostgreSQL)
-```bash
-# Add Docker's official GPG key:
+# Install Docker (Ubuntu)
 sudo apt update
-sudo apt install -y ca-certificates curl gnupg
+sudo apt install -y ca-certificates curl gnupg openssl git
 sudo install -m 0755 -d /etc/apt/keyrings
 curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
 sudo chmod a+r /etc/apt/keyrings/docker.gpg
-
-# Add the repository to Apt sources:
-echo \
-  "deb [arch="$(dpkg --print-architecture)" signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
-  "$(. /etc/os-release && echo "$VERSION_CODENAME")" stable" | \
-  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
+  https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable" \
+  | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
 sudo apt update
 sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+# Allow your user to run docker without sudo
+sudo usermod -aG docker $USER
+newgrp docker
 ```
 
 ---
 
-## 2. Project Setup
+## First-Time Deployment
 
-### Clone Repository
 ```bash
-mkdir -p /var/www
-sudo chown $USER:$USER /var/www
-cd /var/www
+# 1. Clone the repository
+mkdir -p /var/www && cd /var/www
 git clone <repository_url> nmk
 cd nmk
+
+# 2. Create and fill in your environment file
+cp env.docker.example .env
+nano .env          # fill in ALL changeme_* values (see comments in the file)
+
+# 3. Run the deploy script
+chmod +x deploy.sh
+./deploy.sh
 ```
 
-### Setup Backend
-```bash
-cd backend
-python3 -m venv venv
-source venv/bin/activate
-pip install --upgrade pip
-pip install -r requirements.txt
-# If you need to install Gunicorn separately (should be in requirements.txt)
-# pip install gunicorn
-```
+`deploy.sh` will:
+- Generate a self-signed TLS cert for your server IP (stored in `docker/nginx/certs/`, gitignored)
+- Build the Docker images
+- Start all three containers (db → web → nginx)
+- Run database migrations and `collectstatic` automatically
+- Create the Django superuser from `ADMIN_DJANGO_USERNAME` / `ADMIN_DJANGO_PASSWORD`
 
-### Configure Environment Variables
-Copy the `.env.example` and fill in your production values.
-```bash
-cp .env.example .env
-nano .env
-```
-*Make sure `DEBUG=False` and `DB_HOST=localhost` (if Docker ports are mapped to host).*
+Access the app at `https://<your-server-ip>/` — accept the self-signed cert warning once.
 
 ---
 
-## 3. Database: PostgreSQL in Docker
-
-We use the existing `postgres/docker-compose.yml` file.
+## Updating After Code Changes
 
 ```bash
-cd /var/www/nmk/postgres
-# Docker compose will use values from ../backend/.env if you symlink or use -e
-# For simplicity, we can symlink the .env
-ln -s /var/www/nmk/backend/.env .env
-docker compose up -d
+cd /var/www/nmk
+./update.sh
 ```
 
-Verify the database is running:
-```bash
-docker ps
-```
+`update.sh` will:
+- `git pull` the latest code
+- Rebuild only the `web` image
+- Restart the web container (migrations + collectstatic run automatically)
+- Leave the database and media files untouched
 
 ---
 
-## 4. Backend: Gunicorn & Systemd
+## Environment Variables (`.env`)
 
-### Static Files
-```bash
-cd /var/www/nmk/backend
-source venv/bin/activate
-python manage.py collectstatic --noinput
-python manage.py migrate
-```
+Copy `env.docker.example` to `.env` and fill in every value.  
+The real `.env` is gitignored — never commit it.
 
-### Gunicorn Configuration
-Ensure `/var/www/nmk/backend/gunicorn.conf.py` exists (it's already provided in the repository).
-
-### Create Systemd Service
-```bash
-sudo nano /etc/systemd/system/nmk.service
-```
-Paste the content of `gunicorn.service.example` from the repository (adjust paths if needed).
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl start nmk
-sudo systemctl enable nmk
-```
-
-Check status:
-```bash
-sudo systemctl status nmk
-```
+| Variable | Notes |
+|----------|-------|
+| `DB_HOST` | Must be `db` (the compose service name) |
+| `SECRET_KEY` | Generate with `python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"` |
+| `ALLOWED_HOSTS` | Your VPS public IP (no http/https prefix) |
+| `CSRF_TRUSTED_ORIGINS` | `https://your.server.ip` |
+| `WEB_CONCURRENCY` | Gunicorn workers — use `7` for a 3-core VPS |
 
 ---
 
-## 5. Frontend: React Build
+## Maintenance Commands
 
 ```bash
-cd /var/www/nmk/frontend
-# Install Node.js if not already (using NVM is recommended)
-curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
-source ~/.bashrc
-nvm install 20
+# Live logs
+docker compose logs -f web      # Django/Gunicorn logs
+docker compose logs -f nginx    # Nginx access/error logs
+docker compose logs -f db       # PostgreSQL logs
 
-npm install
-npm run build
-```
-This creates a `dist/` directory in `frontend/`.
+# Service status
+docker compose ps
 
----
+# Django management commands
+docker compose exec web python manage.py createsuperuser
+docker compose exec web python manage.py shell
+docker compose exec web python manage.py migrate
 
-## 6. Nginx Setup
+# Restart a single service
+docker compose restart web
+docker compose restart nginx
 
-### Configure Nginx
-```bash
-sudo nano /etc/nginx/sites-available/nmk
-```
-Paste the content of `nginx.conf.example` from the repository.
+# Full restart
+docker compose down && docker compose up -d
 
-### Enable Site
-```bash
-sudo ln -s /etc/nginx/sites-available/nmk /etc/nginx/sites-enabled/
-sudo nginx -t
-sudo systemctl restart nginx
-```
+# Database backup
+docker compose exec db pg_dump -U $DB_USER $DB_NAME > backup_$(date +%Y%m%d).sql
 
-### Fix Permissions
-Nginx needs access to the static/media and socket files.
-```bash
-sudo usermod -aG $USER www-data
-sudo chmod 710 /var/www/nmk
-# Ensure /tmp/gunicorn.nmk.sock is accessible (Gunicorn does this usually)
+# Database restore
+docker compose exec -T db psql -U $DB_USER $DB_NAME < backup_YYYYMMDD.sql
 ```
 
 ---
 
-## 7. SSL (HTTPS) with Certbot
+## Architecture
 
-```bash
-sudo apt install -y certbot python3-certbot-nginx
-sudo certbot --nginx -d your-domain.com
+```
+Internet → nginx:443 (TLS) → web:8000 (Gunicorn/Django)
+                                   ↕
+                               db:5432 (PostgreSQL)
+
+Volumes:
+  postgres_data   — PostgreSQL data (persistent, never deleted by update.sh)
+  static_volume   — Django collectstatic output (shared nginx ↔ web, read-only for nginx)
+  media_volume    — User uploads + generated reports (shared nginx ↔ web, read-only for nginx)
+  docker/nginx/certs/  — Self-signed TLS cert (host dir, gitignored)
 ```
 
----
-
-## 8. Common Maintenance Commands
-
-- **Restart Backend:** `sudo systemctl restart nmk`
-- **View Logs:**
-  - Nginx Access: `tail -f /var/log/nginx/nmk_access.log`
-  - Nginx Error: `tail -f /var/log/nginx/nmk_error.log`
-  - Gunicorn Error: `journalctl -u nmk -f`
-- **Update Project:**
-  ```bash
-  cd /var/www/nmk
-  git pull
-  source backend/venv/bin/activate
-  pip install -r backend/requirements.txt
-  python backend/manage.py migrate
-  python backend/manage.py collectstatic --noinput
-  cd frontend && npm install && npm run build
-  sudo systemctl restart nmk
-  ```
+> **Backup reminder:** `media_volume` holds uploaded CSVs, purchase attachments, and
+> generated PDF/Excel reports. Include it in your backup routine alongside the database.
