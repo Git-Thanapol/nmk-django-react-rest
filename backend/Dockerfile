@@ -5,9 +5,15 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Runtime libs for WeasyPrint (cairo, pango) + psycopg2 + pg_isready
+# Build tools (required to compile pycairo from source) + runtime libs
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libcairo2 \
+    build-essential \
+    pkg-config \
+    libcairo2-dev \
+    libpango1.0-dev \
+    libgdk-pixbuf-2.0-dev \
+    libffi-dev \
+    libpq-dev \
     libpango-1.0-0 \
     libpangocairo-1.0-0 \
     libgdk-pixbuf-2.0-0 \
