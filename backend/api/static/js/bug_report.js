@@ -148,8 +148,20 @@
   }
 
   // ── File (non-image) upload ──────────────────────────────────────────────
+  const FILE_EXTS = [".csv", ".xlsx", ".xls", ".txt", ".json", ".pdf", ".zip"];
+  const FILE_MAX = 20 * 1024 * 1024;
+
   async function uploadFiles(files) {
     for (const file of files) {
+      const ext = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
+      if (!FILE_EXTS.includes(ext)) {
+        alert(`${file.name}: ไม่รองรับไฟล์ชนิดนี้ (รองรับ: ${FILE_EXTS.join(", ")})`);
+        continue;
+      }
+      if (file.size > FILE_MAX) {
+        alert(`${file.name}: ไฟล์ใหญ่เกิน 20 MB`);
+        continue;
+      }
       const fd = new FormData();
       fd.append("file", file);
       fd.append("csrfmiddlewaretoken", getCsrf());
@@ -165,7 +177,7 @@
           continue;
         }
         attachmentIds.push(data.id);
-        addFileChip(data.name);
+        addFileChip(data.id, data.name);
       } catch (e) {
         console.error("File upload error:", e);
         alert(`${file.name}: อัปโหลดไม่สำเร็จ`);
@@ -173,16 +185,36 @@
     }
   }
 
-  function addFileChip(name) {
-    ["br-file-strip", "br-file-strip-plain"].forEach((id) => {
-      const strip = $(id);
+  function addFileChip(id, name) {
+    ["br-file-strip", "br-file-strip-plain"].forEach((stripId) => {
+      const strip = $(stripId);
       if (!strip) return;
       const chip = document.createElement("span");
-      chip.className = "badge text-bg-secondary d-inline-flex align-items-center";
-      chip.style.maxWidth = "200px";
-      chip.innerHTML = `<i class="bi bi-file-earmark me-1"></i><span class="text-truncate">${escHtml(name)}</span>`;
+      chip.className = "badge text-bg-secondary d-inline-flex align-items-center gap-1";
+      chip.style.maxWidth = "220px";
+      chip.dataset.attachmentId = id;
+      chip.innerHTML =
+        `<i class="bi bi-file-earmark"></i><span class="text-truncate">${escHtml(name)}</span>` +
+        `<button type="button" class="btn-close btn-close-white ms-1" style="font-size:.5rem" aria-label="ลบไฟล์"></button>`;
+      chip.querySelector("button").addEventListener("click", () => removeFile(id));
       strip.appendChild(chip);
     });
+  }
+
+  async function removeFile(id) {
+    try {
+      await fetch(`/bug-reports/attachment/${id}/discard/`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "X-CSRFToken": getCsrf() },
+      });
+    } catch (e) {
+      console.error("File discard error:", e);
+    }
+    attachmentIds = attachmentIds.filter((x) => x !== id);
+    document
+      .querySelectorAll(`[data-attachment-id="${id}"]`)
+      .forEach((el) => el.remove());
   }
 
   // ── Submit (chat path) ───────────────────────────────────────────────────

@@ -36,7 +36,7 @@ COPY . .
 
 # Non-root user; create volume mount points with correct ownership
 RUN useradd -m -u 1000 appuser && \
-    mkdir -p /app/staticfiles /app/media && \
+    mkdir -p /app/staticfiles /app/media /app/private_media && \
     chown -R appuser:appuser /app && \
     chmod +x /app/entrypoint.sh
 

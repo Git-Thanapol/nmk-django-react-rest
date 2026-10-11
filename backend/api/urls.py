@@ -58,6 +58,7 @@ urlpatterns = [
     path('bug-reports/upload-image/', views.bug_report_upload_image, name='bug_report_upload_image'),
     path('bug-reports/upload-file/', views.bug_report_upload_file, name='bug_report_upload_file'),
     path('bug-reports/attachment/<int:pk>/', views.bug_report_attachment_download, name='bug_report_attachment'),
+    path('bug-reports/attachment/<int:pk>/discard/', views.bug_report_attachment_discard, name='bug_report_attachment_discard'),
     path('bug-reports/submit/', views.bug_report_submit, name='bug_report_submit'),
 
     # --- Dashboard ---

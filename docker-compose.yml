@@ -37,6 +37,7 @@ services:
     volumes:
       - static_volume:/app/staticfiles
       - media_volume:/app/media
+      - private_media_volume:/app/private_media
     networks:
       - nmk_network
     depends_on:
@@ -64,6 +65,7 @@ volumes:
   postgres_data:
   static_volume:
   media_volume:
+  private_media_volume:
 
 networks:
   nmk_network:

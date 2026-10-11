@@ -326,11 +326,34 @@ def bug_report_upload_image(request):
     image_file = request.FILES.get('image')
     if not image_file:
         return JsonResponse({'error': 'no image'}, status=400)
+    _purge_stale_bug_report_uploads()
     img = BugReportImage.objects.create(
         image=image_file,
-        session_key=request.session.session_key or '',
+        session_key=_ensure_session_key(request),
     )
     return JsonResponse({'id': img.pk, 'url': img.image.url})
+
+
+def _ensure_session_key(request):
+    """Session key used to scope draft uploads to one browser session; never empty."""
+    if not request.session.session_key:
+        request.session.create()
+    return request.session.session_key
+
+
+def _purge_stale_bug_report_uploads(max_age_hours=24):
+    """Drop never-submitted uploads (rows and files via post_delete)."""
+    from datetime import timedelta
+    cutoff = timezone.now() - timedelta(hours=max_age_hours)
+    BugReportImage.objects.filter(bug_report__isnull=True, uploaded_at__lt=cutoff).delete()
+    BugReportAttachment.objects.filter(bug_report__isnull=True, uploaded_at__lt=cutoff).delete()
+
+
+def _int_ids(value):
+    """Coerce a JSON value to a list of ints; anything else is dropped."""
+    if not isinstance(value, list):
+        return []
+    return [i for i in value if isinstance(i, int) and not isinstance(i, bool)]
 
 
 @login_required
@@ -346,11 +369,12 @@ def bug_report_upload_file(request):
         return JsonResponse({'error': f'ไม่รองรับไฟล์ {ext or "นี้"} (รองรับ: {allowed})'}, status=400)
     if f.size > BugReportAttachment.MAX_SIZE:
         return JsonResponse({'error': 'ไฟล์ใหญ่เกิน 20 MB'}, status=400)
+    _purge_stale_bug_report_uploads()
     att = BugReportAttachment.objects.create(
         file=f,
         original_name=os.path.basename(f.name)[:255],
         size=f.size,
-        session_key=request.session.session_key or '',
+        session_key=_ensure_session_key(request),
     )
     return JsonResponse({'id': att.pk, 'name': att.original_name, 'size': att.size})
 
@@ -362,7 +386,24 @@ def bug_report_attachment_download(request, pk):
     report = att.bug_report
     if not (request.user.is_staff or report.created_by_id == request.user.id):
         return JsonResponse({'error': 'forbidden'}, status=403)
-    return FileResponse(att.file.open('rb'), as_attachment=True, filename=att.original_name)
+    try:
+        fh = att.file.open('rb')
+    except FileNotFoundError:
+        return JsonResponse({'error': 'file missing'}, status=404)
+    return FileResponse(fh, as_attachment=True, filename=att.original_name)
+
+
+@login_required
+def bug_report_attachment_discard(request, pk):
+    """Remove a draft (not yet submitted) attachment uploaded in this session."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+    att = get_object_or_404(
+        BugReportAttachment, pk=pk, bug_report__isnull=True,
+        session_key=request.session.session_key or '-',
+    )
+    att.delete()
+    return JsonResponse({'ok': True})
 
 
 @login_required
@@ -380,8 +421,8 @@ def bug_report_submit(request):
     report_type = body.get('type', 'BUG')
     conversation = body.get('conversation', [])
     is_degraded = body.get('degraded', False)
-    image_ids = body.get('image_ids', [])
-    attachment_ids = body.get('attachment_ids', [])
+    image_ids = _int_ids(body.get('image_ids', []))
+    attachment_ids = _int_ids(body.get('attachment_ids', []))
 
     if not title or not summary:
         return JsonResponse({'error': 'title and summary required'}, status=400)
@@ -395,21 +436,13 @@ def bug_report_submit(request):
         created_by=request.user,
     )
 
-    # Link uploaded images; delete orphans from this session
-    session_key = request.session.session_key or ''
-    if image_ids:
-        BugReportImage.objects.filter(pk__in=image_ids).update(bug_report=report, session_key='')
-    # Clean up other uploads from this session that weren't chosen
+    # Claim only this session's own draft uploads; delete the rest of this session's drafts
+    session_key = request.session.session_key
     if session_key:
-        BugReportImage.objects.filter(session_key=session_key, bug_report__isnull=True).delete()
-
-    # Same for non-image attachments; only claim this session's own uploads
-    if attachment_ids:
-        BugReportAttachment.objects.filter(
-            pk__in=attachment_ids, bug_report__isnull=True, session_key=session_key
-        ).update(bug_report=report, session_key='')
-    if session_key:
-        BugReportAttachment.objects.filter(session_key=session_key, bug_report__isnull=True).delete()
+        for model, ids in ((BugReportImage, image_ids), (BugReportAttachment, attachment_ids)):
+            drafts = model.objects.filter(session_key=session_key, bug_report__isnull=True)
+            drafts.filter(pk__in=ids).update(bug_report=report, session_key='')
+            drafts.delete()
 
     return JsonResponse({'id': report.pk, 'url': f'/bug-reports/{report.pk}/'})
 

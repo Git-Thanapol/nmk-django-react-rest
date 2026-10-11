@@ -211,6 +211,9 @@ MEDIA_URL = '/media/'
 
 # โฟลเดอร์จริงในเครื่องที่จะเก็บไฟล์
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
+# Private uploads (bug report files): outside MEDIA_ROOT so they are never served directly
+PRIVATE_MEDIA_ROOT = os.getenv('PRIVATE_MEDIA_ROOT', os.path.join(BASE_DIR, 'private_media'))
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
