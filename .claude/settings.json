@@ -1,10 +1,10 @@
 {
-  "includeCoAuthoredBy": true,
   "env": {
     "INSIDE_CLAUDE_CODE": "1",
     "BASH_DEFAULT_TIMEOUT_MS": "420000",
     "BASH_MAX_TIMEOUT_MS": "420000"
   },
+  "includeCoAuthoredBy": true,
   "hooks": {
     "UserPromptSubmit": [
       {
@@ -81,5 +81,14 @@
         ]
       }
     ]
+  },
+  "enabledPlugins": {
+    "frontend-design@anthropic-plugin-directory": true,
+    "superpowers@anthropic-plugin-directory": true,
+    "code-review-anthropics@anthropic-plugin-directory": true,
+    "skill-creator@anthropic-plugin-directory": true,
+    "code-simplifier@anthropic-plugin-directory": true,
+    "caveman@anthropic-plugin-directory": true,
+    "claude-md-management@anthropic-plugin-directory": true
   }
 }
