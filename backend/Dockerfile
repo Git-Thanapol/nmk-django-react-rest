@@ -20,8 +20,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Install Python deps as a separate layer for caching
 COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+# Build deps (pycairo etc.) are installed and removed in the same layer
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    pkg-config \
+    libcairo2-dev \
+    libpq-dev \
+    && pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r requirements.txt \
+    && apt-get purge -y --auto-remove build-essential pkg-config libcairo2-dev libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
 
 # Copy application source
 COPY . .

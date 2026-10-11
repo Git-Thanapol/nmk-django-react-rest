@@ -807,3 +807,34 @@ class BugReportImage(models.Model):
 
     def __str__(self):
         return f"Image for {self.bug_report_id or 'draft'}"
+
+def bug_report_file_path(instance, filename):
+    """Store under a non-public prefix (nginx blocks /media/bug_report_files/)."""
+    import os
+    import uuid
+    from datetime import date
+    ext = os.path.splitext(filename)[1].lower()
+    today = date.today()
+    return f'bug_report_files/{today:%Y/%m}/{uuid.uuid4().hex}{ext}'
+
+
+class BugReportAttachment(models.Model):
+    """Non-image attachment (platform CSV/XLSX etc.). Served only via login-protected view."""
+    ALLOWED_EXTENSIONS = ('.csv', '.xlsx', '.xls', '.txt', '.json', '.pdf', '.zip')
+    MAX_SIZE = 20 * 1024 * 1024  # 20 MB
+
+    bug_report = models.ForeignKey(
+        BugReport, on_delete=models.CASCADE, null=True, blank=True, related_name='attachments'
+    )
+    file = models.FileField(upload_to=bug_report_file_path)
+    original_name = models.CharField(max_length=255)
+    size = models.PositiveIntegerField(default=0)
+    session_key = models.CharField(max_length=40, blank=True, db_index=True)
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'bug_report_attachments'
+        ordering = ['uploaded_at']
+
+    def __str__(self):
+        return self.original_name

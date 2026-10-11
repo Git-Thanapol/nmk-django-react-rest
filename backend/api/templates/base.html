@@ -174,10 +174,23 @@
             <i class="bi bi-gear me-2"></i>ระบบจัดการภายใน Admin
           </a>
 
-          <a class="nav-link {% if request.path == '/help/' %}active{% endif %}"
-             href="{% url 'help' %}">
+          <a class="nav-link {% if request.path == '/help/' or '/bug-reports/' in request.path %}active{% endif %}"
+             data-bs-toggle="collapse" href="#help-submenu" role="button"
+             aria-expanded="{% if request.path == '/help/' or '/bug-reports/' in request.path %}true{% else %}false{% endif %}"
+             aria-controls="help-submenu">
             <i class="bi bi-question-circle me-2"></i>ช่วยเหลือ
+            <i class="bi bi-chevron-down float-end small"></i>
           </a>
+          <div class="collapse {% if request.path == '/help/' or '/bug-reports/' in request.path %}show{% endif %}" id="help-submenu">
+            <a class="nav-link {% if request.path == '/help/' %}active{% endif %}"
+               href="{% url 'help' %}" style="padding-left: 2.2rem; font-size: 0.9em;">
+              <i class="bi bi-book me-2"></i>คู่มือการใช้งาน
+            </a>
+            <a class="nav-link {% if '/bug-reports/' in request.path %}active{% endif %}"
+               href="{% url 'bug_report_list' %}" style="padding-left: 2.2rem; font-size: 0.9em;">
+              <i class="bi bi-bug me-2"></i>รายงานปัญหา / ขอฟีเจอร์
+            </a>
+          </div>
 
           <a
             class="nav-link text-danger"
@@ -314,10 +327,16 @@
                   <i class="bi bi-image me-1"></i>แนบรูป
                   <input id="br-image-input" type="file" accept="image/*" multiple class="d-none">
                 </label>
+                <label class="btn btn-outline-secondary btn-sm mb-0" style="cursor:pointer"
+                       title="CSV, Excel, TXT, JSON, PDF, ZIP (ไม่เกิน 20 MB)">
+                  <i class="bi bi-paperclip me-1"></i>แนบไฟล์
+                  <input id="br-file-input" type="file" accept=".csv,.xlsx,.xls,.txt,.json,.pdf,.zip" multiple class="d-none">
+                </label>
                 <span class="text-muted small d-none d-sm-inline" style="font-size:.72rem">
                   หรือ <kbd>Ctrl+V</kbd> วางจากคลิปบอร์ด
                 </span>
                 <div id="br-image-strip" class="d-flex gap-1 flex-wrap"></div>
+                <div id="br-file-strip" class="d-flex gap-1 flex-wrap"></div>
                 <button id="br-chat-submit" class="btn btn-success btn-sm ms-auto" disabled>
                   <i class="bi bi-send me-1"></i>ส่งรายงาน
                 </button>
@@ -348,7 +367,14 @@
                   <input type="file" accept="image/*" multiple class="d-none"
                          onchange="document.getElementById('br-image-input').files = this.files; document.getElementById('br-image-input').dispatchEvent(new Event('change'))">
                 </label>
+                <label class="btn btn-outline-secondary btn-sm mb-0" style="cursor:pointer"
+                       title="CSV, Excel, TXT, JSON, PDF, ZIP (ไม่เกิน 20 MB)">
+                  <i class="bi bi-paperclip me-1"></i>แนบไฟล์
+                  <input type="file" accept=".csv,.xlsx,.xls,.txt,.json,.pdf,.zip" multiple class="d-none"
+                         onchange="document.getElementById('br-file-input').files = this.files; document.getElementById('br-file-input').dispatchEvent(new Event('change'))">
+                </label>
                 <div class="d-flex gap-1 flex-wrap" id="br-image-strip-plain"></div>
+                <div class="d-flex gap-1 flex-wrap" id="br-file-strip-plain"></div>
               </div>
             </div>
             <div class="modal-footer py-2">

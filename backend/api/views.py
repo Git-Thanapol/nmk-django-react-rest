@@ -45,6 +45,7 @@ from .models import (
     WithholdingTaxCert,
     BugReport,
     BugReportImage,
+    BugReportAttachment,
 )
 
 # Local apps – forms
@@ -333,6 +334,38 @@ def bug_report_upload_image(request):
 
 
 @login_required
+def bug_report_upload_file(request):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+    f = request.FILES.get('file')
+    if not f:
+        return JsonResponse({'error': 'ไม่พบไฟล์'}, status=400)
+    ext = os.path.splitext(f.name)[1].lower()
+    if ext not in BugReportAttachment.ALLOWED_EXTENSIONS:
+        allowed = ', '.join(BugReportAttachment.ALLOWED_EXTENSIONS)
+        return JsonResponse({'error': f'ไม่รองรับไฟล์ {ext or "นี้"} (รองรับ: {allowed})'}, status=400)
+    if f.size > BugReportAttachment.MAX_SIZE:
+        return JsonResponse({'error': 'ไฟล์ใหญ่เกิน 20 MB'}, status=400)
+    att = BugReportAttachment.objects.create(
+        file=f,
+        original_name=os.path.basename(f.name)[:255],
+        size=f.size,
+        session_key=request.session.session_key or '',
+    )
+    return JsonResponse({'id': att.pk, 'name': att.original_name, 'size': att.size})
+
+
+@login_required
+def bug_report_attachment_download(request, pk):
+    from django.http import FileResponse
+    att = get_object_or_404(BugReportAttachment, pk=pk, bug_report__isnull=False)
+    report = att.bug_report
+    if not (request.user.is_staff or report.created_by_id == request.user.id):
+        return JsonResponse({'error': 'forbidden'}, status=403)
+    return FileResponse(att.file.open('rb'), as_attachment=True, filename=att.original_name)
+
+
+@login_required
 def bug_report_submit(request):
     if request.method != 'POST':
         return JsonResponse({'error': 'POST required'}, status=405)
@@ -348,6 +381,7 @@ def bug_report_submit(request):
     conversation = body.get('conversation', [])
     is_degraded = body.get('degraded', False)
     image_ids = body.get('image_ids', [])
+    attachment_ids = body.get('attachment_ids', [])
 
     if not title or not summary:
         return JsonResponse({'error': 'title and summary required'}, status=400)
@@ -368,6 +402,14 @@ def bug_report_submit(request):
     # Clean up other uploads from this session that weren't chosen
     if session_key:
         BugReportImage.objects.filter(session_key=session_key, bug_report__isnull=True).delete()
+
+    # Same for non-image attachments; only claim this session's own uploads
+    if attachment_ids:
+        BugReportAttachment.objects.filter(
+            pk__in=attachment_ids, bug_report__isnull=True, session_key=session_key
+        ).update(bug_report=report, session_key='')
+    if session_key:
+        BugReportAttachment.objects.filter(session_key=session_key, bug_report__isnull=True).delete()
 
     return JsonResponse({'id': report.pk, 'url': f'/bug-reports/{report.pk}/'})
 

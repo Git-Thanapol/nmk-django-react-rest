@@ -6,6 +6,7 @@
  *   #br-plain-pane  — plain form (title + description), always submittable
  *
  * Images: shared between both panes, uploaded independently to /bug-reports/upload-image/
+ * Files (csv/xlsx/...): same, via /bug-reports/upload-file/
  */
 
 (function () {
@@ -14,6 +15,7 @@
   // ── State ────────────────────────────────────────────────────────────────
   let history = [];       // [{role, content}]
   let imageIds = [];      // temp BugReportImage PKs
+  let attachmentIds = []; // temp BugReportAttachment PKs
   let degraded = false;
   let llmDone = false;
   let modal = null;
@@ -145,6 +147,44 @@
     });
   }
 
+  // ── File (non-image) upload ──────────────────────────────────────────────
+  async function uploadFiles(files) {
+    for (const file of files) {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("csrfmiddlewaretoken", getCsrf());
+      try {
+        const res = await fetch("/bug-reports/upload-file/", {
+          method: "POST",
+          credentials: "same-origin",
+          body: fd,
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          alert(`${file.name}: ${data.error || "อัปโหลดไม่สำเร็จ"}`);
+          continue;
+        }
+        attachmentIds.push(data.id);
+        addFileChip(data.name);
+      } catch (e) {
+        console.error("File upload error:", e);
+        alert(`${file.name}: อัปโหลดไม่สำเร็จ`);
+      }
+    }
+  }
+
+  function addFileChip(name) {
+    ["br-file-strip", "br-file-strip-plain"].forEach((id) => {
+      const strip = $(id);
+      if (!strip) return;
+      const chip = document.createElement("span");
+      chip.className = "badge text-bg-secondary d-inline-flex align-items-center";
+      chip.style.maxWidth = "200px";
+      chip.innerHTML = `<i class="bi bi-file-earmark me-1"></i><span class="text-truncate">${escHtml(name)}</span>`;
+      strip.appendChild(chip);
+    });
+  }
+
   // ── Submit (chat path) ───────────────────────────────────────────────────
   async function submitChat() {
     const title = ($("br-chat-title")?.value || "").trim();
@@ -171,6 +211,7 @@
 
   async function submitReport(payload) {
     payload.image_ids = imageIds;
+    payload.attachment_ids = attachmentIds;
     try {
       const res = await fetch("/bug-reports/submit/", {
         method: "POST",
@@ -241,12 +282,15 @@
   function resetState() {
     history = [];
     imageIds = [];
+    attachmentIds = [];
     degraded = false;
     llmDone = false;
     if ($("br-chat-messages")) $("br-chat-messages").innerHTML = "";
     if ($("br-user-input")) $("br-user-input").value = "";
     if ($("br-image-strip")) $("br-image-strip").innerHTML = "";
     if ($("br-image-strip-plain")) $("br-image-strip-plain").innerHTML = "";
+    if ($("br-file-strip")) $("br-file-strip").innerHTML = "";
+    if ($("br-file-strip-plain")) $("br-file-strip-plain").innerHTML = "";
     if ($("br-summary-section")) $("br-summary-section").classList.add("d-none");
     if ($("br-chat-submit")) $("br-chat-submit").disabled = true;
     if ($("br-plain-title")) $("br-plain-title").value = "";
@@ -288,6 +332,12 @@
     // Image upload — shared strip
     $("br-image-input")?.addEventListener("change", function () {
       if (this.files?.length) uploadImages(Array.from(this.files));
+      this.value = "";
+    });
+
+    // File upload (csv/xlsx/...) — shared strip
+    $("br-file-input")?.addEventListener("change", function () {
+      if (this.files?.length) uploadFiles(Array.from(this.files));
       this.value = "";
     });
 

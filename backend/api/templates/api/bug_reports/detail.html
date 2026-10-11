@@ -54,6 +54,23 @@
           </div>
           {% endif %}
           {% endwith %}
+
+          <!-- Files -->
+          {% with report.attachments.all as files %}
+          {% if files %}
+          <h6 class="text-muted small mt-3 mb-2">ไฟล์แนบ ({{ files|length }})</h6>
+          <ul class="list-unstyled mb-0">
+            {% for f in files %}
+            <li class="mb-1">
+              <a href="{% url 'bug_report_attachment' f.pk %}">
+                <i class="bi bi-paperclip me-1"></i>{{ f.original_name }}
+              </a>
+              <span class="text-muted small">({{ f.size|filesizeformat }})</span>
+            </li>
+            {% endfor %}
+          </ul>
+          {% endif %}
+          {% endwith %}
         </div>
         <div class="card-footer small text-muted">
           ส่งโดย {{ report.created_by.username|default:"ไม่ระบุ" }} · {{ report.created_at|date:"d/m/Y H:i" }}
