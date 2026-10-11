@@ -76,3 +76,6 @@ docker/nginx/certs/
 data_processing/*
 *.pptx
 Bugs/*
+# Let's Encrypt state (private keys)
+docker/certbot/conf/
+docker/certbot/www/
